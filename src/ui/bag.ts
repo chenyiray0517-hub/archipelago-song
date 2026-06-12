@@ -45,6 +45,8 @@ const ATTR_LABEL: Record<AttributeKey, string> = {
 export class BagPanel {
   private root: HTMLElement;
   private visible = false;
+  /** 底部傳送區是否展開(每次開背包重設為收合) */
+  private teleportOpen = false;
 
   constructor(
     private inventory: Inventory,
@@ -55,6 +57,8 @@ export class BagPanel {
     private onAllocate: (key: AttributeKey) => void,
     private onEquipChange: () => void,
     private onUseSeaGem: (sea: 1 | 2) => void,
+    private getShrineTargets: () => { id: string; island: string }[],
+    private onTeleportShrine: (id: string) => void,
   ) {
     const style = document.createElement("style");
     style.textContent = BAG_CSS;
@@ -73,7 +77,10 @@ export class BagPanel {
   toggle(): void {
     this.visible = !this.visible;
     this.root.classList.toggle("show", this.visible);
-    if (this.visible) this.render();
+    if (this.visible) {
+      this.teleportOpen = false;
+      this.render();
+    }
   }
 
   /** 背包開啟時重繪內容(數值變動後呼叫) */
@@ -159,6 +166,7 @@ export class BagPanel {
       <div class="section"><h3>裝備</h3>${equipRows || '<div class="muted">尚無裝備,去商人圓圓那裡看看吧</div>'}</div>
       <div class="section"><h3>靈紋寶石盤</h3><div class="gems">${gemGrid}</div></div>
       <div class="section alloc"><h3>能力點分配</h3>${allocRows}</div>
+      <div class="section"><h3>傳送</h3>${this.renderTeleport()}</div>
       <div class="muted">按 Tab 關閉</div>
     `;
 
@@ -172,6 +180,15 @@ export class BagPanel {
     this.root.querySelectorAll<HTMLButtonElement>("button[data-sea]").forEach((btn) => {
       btn.addEventListener("click", () => {
         this.onUseSeaGem(Number(btn.dataset.sea) === 2 ? 2 : 1);
+      });
+    });
+    this.root.querySelector<HTMLButtonElement>("button[data-tp-open]")?.addEventListener("click", () => {
+      this.teleportOpen = !this.teleportOpen;
+      this.render();
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-tp]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.onTeleportShrine(btn.dataset.tp as string);
       });
     });
     this.root.querySelectorAll<HTMLButtonElement>("button[data-alloc]").forEach((btn) => {
@@ -194,5 +211,27 @@ export class BagPanel {
         this.render();
       });
     });
+  }
+
+  /** 底部傳送區:收合時一顆按鈕,點開列出已設置的重生點 */
+  private renderTeleport(): string {
+    if (!this.teleportOpen)
+      return `<div class="item">
+        <span class="muted">傳送到已設置的重生點</span>
+        <button data-tp-open>選擇傳送點</button>
+      </div>`;
+    const targets = this.getShrineTargets();
+    const rows =
+      targets.length > 0
+        ? targets
+            .map(
+              (t) => `<div class="item">
+                <span>🗿 【${t.island}】重生點</span>
+                <button data-tp="${t.id}">傳送</button>
+              </div>`,
+            )
+            .join("")
+        : `<div class="muted">尚未設置重生點(靠近島上的石碑按 F 設置)</div>`;
+    return `${rows}<div class="item"><span></span><button data-tp-open>收合</button></div>`;
   }
 }

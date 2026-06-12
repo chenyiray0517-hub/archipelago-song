@@ -993,6 +993,40 @@ Math.hypot(goBack.x - 2.5, goBack.z - -52) < 3 && Math.hypot(goBack.bx - 4, goBa
   ? ok(`回到第一海曙光嶼(位置 ${goBack.x.toFixed(0)},${goBack.z.toFixed(0)},船回泊點)`)
   : fail(`返航異常:${JSON.stringify(goBack)}`);
 
+// 47. 重生點傳送:背包底部「傳送」區(預設收合)→ 點開列出已設置重生點 → 傳送
+await page.keyboard.press("Tab");
+await page.waitForTimeout(300);
+const tpCollapsed = await page.evaluate(() => ({
+  hasOpenBtn: !!document.querySelector("#bag button[data-tp-open]"),
+  listed: document.querySelectorAll("#bag button[data-tp]").length,
+}));
+tpCollapsed.hasOpenBtn && tpCollapsed.listed === 0
+  ? ok("背包底部顯示「傳送」區(預設收合)")
+  : fail(`傳送區異常:${JSON.stringify(tpCollapsed)}`);
+await page.click("#bag button[data-tp-open]");
+await page.waitForTimeout(200);
+const tpList = await page.evaluate(() =>
+  [...document.querySelectorAll("#bag button[data-tp]")].map((b) => b.dataset.tp),
+);
+tpList.length === 2 && tpList.includes("ember") && tpList.includes("verdant")
+  ? ok(`傳送點選項列出(${tpList.join("+")})`)
+  : fail(`傳送點選項異常:${JSON.stringify(tpList)}`);
+await page.screenshot({ path: "/tmp/archipelago-29-teleport.png" });
+await page.click('#bag button[data-tp="ember"]');
+await page.waitForTimeout(400);
+const tpResult = await page.evaluate(() => {
+  const g = window.__game;
+  const p = g.player.mesh.position;
+  const b = g.boat.mesh.position;
+  return { x: p.x, z: p.z, bx: b.x, bz: b.z, bagOpen: g.bag.isOpen };
+});
+Math.hypot(tpResult.x - -143, tpResult.z - 76) < 3 && !tpResult.bagOpen
+  ? ok(`傳送到燼岩重生點(位置 ${tpResult.x.toFixed(0)},${tpResult.z.toFixed(0)},背包自動關閉)`)
+  : fail(`重生點傳送異常:${JSON.stringify(tpResult)}`);
+Math.hypot(tpResult.bx - -150, tpResult.bz - 62) < 5
+  ? ok("船隻同行移到燼岩島近岸")
+  : fail(`船位異常:${tpResult.bx.toFixed(0)},${tpResult.bz.toFixed(0)}`);
+
 // 10. 存檔:手動觸發存檔後重新整理,等級與寶石持有應保留
 const beforeReload = await page.evaluate(() => {
   window.__game.doSave();

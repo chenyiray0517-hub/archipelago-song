@@ -771,7 +771,29 @@ function main(): void {
       doSave();
     },
     (sea) => travelTo(sea),
+    () =>
+      shrineActiveIds.map((id) => ({
+        id,
+        island: shrines.find((s) => s.def.id === id)?.def.island ?? id,
+      })),
+    (id) => teleportToShrine(id),
   );
+
+  /** 重生點傳送:背包傳送區選擇已啟用的石碑,人到碑前、船到該島近岸 */
+  function teleportToShrine(id: string): void {
+    const shrine = shrines.find((s) => s.active && s.def.id === id);
+    if (!shrine || player.isDead) return;
+    if (diving) setDiving(false);
+    sailing = false;
+    const { x, z } = shrine.def;
+    player.mesh.position.set(x, groundHeight(x, z + 2), z + 2); // 站在石碑前方一步
+    boat.place(shrine.def.boat.x, shrine.def.boat.z);
+    audio.sfx("shrineTravel");
+    fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0x7fe8e8, 16, 6);
+    hud.showToast(`傳送至【${shrine.def.island}】重生點`);
+    if (bag.isOpen) bag.toggle();
+    doSave();
+  }
 
   /** 海寶石傳送:人與船一起移動到目標海域的港邊(航行/潛水中也可用) */
   function travelTo(sea: 1 | 2): void {

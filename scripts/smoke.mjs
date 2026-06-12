@@ -746,6 +746,127 @@ dayState.mode === "day" && !dayState.rain
   ? ok("白天晴天:配樂切回白天主題、雨停")
   : fail(`白天異常:${JSON.stringify(dayState)}`);
 
+// 38. 重生點:每島一座石碑;F 設置(上限 2,第三座替換最早的)
+const shrineCount = await page.evaluate(() => window.__game.shrines.length);
+shrineCount === 5 ? ok("每座島各一座重生石碑(共 5 座)") : fail(`石碑數量異常:${shrineCount}`);
+
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(-9, 1, -46); // 曙光嶼石碑旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+const shrine1 = await page.evaluate(() => window.__game.shrineIds);
+shrine1.includes("dawn") ? ok("F 設置曙光嶼重生點") : fail(`重生點未設置:${JSON.stringify(shrine1)}`);
+
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(150, 1, 66); // 翠風林島石碑旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(-143, 1, 76); // 燼岩火山島石碑旁(第三座)
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+const shrine3 = await page.evaluate(() => window.__game.shrineIds);
+shrine3.length === 2 && !shrine3.includes("dawn") && shrine3.includes("verdant") && shrine3.includes("ember")
+  ? ok(`重生點上限 2 個,第三座替換最早的(${shrine3.join("+")})`)
+  : fail(`替換邏輯異常:${JSON.stringify(shrine3)}`);
+await page.screenshot({ path: "/tmp/archipelago-23-shrine.png" });
+
+// 39. 死亡重生選擇:熔岩中倒下 → 海灘 + 兩個重生點共三個選項 → 選燼岩重生
+await page.evaluate(() => {
+  const p = window.__game.player;
+  p.hp = 5;
+  p.mesh.position.set(-150, 18, 120); // 火山口熔岩
+});
+let deadShown = false;
+for (let i = 0; i < 12 && !deadShown; i++) {
+  await page.waitForTimeout(500);
+  deadShown = await page.evaluate(
+    () => document.getElementById("death")?.classList.contains("show") ?? false,
+  );
+}
+deadShown ? ok("熔岩倒下 → 死亡畫面顯示") : fail("死亡畫面未顯示");
+const respawnBtns = await page.evaluate(() =>
+  [...document.querySelectorAll("#death button")].map((b) => b.dataset.respawn),
+);
+respawnBtns.length === 3 && respawnBtns[0] === "beach"
+  ? ok(`重生選項 3 個(${respawnBtns.join("/")})`)
+  : fail(`重生選項異常:${JSON.stringify(respawnBtns)}`);
+await page.screenshot({ path: "/tmp/archipelago-24-death-choice.png" });
+await page.click('#death button[data-respawn="ember"]');
+await page.waitForTimeout(300);
+const respawned = await page.evaluate(() => {
+  const g = window.__game;
+  const p = g.player.mesh.position;
+  const b = g.boat.mesh.position;
+  return { x: p.x, z: p.z, hp: g.player.hp, bx: b.x, bz: b.z };
+});
+Math.hypot(respawned.x - -143, respawned.z - 76) < 3 && respawned.hp > 0
+  ? ok(`在燼岩重生點復活(位置 ${respawned.x.toFixed(0)},${respawned.z.toFixed(0)})`)
+  : fail(`重生位置異常:${JSON.stringify(respawned)}`);
+Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
+  ? ok("船隻移到燼岩島近岸(不會被困)")
+  : fail(`船位異常:${JSON.stringify(respawned)}`);
+
+// 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
+const npcCount = await page.evaluate(() => window.__game.npcs.length);
+npcCount === 8 ? ok("任務 NPC 到位(共 8 位,外島各一)") : fail(`NPC 數量異常:${npcCount}`);
+
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const vineAccepted = await page.evaluate(() => ({
+  state: window.__game.quests.get("vineHunt"),
+  hudText: document.getElementById("hud-quest-list")?.textContent ?? "",
+}));
+vineAccepted.state === "active" && vineAccepted.hudText.includes("藤蔓清剿")
+  ? ok(`接取「藤蔓清剿」並顯示追蹤(${vineAccepted.hudText})`)
+  : fail(`接取異常:${JSON.stringify(vineAccepted)}`);
+
+const huntBefore = await page.evaluate(() => {
+  for (let i = 0; i < 4; i++) window.__game.quests.addKill("vine"); // 模擬擊殺 4 隻
+  return {
+    coins: window.__game.inventory.coins,
+    medium: window.__game.inventory.crystals.medium,
+  };
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const huntAfter = await page.evaluate(() => ({
+  state: window.__game.quests.get("vineHunt"),
+  coins: window.__game.inventory.coins,
+  medium: window.__game.inventory.crystals.medium,
+}));
+huntAfter.state === "done" ? ok("「藤蔓清剿」回報完成") : fail(`回報異常:${huntAfter.state}`);
+huntAfter.coins === huntBefore.coins + 150 && huntAfter.medium === huntBefore.medium + 2
+  ? ok(`清剿獎勵入帳(🪙 +150,中型結晶 +2)`)
+  : fail(`獎勵異常:${JSON.stringify({ huntBefore, huntAfter })}`);
+await page.screenshot({ path: "/tmp/archipelago-25-hunt.png" });
+
 // 10. 存檔:手動觸發存檔後重新整理,等級與寶石持有應保留
 const beforeReload = await page.evaluate(() => {
   window.__game.doSave();
@@ -761,6 +882,8 @@ const afterReload = await page.evaluate(() => ({
   flameLevel: window.__game.gems.levels.flame,
   head: window.__game.equipment.equipped.head,
   def: window.__game.player.stats.def,
+  shrineIds: window.__game.shrineIds,
+  vineHunt: window.__game.quests.get("vineHunt"),
 }));
 afterReload.level === beforeReload.level
   ? ok(`重新整理後等級保留(Lv.${afterReload.level})`)
@@ -773,6 +896,12 @@ afterReload.flameLevel === 2 ? ok("重新整理後寶石升階保留(焰心石 L
 afterReload.head === "helm" && afterReload.def >= 5
   ? ok(`重新整理後裝備保留(鐵盔,防禦 ${afterReload.def})`)
   : fail(`裝備未保留:${JSON.stringify(afterReload)}`);
+afterReload.shrineIds.length === 2 && afterReload.shrineIds.includes("ember")
+  ? ok(`重新整理後重生點保留(${afterReload.shrineIds.join("+")})`)
+  : fail(`重生點未保留:${JSON.stringify(afterReload.shrineIds)}`);
+afterReload.vineHunt === "done"
+  ? ok("重新整理後清剿任務進度保留")
+  : fail(`清剿任務未保留:${afterReload.vineHunt}`);
 
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");

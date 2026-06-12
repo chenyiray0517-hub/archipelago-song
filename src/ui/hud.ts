@@ -26,6 +26,8 @@ const HUD_CSS = `
 #death.show { display: flex; }
 #death h2 { font-size: 34px; margin: 0; }
 #death button { pointer-events: auto; font-size: 16px; padding: 10px 28px; border: none; border-radius: 8px; background: #e74c3c; color: #fff; cursor: pointer; }
+#death button.shrine { background: #3a8fe8; }
+#death .options { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 `;
 
 /**
@@ -43,7 +45,7 @@ export class Hud {
   private deathOverlay: HTMLElement;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(onRespawn: () => void) {
+  constructor(private onRespawn: (choice: string) => void) {
     const style = document.createElement("style");
     style.textContent = HUD_CSS;
     document.head.appendChild(style);
@@ -70,11 +72,7 @@ export class Hud {
 
     this.deathOverlay = document.createElement("div");
     this.deathOverlay.id = "death";
-    this.deathOverlay.innerHTML = `<h2>你倒下了……</h2>`;
-    const btn = document.createElement("button");
-    btn.textContent = "在曙光嶼海灘重生";
-    btn.addEventListener("click", onRespawn);
-    this.deathOverlay.appendChild(btn);
+    this.deathOverlay.innerHTML = `<h2>你倒下了……</h2><div class="options" id="death-options"></div>`;
     document.body.appendChild(this.deathOverlay);
 
     this.hpFill = this.byId("hud-hp");
@@ -153,8 +151,21 @@ export class Hud {
     this.toastTimer = setTimeout(() => this.toast.classList.remove("show"), 2200);
   }
 
-  /** 切換死亡畫面 */
-  setDead(dead: boolean): void {
+  /** 切換死亡畫面;顯示時依已啟用的重生點重建選項按鈕(海灘為預設選項) */
+  setDead(dead: boolean, options: { id: string; label: string }[] = []): void {
+    if (dead) {
+      const list = this.byId("death-options");
+      list.innerHTML = "";
+      const all = [{ id: "beach", label: "在曙光嶼海灘重生" }, ...options];
+      for (const option of all) {
+        const btn = document.createElement("button");
+        btn.textContent = option.label;
+        btn.dataset.respawn = option.id;
+        if (option.id !== "beach") btn.classList.add("shrine");
+        btn.addEventListener("click", () => this.onRespawn(option.id));
+        list.appendChild(btn);
+      }
+    }
     this.deathOverlay.classList.toggle("show", dead);
   }
 

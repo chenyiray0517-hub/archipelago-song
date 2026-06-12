@@ -34,7 +34,7 @@ import {
   blinkDist,
 } from "./systems/gems";
 import { EquipmentState } from "./systems/equipment";
-import { QuestLog, JELLY_TARGET } from "./systems/quests";
+import { QuestLog, JELLY_TARGET, HUNTS, type HuntId } from "./systems/quests";
 import { loadGame, saveGame, type SaveData } from "./systems/save";
 import { Inventory, type CrystalSize } from "./systems/stats";
 import { Hud } from "./ui/hud";
@@ -45,6 +45,7 @@ import { ForgePanel } from "./ui/forge";
 import { SettingsPanel } from "./ui/settings";
 import { FloatingTextManager, PickupFeed } from "./ui/floating";
 import { DriftChest } from "./entities/chest";
+import { Shrine, SHRINE_DEFS, MAX_ACTIVE_SHRINES } from "./entities/shrine";
 import { isSailable } from "./world/terrain";
 
 const DEATH_CRYSTAL_LOSS = 0.3;
@@ -227,6 +228,57 @@ function main(): void {
   const equipment = new EquipmentState();
   const dialog = new DialogBox();
   const quests = new QuestLog();
+
+  /** 結晶尺寸顯示名 */
+  const crystalName = (size: CrystalSize): string =>
+    size === "small" ? "小型" : size === "medium" ? "中型" : "大型";
+
+  /**
+   * 建立島嶼清剿任務 NPC:接取 → 顯示進度 → 達標回報發獎勵(貝拉幣 + 經驗結晶)。
+   * 對話流程仿漁夫小蝦;進度計數走 QuestLog.huntProgress。
+   */
+  const makeHuntNpc = (config: {
+    name: string;
+    x: number;
+    z: number;
+    color: number;
+    quest: HuntId;
+    title: string;
+    enemyLabel: string;
+    intro: string[];
+    coins: number;
+    crystalSize: CrystalSize;
+    crystalCount: number;
+    doneLines: string[];
+  }): Npc =>
+    new Npc(config.name, config.x, config.z, config.color, () => {
+      const q = quests.get(config.quest);
+      const target = HUNTS[config.quest].target;
+      if (q === "done") return config.doneLines;
+      if (q === "active" && quests.huntProgress(config.quest) >= target) {
+        quests.complete(config.quest);
+        inventory.coins += config.coins;
+        inventory.crystals[config.crystalSize] += config.crystalCount;
+        audio.sfx("gem");
+        hud.showToast(
+          `任務完成:${config.title}!獲得 ${config.coins} 貝拉幣 + ${crystalName(config.crystalSize)}結晶×${config.crystalCount}`,
+        );
+        doSave();
+        return [
+          `你把${config.enemyLabel}都清掉了,太厲害了!`,
+          `這是謝禮:${config.coins} 貝拉幣和${crystalName(config.crystalSize)}經驗結晶 ×${config.crystalCount}。`,
+        ];
+      }
+      if (q === null) {
+        quests.accept(config.quest);
+        hud.showToast(`接受任務:${config.title}(0/${target})`);
+        return config.intro;
+      }
+      return [
+        `還剩 ${target - quests.huntProgress(config.quest)} 隻${config.enemyLabel},加油!`,
+        "打完回來找我領賞!",
+      ];
+    });
 
   // 任務的接取/回報在對話開啟時結算(getLines 依任務狀態給詞並發獎勵)
   const npcs: Npc[] = [
@@ -462,25 +514,140 @@ function main(): void {
     }),
     new Npc("商人圓圓", 7, -46, 0xc8884a, () => [], "shop"),
     new Npc("鍛造大師爐婆", -150, 78, 0x8a4a2a, () => [], "forge"),
+    // 各島清剿任務 NPC(位置避開重生石碑與敵人仇恨範圍 12)
+    makeHuntNpc({
+      name: "獵人小藤",
+      x: 160,
+      z: 66,
+      color: 0x4a8a3a,
+      quest: "vineHunt",
+      title: "藤蔓清剿",
+      enemyLabel: "藤蔓果凍",
+      intro: [
+        "這片叢林是我的獵場,但藤蔓果凍越來越多……",
+        "【任務】幫我清掉 4 隻藤蔓果凍!",
+        "牠們散布在島上各處,小心別被圍住。",
+      ],
+      coins: 150,
+      crystalSize: "medium",
+      crystalCount: 2,
+      doneLines: ["獵徑暢通了,謝謝你!", "叢林深處的守護者就拜託你了。"],
+    }),
+    makeHuntNpc({
+      name: "礦工岩叔",
+      x: -160,
+      z: 76,
+      color: 0x9a6a3a,
+      quest: "emberHunt",
+      title: "餘燼清剿",
+      enemyLabel: "餘燼果凍",
+      intro: [
+        "我在挖火山的礦脈,餘燼果凍老是燙壞我的鎬子!",
+        "【任務】幫我清掉 4 隻餘燼果凍!",
+        "報酬豐厚,但小心別踩進熔岩。",
+      ],
+      coins: 250,
+      crystalSize: "medium",
+      crystalCount: 3,
+      doneLines: ["礦脈安全了,挖礦效率翻倍!", "有空再來火山島坐坐。"],
+    }),
+    makeHuntNpc({
+      name: "嚮導阿凜",
+      x: 74,
+      z: -212,
+      color: 0x6a9ac8,
+      quest: "frostHunt",
+      title: "霜寒清剿",
+      enemyLabel: "霜寒果凍",
+      intro: [
+        "山上的霜寒果凍會凍住登山客,太危險了。",
+        "【任務】幫我清掉 4 隻霜寒果凍!",
+        "牠們會放冰凍攻擊,記得多帶藥水。",
+      ],
+      coins: 350,
+      crystalSize: "large",
+      crystalCount: 1,
+      doneLines: ["登山客們安全多了,謝謝你!", "山頂的風景值得一看。"],
+    }),
+    makeHuntNpc({
+      name: "觀星者星嵐",
+      x: -6,
+      z: 282,
+      color: 0x7a5aa8,
+      quest: "deepHunt",
+      title: "深海清剿",
+      enemyLabel: "深海果凍",
+      intro: [
+        "我在這裡觀測碎界之夜的星象……",
+        "北方沉沒古城的深海果凍讓潮流變得混亂。",
+        "【任務】潛入古城,清掉 3 隻深海果凍!",
+        "需要潮汐石才能下潛,小心虛空守護者。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["潮流恢復平靜,星象也清晰了……", "碎界之夜的終結,就靠你了。"],
+    }),
   ];
   for (const npc of npcs) scene.add(npc.mesh);
 
-  const hud = new Hud(() => {
+  // 重生石碑:每島一座,F 設置為重生點(上限 MAX_ACTIVE_SHRINES,超過替換最早設置的)
+  const shrines: Shrine[] = SHRINE_DEFS.map((def) => new Shrine(def));
+  for (const shrine of shrines) scene.add(shrine.mesh);
+  const shrineActiveIds: string[] = [];
+
+  const activateShrine = (shrine: Shrine): void => {
+    let note = `(${shrineActiveIds.length + 1}/${MAX_ACTIVE_SHRINES})`;
+    if (shrineActiveIds.length >= MAX_ACTIVE_SHRINES) {
+      const oldestId = shrineActiveIds.shift();
+      const oldest = shrines.find((s) => s.def.id === oldestId);
+      if (oldest) {
+        oldest.setActive(false);
+        note = `(已替換【${oldest.def.island}】)`;
+      }
+    }
+    shrineActiveIds.push(shrine.def.id);
+    shrine.setActive(true);
+    audio.sfx("shrine");
+    fx.burst(shrine.mesh.position.clone().setY(shrine.mesh.position.y + 3), 0x7fe8e8, 14, 6);
+    hud.showToast(`重生點已設置:【${shrine.def.island}】${note}`);
+    doSave();
+  };
+
+  const hud = new Hud((choice) => {
+    const shrine = shrines.find((s) => s.active && s.def.id === choice);
+    const wakePlace = shrine ? `【${shrine.def.island}】重生點` : "海灘";
     // 死亡掉落結晶可於設定中關閉(企劃書 3.3)
     if (settings.settings.deathDrop) {
       for (const size of Object.keys(inventory.crystals) as CrystalSize[]) {
         inventory.crystals[size] -= Math.floor(inventory.crystals[size] * DEATH_CRYSTAL_LOSS);
       }
-      hud.showToast("你在海灘醒來,遺失了部分未使用的結晶……");
+      hud.showToast(`你在${wakePlace}醒來,遺失了部分未使用的結晶……`);
     } else {
-      hud.showToast("你在海灘醒來……(死亡掉落已關閉)");
+      hud.showToast(`你在${wakePlace}醒來……(死亡掉落已關閉)`);
     }
     player.respawn();
-    boat.resetToDock(); // 船一起回村,避免被困外島
+    if (shrine) {
+      const { x, z } = shrine.def;
+      player.mesh.position.set(x, groundHeight(x, z + 2), z + 2); // 站在石碑前方一步
+      boat.place(shrine.def.boat.x, shrine.def.boat.z); // 船移到該島近岸,避免被困
+    } else {
+      boat.resetToDock(); // 船一起回村,避免被困外島
+    }
     sailing = false;
     if (diving) setDiving(false);
     hud.setDead(false);
   });
+
+  /** 顯示死亡畫面(海灘 + 已啟用重生點供選擇) */
+  const showDeathScreen = (): void => {
+    const options: { id: string; label: string }[] = [];
+    for (const id of shrineActiveIds) {
+      const shrine = shrines.find((s) => s.def.id === id);
+      if (shrine) options.push({ id, label: `在【${shrine.def.island}】重生點重生` });
+    }
+    hud.setDead(true, options);
+  };
 
   /** 重算裝備加成並寫進角色數值(血魔不超過新上限) */
   const applyEquip = (): void => {
@@ -566,6 +733,7 @@ function main(): void {
     voidDefeated,
     gemLevels: { ...gems.levels },
     equipment: equipment.serialize(),
+    shrines: [...shrineActiveIds],
   });
   const doSave = (): void => saveGame(collectSave());
   setInterval(doSave, 12000);
@@ -590,6 +758,13 @@ function main(): void {
     player.stats.weaponLevel = saved.weaponLevel ?? 0;
     if (saved.gemLevels) Object.assign(gems.levels, saved.gemLevels);
     if (saved.equipment) equipment.restore(saved.equipment);
+    for (const id of saved.shrines ?? []) {
+      const shrine = shrines.find((s) => s.def.id === id);
+      if (shrine && !shrine.active && shrineActiveIds.length < MAX_ACTIVE_SHRINES) {
+        shrine.setActive(true);
+        shrineActiveIds.push(id);
+      }
+    }
     applyEquip();
     player.hasWindGem = gems.windOwned;
     player.hasFrostGem = gems.frostOwned;
@@ -692,6 +867,7 @@ function main(): void {
       drops.push(new Pickup("gem-void", x, z));
     }
     if (enemy.kind === "slime") quests.slimeKills++;
+    quests.addKill(enemy.kind);
     if (enemy.kind === "voidLord" || enemy.kind === "voidGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "deep") {
@@ -755,6 +931,10 @@ function main(): void {
         audio,
         floats,
         feed,
+        shrines,
+        get shrineIds() {
+          return [...shrineActiveIds];
+        },
       },
     });
   }
@@ -793,6 +973,11 @@ function main(): void {
     for (const npc of npcs) {
       if (npc.update(dt, player.mesh.position)) nearbyNpc = npc;
     }
+    // 重生石碑:水晶動畫 + 設置範圍偵測
+    let nearbyShrine: Shrine | null = null;
+    for (const shrine of shrines) {
+      if (shrine.update(dt, player.mesh.position)) nearbyShrine = shrine;
+    }
     // 船隻互動:岸上靠近小船 F 出海;航行中近岸 F 上岸;遺跡上方 F 潛入
     const nearBoat =
       !sailing &&
@@ -810,6 +995,8 @@ function main(): void {
     else if (nearCity) hud.setTalkPrompt(true, "按 F 潛入沉沒古城");
     else if (sailing && landingSpot) hud.setTalkPrompt(true, "按 F 上岸");
     else if (nearBoat) hud.setTalkPrompt(true, "按 F 出海");
+    else if (nearbyShrine && !nearbyShrine.active && !sailing && !player.isDead && !dialog.isOpen)
+      hud.setTalkPrompt(true, "按 F 設置重生點");
     else
       hud.setTalkPrompt(
         nearbyNpc !== null &&
@@ -856,6 +1043,8 @@ function main(): void {
         player.blocking = false;
         audio.sfx("ui");
         hud.showToast("出海!W 前進、A/D 轉向,近岸按 F 上岸");
+      } else if (nearbyShrine && !nearbyShrine.active && !player.isDead) {
+        activateShrine(nearbyShrine);
       } else if (nearbyNpc && !player.isDead) {
         audio.sfx("ui");
         if (nearbyNpc.role === "shop") shop.open();
@@ -1048,7 +1237,7 @@ function main(): void {
         floats.spawn(player.mesh.position.clone().setY(player.mesh.position.y + 2.6), "-6", "#ff7a3c");
         audio.sfx("lava");
         fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 0.6), 0xff5a1c, 6, 4);
-        if (player.isDead) hud.setDead(true);
+        if (player.isDead) showDeathScreen();
       }
     } else {
       lavaTickT = 0;
@@ -1072,7 +1261,7 @@ function main(): void {
         player.applyEnvironmentDamage(10);
         const shore = nearestShore(player.mesh.position.x, player.mesh.position.z);
         player.mesh.position.set(shore.x, groundHeight(shore.x, shore.z), shore.z);
-        if (player.isDead) hud.setDead(true);
+        if (player.isDead) showDeathScreen();
       }
     }
 
@@ -1095,7 +1284,7 @@ function main(): void {
           fx.shake(0.4, 0.3);
           fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0xff6655, 10);
         }
-        if (player.isDead) hud.setDead(true);
+        if (player.isDead) showDeathScreen();
       }
     }
 
@@ -1273,6 +1462,21 @@ function main(): void {
     }
     if (quests.get("final") === "active") {
       questLines.push(voidDefeated ? "終焉之戰:回報村長阿海" : "終焉之戰:前往最北端的虛空之心");
+    }
+    const huntTracks: { id: HuntId; title: string; npc: string }[] = [
+      { id: "vineHunt", title: "藤蔓清剿", npc: "獵人小藤" },
+      { id: "emberHunt", title: "餘燼清剿", npc: "礦工岩叔" },
+      { id: "frostHunt", title: "霜寒清剿", npc: "嚮導阿凜" },
+      { id: "deepHunt", title: "深海清剿", npc: "觀星者星嵐" },
+    ];
+    for (const track of huntTracks) {
+      if (quests.get(track.id) !== "active") continue;
+      const progress = quests.huntProgress(track.id);
+      questLines.push(
+        progress >= HUNTS[track.id].target
+          ? `${track.title}:回報${track.npc}`
+          : `${track.title}:${progress}/${HUNTS[track.id].target}`,
+      );
     }
     hud.setQuests(questLines);
 

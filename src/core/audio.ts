@@ -25,7 +25,8 @@ export type SfxName =
   | "blink"
   | "dive"
   | "victory"
-  | "thunder";
+  | "thunder"
+  | "shrine";
 
 /** 配樂模式:白天探索/航海/夜晚(兼潛水) */
 export type MusicMode = "day" | "sail" | "night";
@@ -287,6 +288,12 @@ export class AudioEngine {
       case "thunder":
         this.noiseBurst("lowpass", 200, 40, 0.9, 0.5);
         this.tone("sine", 60, 30, 0.8, 0.35);
+        break;
+      case "shrine":
+        [659.25, 987.77, 1318.5].forEach((freq, i) =>
+          this.tone("sine", freq, freq, 0.4, 0.25, i * 0.12),
+        );
+        this.tone("triangle", 329.63, 329.63, 0.6, 0.18);
         break;
     }
   }

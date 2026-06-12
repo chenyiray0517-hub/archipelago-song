@@ -1,5 +1,5 @@
 import type { Attributes, CrystalSize } from "./stats";
-import type { QuestId, QuestState } from "./quests";
+import type { QuestSave } from "./quests";
 import type { UpgradableGem } from "./gems";
 import type { EquipSlot } from "./equipment";
 
@@ -17,7 +17,7 @@ export interface SaveData {
   flameOwned: boolean;
   pos: [number, number];
   potions?: number;
-  quests?: { states: Partial<Record<QuestId, QuestState>>; kills: number; base: number };
+  quests?: QuestSave;
   windOwned?: boolean;
   boatPos?: [number, number];
   sailing?: boolean;
@@ -29,6 +29,8 @@ export interface SaveData {
   voidDefeated?: boolean;
   gemLevels?: Record<UpgradableGem, number>;
   equipment?: { owned: string[]; equipped: Partial<Record<EquipSlot, string>> };
+  /** 已啟用的重生石碑 id(依設置順序) */
+  shrines?: string[];
 }
 
 /** 寫入 localStorage(失敗靜默,遊戲不因存檔掛掉) */

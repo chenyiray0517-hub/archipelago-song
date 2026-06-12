@@ -12,6 +12,8 @@ import {
   ISLANDS,
   TIDE_SITE,
   SUNKEN_CITY,
+  SECOND_SEA,
+  seaOf,
 } from "./world/terrain";
 import { Boat } from "./entities/boat";
 import { Player, ATTACK_RANGE, ATTACK_ARC_COS, SPIN_RANGE } from "./entities/player";
@@ -229,6 +231,37 @@ function main(): void {
   const dialog = new DialogBox();
   const quests = new QuestLog();
 
+  // ---- 第二海解鎖條件(領航者檢查 + HUD 追蹤列共用) ----
+  /** 全部敵人種類(「敵人圖鑑」條件:每種至少擊敗一次;敵人重整後重生,不會卡關) */
+  const ENEMY_KINDS = [
+    "slime",
+    "elite",
+    "vine",
+    "windGuardian",
+    "ember",
+    "earthGuardian",
+    "frost",
+    "frostGuardian",
+    "deep",
+    "voidGuardian",
+    "voidLord",
+  ];
+  const SEA2_LEVEL = 35;
+  const ownedGemCount = (): number =>
+    [
+      gems.flameOwned,
+      gems.windOwned,
+      gems.earthOwned,
+      gems.frostOwned,
+      gems.tideOwned,
+      gems.voidOwned,
+    ].filter(Boolean).length;
+  const killedKindCount = (): number => ENEMY_KINDS.filter((k) => quests.killsOf(k) > 0).length;
+  const sea2Ready = (): boolean =>
+    ownedGemCount() === 6 &&
+    killedKindCount() === ENEMY_KINDS.length &&
+    player.stats.level >= SEA2_LEVEL;
+
   /** 結晶尺寸顯示名 */
   const crystalName = (size: CrystalSize): string =>
     size === "small" ? "小型" : size === "medium" ? "中型" : "大型";
@@ -290,11 +323,18 @@ function main(): void {
       const qt = quests.get("tide");
       const qd = quests.get("depth");
       const qfin = quests.get("final");
-      if (qfin === "done")
+      if (qfin === "done") {
+        if (inventory.secondSeaGem)
+          return [
+            "碎界之夜的陰影散去了……群島又能安心唱歌了。",
+            "聽說你已經能往返第二海了——真不愧是引路人!",
+          ];
         return [
           "碎界之夜的陰影散去了……群島又能安心唱歌了。",
-          "謝謝你,引路人。這片海永遠歡迎你。",
+          "對了,東南外海浮現了一座「界海之門」。",
+          "島上的領航者,能為通過試煉的人開啟第二海之路。去見見她吧!",
         ];
+      }
       if (qfin === "active" && voidDefeated) {
         quests.complete("final");
         inventory.coins += 1000;
@@ -588,6 +628,51 @@ function main(): void {
       crystalCount: 2,
       doneLines: ["潮流恢復平靜,星象也清晰了……", "碎界之夜的終結,就靠你了。"],
     }),
+    // 界海之門:第二海解鎖試煉(六寶石 + 敵人圖鑑 + Lv.35),通過發兩顆海寶石
+    new Npc("領航者汐音", 230, -95, 0x4a9ab8, () => {
+      if (inventory.secondSeaGem)
+        return [
+          "海寶石與你同行,界海不再是阻隔。",
+          "在背包(Tab)使用海寶石,即可往返兩片海域。",
+          "第二海的故事,才正要開始……",
+        ];
+      if (sea2Ready()) {
+        if (quests.get("sea2") === null) quests.accept("sea2");
+        quests.complete("sea2");
+        inventory.firstSeaGem = true;
+        inventory.secondSeaGem = true;
+        audio.sfx("gem");
+        feed.push("🔱 獲得重要道具【第一海寶石】");
+        feed.push("🌐 獲得重要道具【第二海寶石】");
+        hud.showToast("獲得海寶石!在背包(Tab)使用即可往返第一、二海");
+        doSave();
+        return [
+          "六顆靈紋寶石、群島眾魔的記憶、足以橫渡界海的修為……",
+          "你通過了全部的試煉。收下吧——【第一海寶石】與【第二海寶石】。",
+          "在背包中使用它們,海流就會帶你往返兩片海域。",
+          "第二海的門戶「港口鎮」,正等著你。",
+        ];
+      }
+      if (quests.get("sea2") === null) {
+        quests.accept("sea2");
+        hud.showToast("接受任務:跨越界海");
+      }
+      return [
+        "我是領航者汐音,界海的看守者。",
+        "界海之外是第二海——想跨越,須得群島的全部認可:",
+        `・集齊靈紋寶石(${ownedGemCount()}/6)`,
+        `・擊敗所有種類的敵人(${killedKindCount()}/${ENEMY_KINDS.length} 種)`,
+        `・修煉至 Lv.${SEA2_LEVEL}(目前 Lv.${player.stats.level})`,
+        "達成之後,再回來找我。",
+      ];
+    }),
+    // 第二海・港口鎮
+    new Npc("鎮長波叔", SECOND_SEA.x, SECOND_SEA.z - 36, 0xc8a04a, () => [
+      "歡迎來到第二海的門戶——港口鎮!",
+      "能跨越界海的,都是了不起的冒險者。",
+      "這片海域還有更多島嶼沉睡著,等待被喚醒……",
+      "想回第一海?在背包使用【第一海寶石】就行。",
+    ]),
   ];
   for (const npc of npcs) scene.add(npc.mesh);
 
@@ -685,7 +770,30 @@ function main(): void {
       audio.sfx("ui");
       doSave();
     },
+    (sea) => travelTo(sea),
   );
+
+  /** 海寶石傳送:人與船一起移動到目標海域的港邊(航行/潛水中也可用) */
+  function travelTo(sea: 1 | 2): void {
+    if (player.isDead) return;
+    if (diving) setDiving(false);
+    sailing = false;
+    if (sea === 2) {
+      const x = SECOND_SEA.x;
+      const z = SECOND_SEA.z - 44;
+      player.mesh.position.set(x, groundHeight(x, z), z);
+      boat.place(SECOND_SEA.x + 2, SECOND_SEA.z - 58); // 停在港口鎮碼頭旁
+      hud.showToast("海流湧動……抵達第二海【港口鎮】");
+    } else {
+      player.mesh.position.set(2.5, groundHeight(2.5, -52), -52);
+      boat.resetToDock();
+      hud.showToast("海流湧動……回到第一海【曙光嶼】");
+    }
+    audio.sfx("seaTravel");
+    fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0x7fd8ff, 18, 7);
+    if (bag.isOpen) bag.toggle();
+    doSave();
+  }
 
   const shop = new ShopPanel(inventory, equipment, () => {
     audio.sfx("coin");
@@ -734,6 +842,7 @@ function main(): void {
     gemLevels: { ...gems.levels },
     equipment: equipment.serialize(),
     shrines: [...shrineActiveIds],
+    seaGems: { first: inventory.firstSeaGem, second: inventory.secondSeaGem },
   });
   const doSave = (): void => saveGame(collectSave());
   setInterval(doSave, 12000);
@@ -755,6 +864,8 @@ function main(): void {
     gems.tideOwned = saved.tideOwned ?? false;
     gems.voidOwned = saved.voidOwned ?? false;
     voidDefeated = saved.voidDefeated ?? false;
+    inventory.firstSeaGem = saved.seaGems?.first ?? false;
+    inventory.secondSeaGem = saved.seaGems?.second ?? false;
     player.stats.weaponLevel = saved.weaponLevel ?? 0;
     if (saved.gemLevels) Object.assign(gems.levels, saved.gemLevels);
     if (saved.equipment) equipment.restore(saved.equipment);
@@ -948,6 +1059,9 @@ function main(): void {
 
     // 日夜與天氣(影響光照/天色/海況/航速/配樂)
     const env = sky.update(dt, player.mesh.position, diving);
+    // 海面網格跟著玩家所在海域走(兩海相距甚遠,共用同一張海面)
+    if (seaOf(player.mesh.position.x) === 2) ocean.position.set(SECOND_SEA.x, 0, SECOND_SEA.z);
+    else ocean.position.set(75, 0, 55);
     updateOcean(ocean, elapsed, env.waveScale);
     audio.setRain(env.raining && !diving);
     if (env.thunder) {
@@ -1462,6 +1576,13 @@ function main(): void {
     }
     if (quests.get("final") === "active") {
       questLines.push(voidDefeated ? "終焉之戰:回報村長阿海" : "終焉之戰:前往最北端的虛空之心");
+    }
+    if (quests.get("sea2") === "active") {
+      questLines.push(
+        sea2Ready()
+          ? "跨越界海:回界海之門找領航者汐音"
+          : `跨越界海:寶石${ownedGemCount()}/6・圖鑑${killedKindCount()}/${ENEMY_KINDS.length}・Lv.${player.stats.level}/${SEA2_LEVEL}`,
+      );
     }
     const huntTracks: { id: HuntId; title: string; npc: string }[] = [
       { id: "vineHunt", title: "藤蔓清剿", npc: "獵人小藤" },

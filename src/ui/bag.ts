@@ -9,7 +9,9 @@ import type { GemBag } from "../systems/gems";
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 
 const BAG_CSS = `
-#bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 380px; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
+#bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 380px; max-height: 72vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
+#bag::-webkit-scrollbar { width: 8px; }
+#bag::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 4px; }
 #bag.show { display: block; }
 #bag h3 { margin: 0 0 12px; font-size: 18px; }
 #bag .section { margin-bottom: 14px; }
@@ -52,6 +54,7 @@ export class BagPanel {
     private onUseCrystal: (size: CrystalSize, count: number) => void,
     private onAllocate: (key: AttributeKey) => void,
     private onEquipChange: () => void,
+    private onUseSeaGem: (sea: 1 | 2) => void,
   ) {
     const style = document.createElement("style");
     style.textContent = BAG_CSS;
@@ -117,6 +120,18 @@ export class BagPanel {
       )
       .join("");
 
+    const seaGemRows: string[] = [];
+    if (this.inventory.firstSeaGem)
+      seaGemRows.push(`<div class="item">
+        <span>🔱 第一海寶石 <span class="muted">(傳送至第一海・曙光嶼)</span></span>
+        <button data-sea="1">使用</button>
+      </div>`);
+    if (this.inventory.secondSeaGem)
+      seaGemRows.push(`<div class="item">
+        <span>🌐 第二海寶石 <span class="muted">(傳送至第二海・港口鎮)</span></span>
+        <button data-sea="2">使用</button>
+      </div>`);
+
     const equipRows = this.equipment.owned
       .map((id) => {
         const def = equipDefOf(id);
@@ -140,6 +155,7 @@ export class BagPanel {
         攻擊 ${s.atk}｜防禦 ${s.def}｜生命上限 ${s.maxHP}｜靈力上限 ${s.maxMP}</div>
       </div>
       <div class="section">${crystalRows}</div>
+      ${seaGemRows.length > 0 ? `<div class="section"><h3>重要道具</h3>${seaGemRows.join("")}</div>` : ""}
       <div class="section"><h3>裝備</h3>${equipRows || '<div class="muted">尚無裝備,去商人圓圓那裡看看吧</div>'}</div>
       <div class="section"><h3>靈紋寶石盤</h3><div class="gems">${gemGrid}</div></div>
       <div class="section alloc"><h3>能力點分配</h3>${allocRows}</div>
@@ -151,6 +167,11 @@ export class BagPanel {
         const size = btn.dataset.use as CrystalSize;
         this.onUseCrystal(size, Number(btn.dataset.count));
         this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-sea]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.onUseSeaGem(Number(btn.dataset.sea) === 2 ? 2 : 1);
       });
     });
     this.root.querySelectorAll<HTMLButtonElement>("button[data-alloc]").forEach((btn) => {

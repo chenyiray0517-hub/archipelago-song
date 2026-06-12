@@ -26,7 +26,8 @@ export type SfxName =
   | "dive"
   | "victory"
   | "thunder"
-  | "shrine";
+  | "shrine"
+  | "seaTravel";
 
 /** 配樂模式:白天探索/航海/夜晚(兼潛水) */
 export type MusicMode = "day" | "sail" | "night";
@@ -294,6 +295,13 @@ export class AudioEngine {
           this.tone("sine", freq, freq, 0.4, 0.25, i * 0.12),
         );
         this.tone("triangle", 329.63, 329.63, 0.6, 0.18);
+        break;
+      case "seaTravel":
+        this.noiseBurst("bandpass", 500, 2200, 0.6, 0.25);
+        this.tone("sine", 300, 1100, 0.55, 0.25);
+        [523.25, 783.99, 1046.5].forEach((freq, i) =>
+          this.tone("sine", freq, freq, 0.3, 0.2, 0.25 + i * 0.12),
+        );
         break;
     }
   }

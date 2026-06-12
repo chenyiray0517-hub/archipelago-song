@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { toonMaterial } from "../core/toon";
+import { toonMaterial, addOutlines } from "../core/toon";
 
 interface Hill {
   x: number;
@@ -27,6 +27,18 @@ const COAST_FALLOFF = 14;
 const BASE_HEIGHT = 1.2;
 /** 島岸外可涉水的緩衝距離 */
 const WADE_MARGIN = 5;
+
+/** 第二海中心 x(與第一海相隔開放海域,靠海寶石傳送往返) */
+const SECOND_SEA_X = 2000;
+/** 第二海:港口鎮所在海域中心(海面網格與傳送目標共用) */
+export const SECOND_SEA = { x: SECOND_SEA_X, z: 0 };
+/** 兩海分界 x:超過即視為身處第二海 */
+export const SEA_BORDER_X = 1100;
+
+/** 判定座標屬於第一海(1)或第二海(2) */
+export function seaOf(x: number): 1 | 2 {
+  return x > SEA_BORDER_X ? 2 : 1;
+}
 
 /** 群島配置:曙光嶼(新手村)+ 翠風林島(叢林,風語石) */
 export const ISLANDS: IslandDef[] = [
@@ -106,6 +118,38 @@ export const ISLANDS: IslandDef[] = [
     dark: 0x1a1024,
     treeCount: 0,
     treeColor: 0x1a1024,
+  },
+  {
+    name: "界海之門",
+    x: 230,
+    z: -60,
+    r: 50,
+    hills: [
+      { x: 0, z: 8, r: 28, h: 9 },
+      { x: -18, z: -14, r: 16, h: 4 },
+      { x: 20, z: -10, r: 14, h: 4 },
+    ],
+    sand: 0xe8e8e0,
+    grass: 0x8ab8c8,
+    dark: 0x4a7a98,
+    treeCount: 12,
+    treeColor: 0x3a7a8a,
+  },
+  {
+    name: "港口鎮",
+    x: SECOND_SEA_X,
+    z: 0,
+    r: 55,
+    hills: [
+      { x: 0, z: 20, r: 30, h: 7 },
+      { x: -24, z: -4, r: 18, h: 4 },
+      { x: 26, z: 0, r: 16, h: 4.5 },
+    ],
+    sand: 0xe8d4a0,
+    grass: 0x7ab85c,
+    dark: 0x3d8b4d,
+    treeCount: 28,
+    treeColor: 0x3d8b4d,
   },
 ];
 
@@ -212,7 +256,62 @@ export function createWorld(): THREE.Group {
     pillar.castShadow = true;
     group.add(pillar);
   }
+
+  group.add(createPortTown());
   return group;
+}
+
+/** 港口鎮造景:南灘小鎮(房屋群)+ 伸入海中的木棧碼頭 */
+function createPortTown(): THREE.Group {
+  const town = new THREE.Group();
+  const cx = SECOND_SEA.x;
+
+  const houseSpots: Array<{ x: number; z: number; body: number; roof: number }> = [
+    { x: cx - 12, z: -26, body: 0xe8dcc0, roof: 0xc05a3a },
+    { x: cx + 12, z: -28, body: 0xd8c8a8, roof: 0x3a6a9a },
+    { x: cx - 20, z: -12, body: 0xe0d0b0, roof: 0x9a6a3a },
+    { x: cx + 22, z: -14, body: 0xe8dcc0, roof: 0x4a8a5a },
+    { x: cx, z: -18, body: 0xf0e4c8, roof: 0xb04848 },
+  ];
+  for (const spot of houseSpots) {
+    const house = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3, 3.6), toonMaterial(spot.body));
+    body.position.y = 1.5;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(3.4, 2, 4), toonMaterial(spot.roof));
+    roof.position.y = 3.9;
+    roof.rotation.y = Math.PI / 4;
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.5, 0.15), toonMaterial(0x6a4322));
+    door.position.set(0, 0.75, 1.85);
+    house.add(body, roof, door);
+    addOutlines(house);
+    house.traverse((child) => {
+      if (child instanceof THREE.Mesh) child.castShadow = true;
+    });
+    house.rotation.y = ((spot.x + spot.z) % 5) * 0.18;
+    house.position.set(spot.x, groundHeight(spot.x, spot.z), spot.z);
+    town.add(house);
+  }
+
+  // 木棧碼頭:從南灘伸向海面(船停在碼頭旁)
+  const dockX = cx + 6;
+  const plankMaterial = toonMaterial(0xa07848);
+  const postMaterial = toonMaterial(0x6a4322);
+  for (let i = 0; i < 8; i++) {
+    const z = -48 - i * 2.2;
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(3, 0.25, 2), plankMaterial);
+    plank.position.set(dockX, 0.85, z);
+    plank.castShadow = true;
+    town.add(plank);
+    if (i % 2 === 0) {
+      for (const side of [-1.4, 1.4]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.8, 8), postMaterial);
+        post.position.set(dockX + side, 0, z);
+        post.castShadow = true;
+        town.add(post);
+      }
+    }
+  }
+  return town;
 }
 
 function createIslandMesh(def: IslandDef): THREE.Group {

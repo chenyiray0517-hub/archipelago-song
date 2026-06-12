@@ -14,7 +14,7 @@
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # tsc 嚴格檢查 + vite build(兩者都過才算綠)
-npm run smoke    # Playwright 端到端煙霧測試 79 項(需先開 dev server,需本機 Chrome)
+npm run smoke    # Playwright 端到端煙霧測試 91 項(需先開 dev server,需本機 Chrome)
 ```
 
 ## 技術棧(定案,別改)
@@ -34,7 +34,7 @@ src/
 │   ├── toon.ts          # cel-shading 材質 + 描邊(所有新模型都要用 toonMaterial + addOutlines)
 │   └── fx.ts            # 打擊感:hit-stop 頓幀/鏡頭震動/粒子爆裂
 ├── world/
-│   ├── terrain.ts       # ★ ISLANDS 配置驅動多島地形;groundHeight 同時管視覺與碰撞
+│   ├── terrain.ts       # ★ ISLANDS 配置驅動多島地形;groundHeight 同時管視覺與碰撞;第二海(x>1100)靠海寶石往返
 │   ├── ocean.ts         # CPU 頂點波浪(振幅吃天氣倍率)
 │   └── sky.ts           # 日夜循環(6 分鐘/天)+ 天氣狀態機(晴/雨/風暴)+ 雨絲 + 閃電
 ├── entities/
@@ -76,7 +76,7 @@ smoke 測試靠它讀狀態與快轉(授予寶石、傳送、強制天氣)。新
 
 - 模型是程式組裝幾何體(無骨骼動畫);升級路線:glTF 資產 + AnimationMixer。
 - 音樂是 WebAudio 程式編曲;換錄音資產時只動 `audio.ts` 內部(TRACKS/scheduleBar)。
-- 效能:目前全場景常駐(38 隻敵人 + 五島),要擴更多島嶼時做分區載入。
+- 效能:目前全場景常駐(38 隻敵人 + 七島,含第二海港口鎮),要擴更多島嶼時做分區載入;海面網格只有一張,依玩家所在海域移動。
 - 未做:本地化、手把支援、打包上架(建議 itch.io 網頁版先行,Steam 走 Tauri)。
 - 詳細歷程與每輪驗證紀錄:`PROGRESS.md`(由新到舊);玩家視角功能清單:`README.md`。
 

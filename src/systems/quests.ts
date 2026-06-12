@@ -10,7 +10,8 @@ export type QuestId =
   | "vineHunt"
   | "emberHunt"
   | "frostHunt"
-  | "deepHunt";
+  | "deepHunt"
+  | "sea2";
 export type QuestState = "active" | "done";
 
 /** 果凍清理任務目標數 */
@@ -71,6 +72,11 @@ export class QuestLog {
   /** 記錄一次敵人擊殺(所有種類都計,供清剿任務查進度) */
   addKill(kind: string): void {
     this.huntKills[kind] = (this.huntKills[kind] ?? 0) + 1;
+  }
+
+  /** 該種類敵人的累計擊殺數(第二海解鎖的「敵人圖鑑」條件用) */
+  killsOf(kind: string): number {
+    return this.huntKills[kind] ?? 0;
   }
 
   /** 果凍清理進度(接取後擊殺數,封頂目標值) */

@@ -31,6 +31,8 @@ export interface SaveData {
   equipment?: { owned: string[]; equipped: Partial<Record<EquipSlot, string>> };
   /** 已啟用的重生石碑 id(依設置順序) */
   shrines?: string[];
+  /** 海寶石持有狀態(往返第一/第二海的重要道具) */
+  seaGems?: { first: boolean; second: boolean };
 }
 
 /** 寫入 localStorage(失敗靜默,遊戲不因存檔掛掉) */

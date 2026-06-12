@@ -96,6 +96,10 @@ export class Inventory {
   coins = 0;
   potions = 0;
   crystals: Record<CrystalSize, number> = { small: 0, medium: 0, large: 0 };
+  /** 第一海寶石(重要道具,使用後傳送回第一海・曙光嶼) */
+  firstSeaGem = false;
+  /** 第二海寶石(重要道具,使用後傳送至第二海・港口鎮) */
+  secondSeaGem = false;
 
   /**
    * 使用指定數量的經驗結晶,回傳注入的 EXP 總量。

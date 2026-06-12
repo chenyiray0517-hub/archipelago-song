@@ -815,7 +815,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 8 ? ok("任務 NPC 到位(共 8 位,外島各一)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 10 ? ok("任務 NPC 到位(共 10 位,含領航者與鎮長)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
@@ -867,6 +867,132 @@ huntAfter.coins === huntBefore.coins + 150 && huntAfter.medium === huntBefore.me
   : fail(`獎勵異常:${JSON.stringify({ huntBefore, huntAfter })}`);
 await page.screenshot({ path: "/tmp/archipelago-25-hunt.png" });
 
+// 41. 第二海解鎖:界海之門的領航者——條件不足時接取「跨越界海」並顯示試煉進度
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(230, 2, -93); // 界海之門南灘,領航者汐音旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const sea2First = await page.evaluate(() => ({
+  state: window.__game.quests.get("sea2"),
+  hasGem: window.__game.inventory.secondSeaGem,
+  hudText: document.getElementById("hud-quest-list")?.textContent ?? "",
+}));
+sea2First.state === "active" && !sea2First.hasGem
+  ? ok("領航者對話:條件不足,接取「跨越界海」未發寶石")
+  : fail(`跨越界海接取異常:${JSON.stringify(sea2First)}`);
+sea2First.hudText.includes("跨越界海")
+  ? ok(`HUD 顯示試煉進度(${sea2First.hudText.match(/跨越界海[^任]*/)?.[0] ?? ""})`)
+  : fail(`HUD 無跨越界海追蹤:${sea2First.hudText}`);
+await page.screenshot({ path: "/tmp/archipelago-26-gate.png" });
+
+// 42. 補滿三條件(六寶石已於前面測試授予)→ 再對話 → 獲得兩顆海寶石
+await page.evaluate(() => {
+  const g = window.__game;
+  const kinds = ["slime", "elite", "vine", "windGuardian", "ember", "earthGuardian", "frost", "frostGuardian", "deep", "voidGuardian", "voidLord"];
+  for (const kind of kinds) g.quests.addKill(kind); // 模擬每種敵人都擊敗過
+  g.player.stats.level = 35;
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const seaGems = await page.evaluate(() => ({
+  first: window.__game.inventory.firstSeaGem,
+  second: window.__game.inventory.secondSeaGem,
+  state: window.__game.quests.get("sea2"),
+}));
+seaGems.first && seaGems.second
+  ? ok("試煉通過:獲得第一海寶石 + 第二海寶石")
+  : fail(`海寶石未發放:${JSON.stringify(seaGems)}`);
+seaGems.state === "done" ? ok("「跨越界海」任務完成") : fail(`任務狀態:${seaGems.state}`);
+
+// 43. 背包:重要道具區顯示海寶石,且面板可用滾輪捲動
+await page.keyboard.press("Tab");
+await page.waitForTimeout(300);
+const bagSea = await page.evaluate(() => {
+  const bagEl = document.getElementById("bag");
+  const style = getComputedStyle(bagEl);
+  return {
+    seaButtons: bagEl.querySelectorAll("button[data-sea]").length,
+    hasSection: bagEl.innerHTML.includes("重要道具"),
+    scrollable: style.overflowY === "auto" && style.maxHeight !== "none",
+  };
+});
+bagSea.seaButtons === 2 && bagSea.hasSection
+  ? ok("背包「重要道具」區顯示兩顆海寶石")
+  : fail(`重要道具區異常:${JSON.stringify(bagSea)}`);
+bagSea.scrollable ? ok("背包面板可滾輪捲動(overflow-y)") : fail("背包不可捲動");
+await page.screenshot({ path: "/tmp/archipelago-27-seagems.png" });
+
+// 44. 使用第二海寶石 → 人與船一起傳送到港口鎮
+await page.click('button[data-sea="2"]');
+await page.waitForTimeout(500);
+const arrive = await page.evaluate(() => {
+  const g = window.__game;
+  const p = g.player.mesh.position;
+  const b = g.boat.mesh.position;
+  return { x: p.x, z: p.z, bx: b.x, bz: b.z, bagOpen: g.bag.isOpen, sailing: g.sailing };
+});
+arrive.x > 1500 && !arrive.sailing
+  ? ok(`傳送至第二海港口鎮(位置 ${arrive.x.toFixed(0)},${arrive.z.toFixed(0)})`)
+  : fail(`傳送異常:${JSON.stringify(arrive)}`);
+Math.hypot(arrive.bx - 2002, arrive.bz - -58) < 5
+  ? ok("船隻同行,停在港口鎮碼頭旁")
+  : fail(`船位異常:${arrive.bx.toFixed(0)},${arrive.bz.toFixed(0)}`);
+!arrive.bagOpen ? ok("傳送後背包自動關閉") : fail("背包未關閉");
+await page.screenshot({ path: "/tmp/archipelago-28-porttown.png" });
+
+// 45. 港口鎮鎮長對話
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(2000, 2, -38.5); // 鎮長波叔旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const mayorDialog = await page.evaluate(
+  () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+);
+mayorDialog ? ok("港口鎮鎮長對話開啟") : fail("鎮長對話未開啟");
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+
+// 46. 使用第一海寶石 → 回到第一海曙光嶼,船回泊點
+await page.keyboard.press("Tab");
+await page.waitForTimeout(300);
+await page.click('button[data-sea="1"]');
+await page.waitForTimeout(500);
+const goBack = await page.evaluate(() => {
+  const g = window.__game;
+  const p = g.player.mesh.position;
+  const b = g.boat.mesh.position;
+  return { x: p.x, z: p.z, bx: b.x, bz: b.z };
+});
+Math.hypot(goBack.x - 2.5, goBack.z - -52) < 3 && Math.hypot(goBack.bx - 4, goBack.bz - -63) < 5
+  ? ok(`回到第一海曙光嶼(位置 ${goBack.x.toFixed(0)},${goBack.z.toFixed(0)},船回泊點)`)
+  : fail(`返航異常:${JSON.stringify(goBack)}`);
+
 // 10. 存檔:手動觸發存檔後重新整理,等級與寶石持有應保留
 const beforeReload = await page.evaluate(() => {
   window.__game.doSave();
@@ -884,6 +1010,9 @@ const afterReload = await page.evaluate(() => ({
   def: window.__game.player.stats.def,
   shrineIds: window.__game.shrineIds,
   vineHunt: window.__game.quests.get("vineHunt"),
+  seaFirst: window.__game.inventory.firstSeaGem,
+  seaSecond: window.__game.inventory.secondSeaGem,
+  sea2: window.__game.quests.get("sea2"),
 }));
 afterReload.level === beforeReload.level
   ? ok(`重新整理後等級保留(Lv.${afterReload.level})`)
@@ -902,6 +1031,9 @@ afterReload.shrineIds.length === 2 && afterReload.shrineIds.includes("ember")
 afterReload.vineHunt === "done"
   ? ok("重新整理後清剿任務進度保留")
   : fail(`清剿任務未保留:${afterReload.vineHunt}`);
+afterReload.seaFirst && afterReload.seaSecond && afterReload.sea2 === "done"
+  ? ok("重新整理後海寶石與跨越界海進度保留")
+  : fail(`海寶石未保留:${JSON.stringify({ seaFirst: afterReload.seaFirst, seaSecond: afterReload.seaSecond, sea2: afterReload.sea2 })}`);
 
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");

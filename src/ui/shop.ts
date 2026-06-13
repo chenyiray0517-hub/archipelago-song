@@ -2,7 +2,7 @@ import type { Inventory } from "../systems/stats";
 import { EQUIPMENT, type EquipmentState } from "../systems/equipment";
 
 const SHOP_CSS = `
-#shop { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
+#shop { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; max-height: 86vh; overflow-y: auto; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
 #shop.show { display: block; }
 #shop h3 { margin: 0 0 4px; font-size: 18px; }
 #shop .coins { font-size: 13px; opacity: 0.85; margin-bottom: 12px; }

@@ -29,6 +29,14 @@ export const EQUIPMENT: EquipDef[] = [
   { id: "badge", name: "勇者徽章", slot: "trinket", desc: "攻擊 +5", price: 600, bonus: { atk: 5 } },
   { id: "locket", name: "生命墜飾", slot: "trinket", desc: "生命 +50", price: 500, bonus: { hp: 50 } },
   { id: "ring", name: "靈能戒指", slot: "trinket", desc: "靈力 +20", price: 500, bonus: { mp: 20 } },
+  // ── 頂階防具(六島通關後的終局成長)──
+  { id: "crown", name: "晶紋頭冠", slot: "head", desc: "防禦 +9、靈力 +15", price: 900, bonus: { def: 9, mp: 15 } },
+  { id: "scalemail", name: "龍鱗重甲", slot: "chest", desc: "防禦 +12、生命 +80", price: 1400, bonus: { def: 12, hp: 80 } },
+  { id: "windboots", name: "疾風長靴", slot: "boots", desc: "敏捷 +8、防禦 +4", price: 900, bonus: { agi: 8, def: 4 } },
+  // ── 複合飾品 ──
+  { id: "gauntlet", name: "猛擊護手", slot: "trinket", desc: "攻擊 +9、敏捷 +3", price: 1100, bonus: { atk: 9, agi: 3 } },
+  { id: "amulet", name: "潮汐護符", slot: "trinket", desc: "生命 +40、靈力 +30", price: 900, bonus: { hp: 40, mp: 30 } },
+  { id: "treepend", name: "世界樹墜飾", slot: "trinket", desc: "全能力 +3、生命 +30", price: 1600, bonus: { atk: 3, def: 3, hp: 30, mp: 15, agi: 3 } },
 ];
 
 export function equipDefOf(id: string): EquipDef | undefined {

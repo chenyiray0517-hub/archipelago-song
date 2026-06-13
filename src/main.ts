@@ -49,6 +49,9 @@ import {
   LIFE_MP_COST,
   lifeDamage,
   lifeLeech,
+  MAX_EQUIPPED_GEMS,
+  GEM_ORDER,
+  type GemKey,
 } from "./systems/gems";
 import {
   FruitBag,
@@ -64,6 +67,9 @@ import {
   vortexDamage,
   vortexRadius,
   vortexDuration,
+  MAX_EQUIPPED_FRUITS,
+  FRUIT_ORDER,
+  type FruitKey,
 } from "./systems/fruits";
 import { EquipmentState } from "./systems/equipment";
 import { QuestLog, JELLY_TARGET, HUNTS, type HuntId } from "./systems/quests";
@@ -839,22 +845,89 @@ function main(): void {
         "【任務】擊敗島心的靈脈守護者,取得翠生石!",
       ];
     }),
+    // 第二海・熔砂島:打怪委託(熔砂果凍)
+    makeHuntNpc({
+      name: "拓荒者沙吉",
+      x: 2168,
+      z: 178,
+      color: 0xc89850,
+      quest: "sandHunt",
+      title: "熱砂清剿",
+      enemyLabel: "熔砂果凍",
+      intro: [
+        "這片熱砂地我想開墾,可熔砂果凍多到沒法下鏟。",
+        "【任務】幫我清掉 4 隻熔砂果凍!",
+        "牠們耐熱又兇,小心腳下的岩漿坑。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["熱砂地總算能開墾了,謝謝你!", "島心的熔岩守護者就交給你了。"],
+    }),
+    // 第二海・珊瑚礁島:打怪委託(礁石果凍)
+    makeHuntNpc({
+      name: "潛水夫阿蚌",
+      x: 1812,
+      z: -130,
+      color: 0x3a9ab8,
+      quest: "reefHunt",
+      title: "礁石清剿",
+      enemyLabel: "礁石果凍",
+      intro: [
+        "我靠採珍珠過活,礁石果凍卻把礁區霸佔了。",
+        "【任務】幫我清掉 4 隻礁石果凍!",
+        "牠們會用水流衝撞,記得適時舉盾。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["礁區安全了,珍珠又能採了!", "祭司娜瑪說的碧波石,值得一試。"],
+    }),
+    // 第二海・靈脈島:打怪委託(孢子果凍)
+    makeHuntNpc({
+      name: "採集者藤吉",
+      x: 2142,
+      z: -200,
+      color: 0x6aa83a,
+      quest: "sporeHunt",
+      title: "孢子清剿",
+      enemyLabel: "孢子果凍",
+      intro: [
+        "靈脈的草藥很珍貴,但孢子果凍把它們啃光了。",
+        "【任務】幫我清掉 4 隻孢子果凍!",
+        "牠們行動敏捷,別讓牠們圍住你。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["草藥園恢復生機了,謝謝你!", "島心的靈脈守護者,就拜託你了。"],
+    }),
   ];
   for (const npc of npcs) scene.add(npc.mesh);
 
-  // 重生石碑:每島一座,F 設置為重生點(上限 MAX_ACTIVE_SHRINES,超過替換最早設置的)
+  // 重生石碑:每島一座,F 設置為重生點。第一海、第二海各自獨立,每海最多 MAX_ACTIVE_SHRINES 個
   const shrines: Shrine[] = SHRINE_DEFS.map((def) => new Shrine(def));
   for (const shrine of shrines) scene.add(shrine.mesh);
   const shrineActiveIds: string[] = [];
 
+  /** 某重生點 id 屬於哪片海域(依石碑座標) */
+  const seaOfShrine = (id: string): 1 | 2 => {
+    const s = shrines.find((sh) => sh.def.id === id);
+    return s ? seaOf(s.def.x) : 1;
+  };
+
   const activateShrine = (shrine: Shrine): void => {
-    let note = `(${shrineActiveIds.length + 1}/${MAX_ACTIVE_SHRINES})`;
-    if (shrineActiveIds.length >= MAX_ACTIVE_SHRINES) {
-      const oldestId = shrineActiveIds.shift();
+    const sea = seaOf(shrine.def.x);
+    // 同海域超過上限則替換該海最早設置的(跨海不互相影響)
+    const sameSeaIds = shrineActiveIds.filter((id) => seaOfShrine(id) === sea);
+    let note = `(本海 ${Math.min(sameSeaIds.length + 1, MAX_ACTIVE_SHRINES)}/${MAX_ACTIVE_SHRINES})`;
+    if (sameSeaIds.length >= MAX_ACTIVE_SHRINES) {
+      const oldestId = sameSeaIds[0];
+      shrineActiveIds.splice(shrineActiveIds.indexOf(oldestId), 1);
       const oldest = shrines.find((s) => s.def.id === oldestId);
       if (oldest) {
         oldest.setActive(false);
-        note = `(已替換【${oldest.def.island}】)`;
+        note = `(已替換本海【${oldest.def.island}】)`;
       }
     }
     shrineActiveIds.push(shrine.def.id);
@@ -890,10 +963,12 @@ function main(): void {
     hud.setDead(false);
   });
 
-  /** 顯示死亡畫面(海灘 + 已啟用重生點供選擇) */
+  /** 顯示死亡畫面(海灘 + 當前海域已啟用的重生點供選擇) */
   const showDeathScreen = (): void => {
     const options: { id: string; label: string }[] = [];
+    const sea = seaOf(player.mesh.position.x);
     for (const id of shrineActiveIds) {
+      if (seaOfShrine(id) !== sea) continue; // 只列當前海域的重生點
       const shrine = shrines.find((s) => s.def.id === id);
       if (shrine) options.push({ id, label: `在【${shrine.def.island}】重生點重生` });
     }
@@ -905,6 +980,33 @@ function main(): void {
     player.stats.equip = equipment.totalBonus();
     player.hp = Math.min(player.hp, player.stats.maxHP);
     player.mp = Math.min(player.mp, player.stats.maxMP);
+  };
+
+  /** 依出戰中的寶石同步角色被動(風語/霜語):未出戰即失效 */
+  const syncGemPassives = (): void => {
+    player.hasWindGem = gems.isEquipped("wind");
+    player.hasFrostGem = gems.isEquipped("frost");
+    player.windLevel = gems.levels.wind;
+  };
+
+  /** 取得寶石:有空位則自動出戰,滿格則留待玩家手動更換;並同步被動 */
+  const acquireGem = (key: GemKey): void => {
+    if (gems.hasFreeSlot()) gems.equip(key);
+    syncGemPassives();
+  };
+
+  /** 取得果實:有空位則自動出戰,滿格則留待玩家手動更換 */
+  const acquireFruit = (key: FruitKey): void => {
+    if (fruits.hasFreeSlot()) fruits.equip(key);
+  };
+
+  /** 背包更換出戰寶石/果實後:重算被動、刷新 HUD 技能列、存檔 */
+  const onLoadoutChange = (): void => {
+    syncGemPassives();
+    hud.setGems(gems);
+    hud.setFruits(fruits);
+    audio.sfx("ui");
+    doSave();
   };
 
   const bag = new BagPanel(
@@ -939,11 +1041,15 @@ function main(): void {
     },
     (sea) => travelTo(sea),
     () =>
-      shrineActiveIds.map((id) => ({
-        id,
-        island: shrines.find((s) => s.def.id === id)?.def.island ?? id,
-      })),
+      // 背包傳送清單只列出「當前所在海域」的重生點(跨海要用海寶石)
+      shrineActiveIds
+        .filter((id) => seaOfShrine(id) === seaOf(player.mesh.position.x))
+        .map((id) => ({
+          id,
+          island: shrines.find((s) => s.def.id === id)?.def.island ?? id,
+        })),
     (id) => teleportToShrine(id),
+    onLoadoutChange,
   );
 
   /** 重生點傳送:背包傳送區選擇已啟用的石碑,人到碑前、船到該島近岸 */
@@ -1046,6 +1152,8 @@ function main(): void {
       gravityOwned: fruits.gravityOwned,
       levels: { ...fruits.levels },
     },
+    gemsEquipped: [...gems.equipped],
+    fruitsEquipped: [...fruits.equipped],
   });
   const doSave = (): void => saveGame(collectSave());
   setInterval(doSave, 12000);
@@ -1074,6 +1182,13 @@ function main(): void {
       fruits.gravityOwned = saved.fruits.gravityOwned;
       Object.assign(fruits.levels, saved.fruits.levels);
     }
+    // 出戰配置:有存檔則沿用(過濾掉未持有的);舊檔無此欄位 → 依標準序自動裝備前 N 顆持有的
+    gems.equipped = (saved.gemsEquipped ?? GEM_ORDER)
+      .filter((k) => gems.ownedOf(k))
+      .slice(0, MAX_EQUIPPED_GEMS);
+    fruits.equipped = (saved.fruitsEquipped ?? FRUIT_ORDER)
+      .filter((k) => fruits.ownedOf(k))
+      .slice(0, MAX_EQUIPPED_FRUITS);
     voidDefeated = saved.voidDefeated ?? false;
     inventory.firstSeaGem = saved.seaGems?.first ?? false;
     inventory.secondSeaGem = saved.seaGems?.second ?? false;
@@ -1082,15 +1197,17 @@ function main(): void {
     if (saved.equipment) equipment.restore(saved.equipment);
     for (const id of saved.shrines ?? []) {
       const shrine = shrines.find((s) => s.def.id === id);
-      if (shrine && !shrine.active && shrineActiveIds.length < MAX_ACTIVE_SHRINES) {
+      if (!shrine || shrine.active) continue;
+      // 每海各自上限:該海已達上限則略過(舊檔仍相容)
+      const sea = seaOf(shrine.def.x);
+      const sameSeaActive = shrineActiveIds.filter((aid) => seaOfShrine(aid) === sea).length;
+      if (sameSeaActive < MAX_ACTIVE_SHRINES) {
         shrine.setActive(true);
         shrineActiveIds.push(id);
       }
     }
     applyEquip();
-    player.hasWindGem = gems.windOwned;
-    player.hasFrostGem = gems.frostOwned;
-    player.windLevel = gems.levels.wind;
+    syncGemPassives();
     hud.setGems(gems);
     hud.setFruits(fruits);
     player.hp = player.stats.maxHP;
@@ -1353,7 +1470,7 @@ function main(): void {
     const landingSpot = sailing ? boat.findLandingSpot() : null;
     const nearCity =
       sailing &&
-      gems.tideOwned &&
+      gems.isEquipped("tide") &&
       Math.hypot(boat.mesh.position.x - SUNKEN_CITY.x, boat.mesh.position.z - SUNKEN_CITY.z) <
         SUNKEN_CITY.r;
 
@@ -1495,7 +1612,7 @@ function main(): void {
       // 焰心石:E 施放火焰斬(消耗靈力的火焰劍氣,射程較短)
       if (
         input.wasPressed("KeyE") &&
-        gems.flameOwned &&
+        gems.isEquipped("flame") &&
         !player.blocking &&
         player.mp >= FLAME_MP_COST
       ) {
@@ -1527,7 +1644,7 @@ function main(): void {
       // 地殼石:C 施放地震波(360° 範圍重擊 + 大擊退)
       if (
         input.wasPressed("KeyC") &&
-        gems.earthOwned &&
+        gems.isEquipped("earth") &&
         !player.blocking &&
         player.mp >= QUAKE_MP_COST
       ) {
@@ -1549,7 +1666,7 @@ function main(): void {
       // 霜語晶:V 射出冰箭(凍結敵人)
       if (
         input.wasPressed("KeyV") &&
-        gems.frostOwned &&
+        gems.isEquipped("frost") &&
         !player.blocking &&
         player.mp >= ICE_MP_COST
       ) {
@@ -1566,7 +1683,7 @@ function main(): void {
       }
 
       // 虛空石:X 短距離瞬移(朝面向位移,失敗時逐步縮短距離)
-      if (input.wasPressed("KeyX") && gems.voidOwned && player.mp >= BLINK_MP_COST) {
+      if (input.wasPressed("KeyX") && gems.isEquipped("void") && player.mp >= BLINK_MP_COST) {
         const dirX = Math.sin(player.facing);
         const dirZ = Math.cos(player.facing);
         const origin = player.mesh.position.clone();
@@ -1575,7 +1692,7 @@ function main(): void {
           const tz = origin.z + dirZ * dist;
           const ok =
             isWalkable(tx, tz) ||
-            (gems.frostOwned && player.mp > BLINK_MP_COST) ||
+            (gems.isEquipped("frost") && player.mp > BLINK_MP_COST) ||
             (diving && Math.hypot(tx - SUNKEN_CITY.x, tz - SUNKEN_CITY.z) < SUNKEN_CITY.r);
           if (ok) {
             player.mp -= BLINK_MP_COST;
@@ -1591,7 +1708,7 @@ function main(): void {
       // 溶岩石:G 熔岩噴發(向前噴出岩漿衝擊波,命中附加灼燒 DoT)
       if (
         input.wasPressed("KeyG") &&
-        gems.lavaOwned &&
+        gems.isEquipped("lava") &&
         !player.blocking &&
         player.mp >= LAVA_MP_COST
       ) {
@@ -1614,7 +1731,7 @@ function main(): void {
       // 碧波石:B 碧波震盪(自身周圍範圍傷害 + 凍結所有命中的敵人)
       if (
         input.wasPressed("KeyB") &&
-        gems.aquaOwned &&
+        gems.isEquipped("aqua") &&
         !player.blocking &&
         player.mp >= AQUA_MP_COST
       ) {
@@ -1638,7 +1755,7 @@ function main(): void {
       // 翠生石:H 生命汲取(向前噴出衝擊波,命中回復自身生命)
       if (
         input.wasPressed("KeyH") &&
-        gems.lifeOwned &&
+        gems.isEquipped("life") &&
         !player.blocking &&
         player.mp >= LIFE_MP_COST
       ) {
@@ -1657,7 +1774,7 @@ function main(): void {
       // 雷光果:Z 連鎖閃電(索敵最近敵人,向鄰近敵人跳躍,傷害遞減 + 麻痺)
       if (
         input.wasPressed("KeyZ") &&
-        fruits.thunderOwned &&
+        fruits.isEquipped("thunder") &&
         !player.blocking &&
         player.mp >= THUNDER_MP_COST
       ) {
@@ -1725,7 +1842,7 @@ function main(): void {
       // 引力果:T 引力漩渦(在面前生成漩渦,吸引聚怪 + 持續傷害)
       if (
         input.wasPressed("KeyT") &&
-        fruits.gravityOwned &&
+        fruits.isEquipped("gravity") &&
         !player.blocking &&
         player.mp >= GRAVITY_MP_COST
       ) {
@@ -1771,7 +1888,7 @@ function main(): void {
       !sailing &&
       !diving &&
       !player.isDead &&
-      gems.frostOwned &&
+      gems.isEquipped("frost") &&
       !isWalkable(player.mesh.position.x, player.mesh.position.z);
     iceDisc.visible = onIce;
     if (onIce) {
@@ -1949,6 +2066,7 @@ function main(): void {
         } else if (pickup.kind === "gem-flame") {
           feed.push("🔥 獲得靈紋寶石【焰心石】");
           gems.flameOwned = true;
+          acquireGem("flame");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【焰心石】!按 E 施放火焰斬");
@@ -1956,7 +2074,7 @@ function main(): void {
         } else if (pickup.kind === "gem-wind") {
           feed.push("🌪️ 獲得靈紋寶石【風語石】");
           gems.windOwned = true;
-          player.hasWindGem = true;
+          acquireGem("wind");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【風語石】!二段跳 + 按住空白鍵滑翔");
@@ -1964,6 +2082,7 @@ function main(): void {
         } else if (pickup.kind === "gem-earth") {
           feed.push("🪨 獲得靈紋寶石【地殼石】");
           gems.earthOwned = true;
+          acquireGem("earth");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【地殼石】!按 C 施放地震波");
@@ -1971,7 +2090,7 @@ function main(): void {
         } else if (pickup.kind === "gem-frost") {
           feed.push("❄️ 獲得靈紋寶石【霜語晶】");
           gems.frostOwned = true;
-          player.hasFrostGem = true;
+          acquireGem("frost");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【霜語晶】!V 冰箭,還能走在海面上");
@@ -1979,6 +2098,7 @@ function main(): void {
         } else if (pickup.kind === "gem-tide") {
           feed.push("🌊 獲得靈紋寶石【潮汐石】");
           gems.tideOwned = true;
+          acquireGem("tide");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【潮汐石】!可以潛入北方的沉沒古城了");
@@ -1986,6 +2106,7 @@ function main(): void {
         } else if (pickup.kind === "gem-void") {
           feed.push("🌀 獲得靈紋寶石【虛空石】");
           gems.voidOwned = true;
+          acquireGem("void");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【虛空石】!按 X 短距離瞬移");
@@ -1993,6 +2114,7 @@ function main(): void {
         } else if (pickup.kind === "gem-lava") {
           feed.push("🌋 獲得靈紋寶石【溶岩石】");
           gems.lavaOwned = true;
+          acquireGem("lava");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【溶岩石】!按 G 噴發岩漿並點燃敵人");
@@ -2000,6 +2122,7 @@ function main(): void {
         } else if (pickup.kind === "gem-aqua") {
           feed.push("💧 獲得靈紋寶石【碧波石】");
           gems.aquaOwned = true;
+          acquireGem("aqua");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【碧波石】!按 B 震盪碧波凍結周身敵人");
@@ -2007,6 +2130,7 @@ function main(): void {
         } else if (pickup.kind === "gem-life") {
           feed.push("🌿 獲得靈紋寶石【翠生石】");
           gems.lifeOwned = true;
+          acquireGem("life");
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【翠生石】!按 H 生命汲取,傷敵回血");
@@ -2014,6 +2138,7 @@ function main(): void {
         } else if (pickup.kind === "fruit-thunder") {
           feed.push("⚡ 獲得靈樹果實【雷光果】");
           fruits.thunderOwned = true;
+          acquireFruit("thunder");
           thunderFruit = null;
           hud.setFruits(fruits);
           audio.sfx("gem");
@@ -2022,6 +2147,7 @@ function main(): void {
         } else if (pickup.kind === "fruit-gravity") {
           feed.push("🌀 獲得靈樹果實【引力果】");
           fruits.gravityOwned = true;
+          acquireFruit("gravity");
           hud.setFruits(fruits);
           audio.sfx("gem");
           hud.showToast("獲得靈樹果實【引力果】!按 T 生成引力漩渦聚怪");
@@ -2126,6 +2252,9 @@ function main(): void {
       { id: "emberHunt", title: "餘燼清剿", npc: "礦工岩叔" },
       { id: "frostHunt", title: "霜寒清剿", npc: "嚮導阿凜" },
       { id: "deepHunt", title: "深海清剿", npc: "觀星者星嵐" },
+      { id: "sandHunt", title: "熱砂清剿", npc: "拓荒者沙吉" },
+      { id: "reefHunt", title: "礁石清剿", npc: "潛水夫阿蚌" },
+      { id: "sporeHunt", title: "孢子清剿", npc: "採集者藤吉" },
     ];
     for (const track of huntTracks) {
       if (quests.get(track.id) !== "active") continue;

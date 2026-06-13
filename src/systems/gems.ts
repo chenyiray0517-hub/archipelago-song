@@ -26,6 +26,23 @@ export const LIFE_MP_COST = 14;
 /** 可升階的寶石(潮汐石為被動解鎖,不升階) */
 export type UpgradableGem = "flame" | "wind" | "earth" | "frost" | "void" | "lava" | "aqua" | "life";
 
+/** 所有靈紋寶石 key(含被動的風語石/潮汐石,皆佔出戰格) */
+export type GemKey = "flame" | "wind" | "earth" | "frost" | "tide" | "void" | "lava" | "aqua" | "life";
+/** 寶石出戰格上限:同時只能裝備這麼多顆,唯有出戰中的寶石技能/被動才生效 */
+export const MAX_EQUIPPED_GEMS = 4;
+/** 寶石標準排序(背包盤顯示、HUD、舊存檔遷移預設裝備皆依此序) */
+export const GEM_ORDER: GemKey[] = [
+  "flame",
+  "wind",
+  "earth",
+  "frost",
+  "tide",
+  "void",
+  "lava",
+  "aqua",
+  "life",
+];
+
 /** 升階費用:1→2 與 2→3(貝拉幣) */
 export const GEM_UPGRADE_COSTS = [400, 900];
 export const GEM_MAX_LEVEL = 3;
@@ -127,4 +144,44 @@ export class GemBag {
   lifeOwned = false;
   /** 各寶石升階等級(1–3;持有後才有意義) */
   levels: Record<UpgradableGem, number> = { flame: 1, wind: 1, earth: 1, frost: 1, void: 1, lava: 1, aqua: 1, life: 1 };
+  /** 已出戰(裝備)的寶石,依裝備順序;上限 MAX_EQUIPPED_GEMS。只有出戰中的寶石技能/被動才生效 */
+  equipped: GemKey[] = [];
+
+  /** 是否持有指定寶石 */
+  ownedOf(key: GemKey): boolean {
+    switch (key) {
+      case "flame": return this.flameOwned;
+      case "wind": return this.windOwned;
+      case "earth": return this.earthOwned;
+      case "frost": return this.frostOwned;
+      case "tide": return this.tideOwned;
+      case "void": return this.voidOwned;
+      case "lava": return this.lavaOwned;
+      case "aqua": return this.aquaOwned;
+      case "life": return this.lifeOwned;
+      default: return false;
+    }
+  }
+
+  /** 是否已出戰 */
+  isEquipped(key: GemKey): boolean {
+    return this.equipped.includes(key);
+  }
+
+  /** 出戰格是否還有空位 */
+  hasFreeSlot(): boolean {
+    return this.equipped.length < MAX_EQUIPPED_GEMS;
+  }
+
+  /** 裝備出戰(需已持有、未裝備且尚有空位);成功回傳 true */
+  equip(key: GemKey): boolean {
+    if (!this.ownedOf(key) || this.isEquipped(key) || !this.hasFreeSlot()) return false;
+    this.equipped.push(key);
+    return true;
+  }
+
+  /** 卸下出戰 */
+  unequip(key: GemKey): void {
+    this.equipped = this.equipped.filter((k) => k !== key);
+  }
 }

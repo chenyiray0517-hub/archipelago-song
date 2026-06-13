@@ -1,7 +1,7 @@
 import type { Attributes, CrystalSize } from "./stats";
 import type { QuestSave } from "./quests";
-import type { UpgradableGem } from "./gems";
-import type { UpgradableFruit } from "./fruits";
+import type { UpgradableGem, GemKey } from "./gems";
+import type { UpgradableFruit, FruitKey } from "./fruits";
 import type { EquipSlot } from "./equipment";
 
 const SAVE_KEY = "archipelago-save-v1";
@@ -46,6 +46,10 @@ export interface SaveData {
     gravityOwned: boolean;
     levels: Record<UpgradableFruit, number>;
   };
+  /** 出戰中的靈紋寶石(上限 4;舊檔無此欄位時依持有順序遷移) */
+  gemsEquipped?: GemKey[];
+  /** 出戰中的靈樹果實(上限 2;舊檔無此欄位時依持有順序遷移) */
+  fruitsEquipped?: FruitKey[];
 }
 
 /** 寫入 localStorage(失敗靜默,遊戲不因存檔掛掉) */

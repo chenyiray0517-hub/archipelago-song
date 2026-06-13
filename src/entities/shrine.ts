@@ -21,11 +21,17 @@ export interface ShrineDef {
 
 /** 每座島一座重生石碑(位置避開 NPC 對話圈與熔岩區) */
 export const SHRINE_DEFS: ShrineDef[] = [
+  // 第一海
   { id: "dawn", island: "曙光嶼", x: -9, z: -44, boat: { x: 4, z: -63 } },
   { id: "verdant", island: "翠風林島", x: 150, z: 64, boat: { x: 150, z: 48 } },
   { id: "ember", island: "燼岩火山島", x: -143, z: 74, boat: { x: -150, z: 62 } },
   { id: "frost", island: "霜雪峰島", x: 60, z: -210, boat: { x: 60, z: -230 } },
   { id: "void", island: "虛空之心", x: 0, z: 278, boat: { x: 0, z: 264 } },
+  // 第二海(x > 1100;啟用上限與背包傳送皆與第一海各自獨立)
+  { id: "port", island: "港口鎮", x: 1988, z: 14, boat: { x: 2006, z: -58 } },
+  { id: "desert", island: "熔砂島", x: 2178, z: 130, boat: { x: 2200, z: 98 } },
+  { id: "coral", island: "珊瑚礁島", x: 1812, z: -92, boat: { x: 1790, z: -54 } },
+  { id: "spring", island: "靈脈島", x: 2142, z: -162, boat: { x: 2120, z: -124 } },
 ];
 
 /**

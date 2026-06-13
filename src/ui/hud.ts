@@ -1,5 +1,7 @@
 import type { Player } from "../entities/player";
 import type { Inventory } from "../systems/stats";
+import type { GemBag } from "../systems/gems";
+import type { FruitBag } from "../systems/fruits";
 
 const HUD_CSS = `
 #hud { position: fixed; inset: 0; pointer-events: none; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #fff; }
@@ -104,38 +106,28 @@ export class Hud {
     this.byId("hud-potion").textContent = String(inventory.potions);
   }
 
-  /** 更新寶石指示列(任一持有才顯示) */
-  setGems(gems: {
-    flameOwned: boolean;
-    windOwned: boolean;
-    earthOwned: boolean;
-    frostOwned: boolean;
-    tideOwned: boolean;
-    voidOwned: boolean;
-    lavaOwned: boolean;
-    aquaOwned: boolean;
-    lifeOwned: boolean;
-  }): void {
+  /** 更新寶石技能列(只顯示「出戰中」的寶石,未出戰即不生效也不列出) */
+  setGems(gems: GemBag): void {
     const parts: string[] = [];
-    if (gems.flameOwned) parts.push("🔥 焰心石｜E 火焰斬(10 靈力)");
-    if (gems.windOwned) parts.push("🌪️ 風語石｜二段跳/按住空白鍵滑翔");
-    if (gems.earthOwned) parts.push("🪨 地殼石｜C 地震波(15 靈力)");
-    if (gems.frostOwned) parts.push("❄️ 霜語晶｜V 冰箭(12 靈力)/海上行走耗靈力");
-    if (gems.tideOwned) parts.push("🌊 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)");
-    if (gems.voidOwned) parts.push("🌀 虛空石｜X 瞬移(8 靈力)");
-    if (gems.lavaOwned) parts.push("🌋 溶岩石｜G 熔岩噴發(14 靈力,灼燒)");
-    if (gems.aquaOwned) parts.push("💧 碧波石｜B 碧波震盪(16 靈力,凍結周圍)");
-    if (gems.lifeOwned) parts.push("🌿 翠生石｜H 生命汲取(14 靈力,吸血)");
+    if (gems.isEquipped("flame")) parts.push("🔥 焰心石｜E 火焰斬(10 靈力)");
+    if (gems.isEquipped("wind")) parts.push("🌪️ 風語石｜二段跳/按住空白鍵滑翔");
+    if (gems.isEquipped("earth")) parts.push("🪨 地殼石｜C 地震波(15 靈力)");
+    if (gems.isEquipped("frost")) parts.push("❄️ 霜語晶｜V 冰箭(12 靈力)/海上行走耗靈力");
+    if (gems.isEquipped("tide")) parts.push("🌊 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)");
+    if (gems.isEquipped("void")) parts.push("🌀 虛空石｜X 瞬移(8 靈力)");
+    if (gems.isEquipped("lava")) parts.push("🌋 溶岩石｜G 熔岩噴發(14 靈力,灼燒)");
+    if (gems.isEquipped("aqua")) parts.push("💧 碧波石｜B 碧波震盪(16 靈力,凍結周圍)");
+    if (gems.isEquipped("life")) parts.push("🌿 翠生石｜H 生命汲取(14 靈力,吸血)");
     const el = this.byId("hud-gem");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");
   }
 
-  /** 更新靈樹果實技能提示列(雷光果/引力果) */
-  setFruits(fruits: { thunderOwned: boolean; gravityOwned: boolean }): void {
+  /** 更新靈樹果實技能列(只顯示出戰中的果實) */
+  setFruits(fruits: FruitBag): void {
     const parts: string[] = [];
-    if (fruits.thunderOwned) parts.push("⚡ 雷光果｜Z 連鎖閃電(16 靈力,麻痺)");
-    if (fruits.gravityOwned) parts.push("🌀 引力果｜T 引力漩渦(18 靈力,聚怪)");
+    if (fruits.isEquipped("thunder")) parts.push("⚡ 雷光果｜Z 連鎖閃電(16 靈力,麻痺)");
+    if (fruits.isEquipped("gravity")) parts.push("🌀 引力果｜T 引力漩渦(18 靈力,聚怪)");
     const el = this.byId("hud-fruit");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");

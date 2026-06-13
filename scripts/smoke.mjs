@@ -195,6 +195,7 @@ await page.screenshot({ path: "/tmp/archipelago-5-skills.png" });
 // 8. 焰心石火焰斬:授予寶石 → E 施放 → 靈力扣除 + 火焰劍氣生成
 const flameResult = await page.evaluate(() => {
   window.__game.gems.flameOwned = true;
+  window.__game.gems.equipped = ["flame"]; // 出戰才生效
   return window.__game.player.mp;
 });
 await page.keyboard.press("e");
@@ -396,6 +397,7 @@ await page.screenshot({ path: "/tmp/archipelago-11-volcano.png" });
 // 19. 地殼石地震波:授予寶石 → C 施放 → 靈力扣除
 const mpBeforeQuake = await page.evaluate(() => {
   window.__game.gems.earthOwned = true;
+  window.__game.gems.equipped = ["earth"]; // 出戰才生效
   const p = window.__game.player;
   p.mesh.position.set(-150, 5, 95); // 離開熔岩區
   p.mp = p.stats.maxMP;
@@ -453,6 +455,7 @@ await page.screenshot({ path: "/tmp/archipelago-14-snow.png" });
 // 22. 霜語晶冰箭:V 施放 → 靈力扣除 + 冰箭生成
 const mpBeforeIce = await page.evaluate(() => {
   window.__game.gems.frostOwned = true;
+  window.__game.gems.equipped = ["frost"]; // 出戰才生效(冰箭 + 冰面渡水都吃此判定)
   window.__game.player.hasFrostGem = true;
   const p = window.__game.player;
   p.mp = p.stats.maxMP;
@@ -532,6 +535,7 @@ await page.screenshot({ path: "/tmp/archipelago-15-dive.png" });
 // 26. 虛空石瞬移:授予寶石 → X → 位置位移 + 靈力扣除
 const blinkBefore = await page.evaluate(() => {
   window.__game.gems.voidOwned = true;
+  window.__game.gems.equipped = ["void"]; // 出戰才生效
   const p = window.__game.player;
   p.mp = p.stats.maxMP;
   return { x: p.mesh.position.x, z: p.mesh.position.z, mp: p.mp };
@@ -748,7 +752,7 @@ dayState.mode === "day" && !dayState.rain
 
 // 38. 重生點:每島一座石碑;F 設置(上限 2,第三座替換最早的)
 const shrineCount = await page.evaluate(() => window.__game.shrines.length);
-shrineCount === 5 ? ok("每座島各一座重生石碑(共 5 座)") : fail(`石碑數量異常:${shrineCount}`);
+shrineCount === 9 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 4,共 9 座)") : fail(`石碑數量異常:${shrineCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(-9, 1, -46); // 曙光嶼石碑旁
@@ -815,7 +819,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 12 ? ok("任務 NPC 到位(共 12 位,含領航者、鎮長與兩島祭司/守林人)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 15 ? ok("任務 NPC 到位(共 15 位,含領航者、鎮長、兩島祭司/守林人與第二海三位委託人)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
@@ -1000,6 +1004,7 @@ desertIsland.sand === 5 && desertIsland.hasGuardian && desertIsland.guardianY > 
 const lavaMpBefore = await page.evaluate(() => {
   const g = window.__game;
   g.gems.lavaOwned = true;
+  g.gems.equipped = ["lava"]; // 出戰才生效
   g.player.mp = g.player.stats.maxMP;
   return g.player.mp;
 });
@@ -1083,6 +1088,7 @@ sea2Islands.spore === 5 && sea2Islands.lifeY > 0.5
 const aquaBefore = await page.evaluate(() => {
   const g = window.__game;
   g.gems.aquaOwned = true;
+  g.gems.equipped = ["aqua"]; // 出戰才生效
   g.player.mp = g.player.stats.maxMP;
   g.player.mesh.position.set(1790, 14, -110);
   const reefs = g.enemies.filter((e) => e.kind === "reef").slice(0, 3);
@@ -1113,6 +1119,7 @@ await page.screenshot({ path: "/tmp/archipelago-33-aqua.png" });
 const lifeBefore = await page.evaluate(() => {
   const g = window.__game;
   g.gems.lifeOwned = true;
+  g.gems.equipped = ["life"]; // 出戰才生效
   g.player.mp = g.player.stats.maxMP;
   g.player.hp = 30;
   g.player.facing = 0; // 面向 +z
@@ -1196,6 +1203,119 @@ const lifeQuestDone = await page.evaluate(() => ({
 lifeQuestDone.state === "done" && lifeQuestDone.coins >= coinsBeforeLife + 700
   ? ok(`「靈脈的搏動」完成(獲得 ${lifeQuestDone.coins - coinsBeforeLife} 貝拉幣)`)
   : fail(`靈脈任務未完成:${JSON.stringify(lifeQuestDone)}`);
+
+// 45m. 第二海重生石碑:四座就位;在第二海設置走「每海上限 2」且與第一海獨立
+const SEA2_SHRINES = ["port", "desert", "coral", "spring"];
+const sea2ShrineDefs = await page.evaluate(
+  () => window.__game.shrines.filter((s) => s.def.x > 1100).map((s) => s.def.id),
+);
+sea2ShrineDefs.length === 4 && ["port", "desert", "coral", "spring"].every((id) => sea2ShrineDefs.includes(id))
+  ? ok(`第二海四座重生石碑就位(${sea2ShrineDefs.join("/")})`)
+  : fail(`第二海石碑異常:${JSON.stringify(sea2ShrineDefs)}`);
+
+// 依序設置 3 座(port → desert → coral),港口鎮應被替換(每海上限 2)
+const setShrineAt = async (x, z) => {
+  await page.evaluate(([px, pz]) => window.__game.player.mesh.position.set(px, 14, pz), [x, z]);
+  await page.waitForTimeout(300);
+  await page.keyboard.press("f");
+  await page.waitForTimeout(250);
+};
+await setShrineAt(1988, 14); // 港口鎮
+await setShrineAt(2178, 130); // 熔砂島
+await setShrineAt(1812, -92); // 珊瑚礁島(此時應替換掉最早的港口鎮)
+const shrineState = await page.evaluate(() => {
+  const sea2set = ["port", "desert", "coral", "spring"];
+  const ids = window.__game.shrineIds;
+  return {
+    sea2: ids.filter((id) => sea2set.includes(id)),
+    sea1: ids.filter((id) => !sea2set.includes(id)),
+  };
+});
+shrineState.sea2.length === 2 &&
+shrineState.sea2.includes("desert") &&
+shrineState.sea2.includes("coral") &&
+!shrineState.sea2.includes("port")
+  ? ok(`第二海重生點每海上限 2 生效(${shrineState.sea2.join("+")},港口鎮被替換)`)
+  : fail(`第二海上限異常:${JSON.stringify(shrineState)}`);
+shrineState.sea1.length >= 1 && shrineState.sea1.includes("ember")
+  ? ok(`第一海重生點不受第二海設置影響(${shrineState.sea1.join("+")})`)
+  : fail(`第一海重生點異常:${JSON.stringify(shrineState)}`);
+
+// 背包傳送清單:身處第二海只列第二海的重生點
+await page.keyboard.press("Tab");
+await page.waitForTimeout(300);
+await page.click("#bag button[data-tp-open]");
+await page.waitForTimeout(200);
+const sea2TpList = await page.evaluate(() =>
+  [...document.querySelectorAll("#bag button[data-tp]")].map((b) => b.dataset.tp),
+);
+await page.keyboard.press("Tab");
+await page.waitForTimeout(200);
+sea2TpList.length === 2 && sea2TpList.includes("desert") && sea2TpList.includes("coral")
+  ? ok(`第二海背包傳送清單只列第二海重生點(${sea2TpList.join("+")})`)
+  : fail(`背包分海過濾異常:${JSON.stringify(sea2TpList)}`);
+
+// 45n. 第二海打怪委託:珊瑚礁島「礁石清剿」接取 → 模擬擊殺 → 回報領獎
+await page.evaluate(() => window.__game.player.mesh.position.set(1812, 12, -130)); // 潛水夫阿蚌旁
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const reefAccepted = await page.evaluate(() => window.__game.quests.get("reefHunt"));
+const reefCoinsBefore = await page.evaluate(() => {
+  for (let i = 0; i < 4; i++) window.__game.quests.addKill("reef"); // 模擬擊殺 4 隻
+  return window.__game.inventory.coins;
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const reefDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("reefHunt"),
+  coins: window.__game.inventory.coins,
+}));
+reefAccepted === "active" && reefDone.state === "done" && reefDone.coins >= reefCoinsBefore + 500
+  ? ok(`第二海委託「礁石清剿」可接取並完成(獲得 ${reefDone.coins - reefCoinsBefore} 貝拉幣)`)
+  : fail(`礁石清剿異常:${JSON.stringify({ reefAccepted, reefDone })}`);
+
+// 45l. 出戰配置上限:9 顆寶石只能同時裝備 4 顆,第 5 顆被拒
+const capTest = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.equipped = [];
+  const tryEquip = ["flame", "earth", "frost", "void", "lava"].map((k) => g.gems.equip(k));
+  return { count: g.gems.equipped.length, fifthRejected: tryEquip[4] === false };
+});
+capTest.count === 4 && capTest.fifthRejected
+  ? ok("靈紋寶石出戰上限 4 生效(第 5 顆裝備被拒)")
+  : fail(`出戰上限異常:${JSON.stringify(capTest)}`);
+
+// 未出戰的寶石技能不生效:卸下焰心石後按 E 不應消耗靈力
+const offBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.equipped = ["earth", "frost", "void", "lava"]; // 不含 flame
+  g.player.mp = g.player.stats.maxMP;
+  g.player.mesh.position.set(0, 1, 0);
+  return g.player.mp;
+});
+await page.keyboard.press("e");
+await page.waitForTimeout(120);
+const offAfter = await page.evaluate(() => window.__game.player.mp);
+offAfter >= offBefore - 1
+  ? ok("未出戰寶石技能失效(按 E 未消耗靈力)")
+  : fail(`未出戰寶石仍生效:靈力 ${offBefore} → ${offAfter}`);
 
 // 46. 使用第一海寶石 → 回到第一海曙光嶼,船回泊點
 await page.keyboard.press("Tab");
@@ -1303,6 +1423,7 @@ thunderAfter.stunned >= 1
 const gravBefore = await page.evaluate(() => {
   const g = window.__game;
   g.fruits.gravityOwned = true;
+  g.fruits.equip("gravity"); // 出戰才生效(雷光果已於拾取時自動出戰,引力果補上)
   g.player.mp = g.player.stats.maxMP;
   g.player.facing = 0; // 面向 +z → 漩渦生成於玩家前方 8(中心 60,-162)
   g.player.mesh.position.set(60, 30, -170);
@@ -1352,7 +1473,12 @@ await page.screenshot({ path: "/tmp/archipelago-32-vortex.png" });
 const beforeReload = await page.evaluate(() => {
   window.__game.doSave();
   const g = window.__game;
-  return { level: g.player.stats.level, flame: g.gems.flameOwned };
+  return {
+    level: g.player.stats.level,
+    flame: g.gems.flameOwned,
+    gemsEquipped: [...g.gems.equipped],
+    fruitsEquipped: [...g.fruits.equipped],
+  };
 });
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForTimeout(2000);
@@ -1376,6 +1502,8 @@ const afterReload = await page.evaluate(() => ({
   aquaQuest: window.__game.quests.get("aqua"),
   life: window.__game.gems.lifeOwned,
   lifeQuest: window.__game.quests.get("life"),
+  gemsEquipped: [...window.__game.gems.equipped],
+  fruitsEquipped: [...window.__game.fruits.equipped],
 }));
 afterReload.level === beforeReload.level
   ? ok(`重新整理後等級保留(Lv.${afterReload.level})`)
@@ -1388,8 +1516,11 @@ afterReload.flameLevel === 2 ? ok("重新整理後寶石升階保留(焰心石 L
 afterReload.head === "helm" && afterReload.def >= 5
   ? ok(`重新整理後裝備保留(鐵盔,防禦 ${afterReload.def})`)
   : fail(`裝備未保留:${JSON.stringify(afterReload)}`);
-afterReload.shrineIds.length === 2 && afterReload.shrineIds.includes("ember")
-  ? ok(`重新整理後重生點保留(${afterReload.shrineIds.join("+")})`)
+afterReload.shrineIds.length === 4 &&
+afterReload.shrineIds.includes("ember") &&
+afterReload.shrineIds.includes("desert") &&
+afterReload.shrineIds.includes("coral")
+  ? ok(`重新整理後兩海重生點皆保留(${afterReload.shrineIds.join("+")})`)
   : fail(`重生點未保留:${JSON.stringify(afterReload.shrineIds)}`);
 afterReload.vineHunt === "done"
   ? ok("重新整理後清剿任務進度保留")
@@ -1406,6 +1537,10 @@ afterReload.seaFirst && afterReload.seaSecond && afterReload.sea2 === "done"
 afterReload.aqua && afterReload.aquaQuest === "done" && afterReload.life && afterReload.lifeQuest === "done"
   ? ok("重新整理後碧波石/翠生石與兩島任務進度保留")
   : fail(`新寶石未保留:${JSON.stringify({ aqua: afterReload.aqua, aquaQuest: afterReload.aquaQuest, life: afterReload.life, lifeQuest: afterReload.lifeQuest })}`);
+JSON.stringify(afterReload.gemsEquipped) === JSON.stringify(beforeReload.gemsEquipped) &&
+JSON.stringify(afterReload.fruitsEquipped) === JSON.stringify(beforeReload.fruitsEquipped)
+  ? ok(`重新整理後出戰配置保留(寶石 ${afterReload.gemsEquipped.join("/")}, 果實 ${afterReload.fruitsEquipped.join("/")})`)
+  : fail(`出戰配置未保留:before=${JSON.stringify({ g: beforeReload.gemsEquipped, f: beforeReload.fruitsEquipped })} after=${JSON.stringify({ g: afterReload.gemsEquipped, f: afterReload.fruitsEquipped })}`);
 
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");

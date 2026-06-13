@@ -1,5 +1,22 @@
 # PROGRESS
 
+## 2026-06-13(第二海:四島重生點(每海上限2、分海) + 三島打怪委託)
+
+- **第二海四座重生石碑**(`shrine.ts` SHRINE_DEFS):港口鎮 `port`、熔砂島 `desert`、珊瑚礁島 `coral`、靈脈島 `spring`(共 9 座)。沿用既有 `Shrine` 模型,F 設置
+- **每海各自上限 2(用戶決策)**:`activateShrine` 改為只統計/驅逐「同海域」的石碑(`seaOfShrine` 用 `seaOf(def.x)` 判定),跨海互不影響;讀檔還原也改每海各上限 2(舊檔相容)
+- **分海隔離(用戶要求)**:背包傳送清單只列「當前所在海域」的重生點(`getShrineTargets` 依 `seaOf(player.x)` 過濾);死亡畫面重生選項同樣只列當前海域的(+ 海灘預設)。跨海仍走海寶石
+- **第二海三島打怪委託**(`quests.ts` 新增 HuntId/QuestId/HUNTS:`sandHunt`/`reefHunt`/`sporeHunt`,各清 4 隻):熔砂島「拓荒者沙吉」(熔砂果凍)、珊瑚礁島「潛水夫阿蚌」(礁石果凍)、靈脈島「採集者藤吉」(孢子果凍),沿用 `makeHuntNpc`,各發 500 幣 + 大型結晶×2;HUD `huntTracks` 追蹤列同步。港口鎮為無敵人城鎮,維持原鎮長委託不另加打怪
+- 驗證:build 綠(tsc strict)+ smoke **129 項全綠**(新增 5 項:第二海四石碑就位、每海上限 2 替換、第一海不受影響、背包分海過濾、礁石清剿可接取完成);既有測項更新:石碑數 5→9、NPC 數 12→15、重整後兩海重生點皆保留。截圖目視珊瑚礁島石碑 `/tmp/archipelago-sea2-shrine.png`
+
+## 2026-06-13(系統:寶石/果實「出戰配置」上限 — 寶石 4、果實 2)
+
+- **核心改動**:寶石/果實從「持有即生效」改為「需出戰(裝備)才生效」。`GemBag` 加 `equipped: GemKey[]`(上限 `MAX_EQUIPPED_GEMS = 4`)、`FruitBag` 加 `equipped: FruitKey[]`(上限 `MAX_EQUIPPED_FRUITS = 2`),各附 `ownedOf/isEquipped/hasFreeSlot/equip/unequip`。新增 `GEM_ORDER`/`FRUIT_ORDER` 供 UI 與遷移
+- **判定全面改為 isEquipped**(main.ts):所有主動技能(E/C/V/X/G/B/H 與果實 Z/T)輸入閘門、以及**被動**(潮汐石潛水 `nearCity`、霜語晶冰面渡水)都改判 `isEquipped`。用戶決策:**被動寶石也佔格**(風語/霜語/潮汐沒出戰就失效),風語/霜語經 `syncGemPassives()` 把 `player.hasWindGem/hasFrostGem/windLevel` 從 equipped 同步
+- **取得行為**:`acquireGem/acquireFruit` — 有空位則自動出戰,**滿格則留著不裝**(用戶決策),不打擾現有配置
+- **存檔**:`save.ts` 加 `gemsEquipped/fruitsEquipped`(optional);讀檔過濾未持有者並截斷至上限;**舊存檔無此欄位 → 依 GEM_ORDER/FRUIT_ORDER 自動裝備前 4/前 2 顆持有的**(老玩家不會突然失去能力)
+- **UI**:背包寶石盤/果實格改為可點「裝備/✅出戰」切換,標題顯示「出戰 X/4」「X/2」,滿格時未出戰者的按鈕禁用,出戰中金色高亮;HUD 技能列只列出「出戰中」的寶石/果實。背包新增 `onLoadoutChange` 回呼(重算被動 + 刷新 HUD + 存檔)
+- 驗證:build 綠(tsc strict)+ smoke **124 項全綠**(新增 3 項:出戰上限 4 第 5 顆被拒、未出戰寶石按 E 不耗靈力、出戰配置存檔保留);既有 9 個技能/被動測項皆補上 `equipped` 設定。截圖目視背包出戰盤 `/tmp/archipelago-loadout-bag.png`(出戰 4/4 + 金框高亮)
+
 ## 2026-06-13(新內容:第二海兩座島 + 兩位 NPC + 兩顆寶石)
 
 - **新島珊瑚礁島**(`terrain.ts` 中心 1790,-110,r52):青碧礁海配色。敵人 = 礁石果凍 `reef`×5 + `coralGuardian` 珊瑚守護者(掉碧波石)。NPC「珊瑚祭司娜瑪」給任務「礁海的低語」→ 擊敗守護者取碧波石 → 回報領 700 幣 + 大型結晶×2

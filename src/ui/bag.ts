@@ -5,8 +5,8 @@ import {
   type Inventory,
   type PlayerStats,
 } from "../systems/stats";
-import type { GemBag } from "../systems/gems";
-import type { FruitBag } from "../systems/fruits";
+import { MAX_EQUIPPED_GEMS, type GemBag, type GemKey } from "../systems/gems";
+import { MAX_EQUIPPED_FRUITS, type FruitBag, type FruitKey } from "../systems/fruits";
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 
 const BAG_CSS = `
@@ -24,6 +24,9 @@ const BAG_CSS = `
 #bag .gems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 #bag .gem-slot { border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 12px; line-height: 1.5; }
 #bag .gem-slot.off { opacity: 0.35; filter: grayscale(1); }
+#bag .gem-slot.eq { border-color: #f0c040; background: rgba(240,192,64,0.14); }
+#bag .gembtn { margin: 4px 0 0; padding: 2px 8px; font-size: 11px; }
+#bag .gembtn.on { background: #c8902c; }
 `;
 
 const CRYSTAL_LABEL: Record<CrystalSize, string> = {
@@ -61,6 +64,7 @@ export class BagPanel {
     private onUseSeaGem: (sea: 1 | 2) => void,
     private getShrineTargets: () => { id: string; island: string }[],
     private onTeleportShrine: (id: string) => void,
+    private onLoadoutChange: () => void,
   ) {
     const style = document.createElement("style");
     style.textContent = BAG_CSS;
@@ -114,33 +118,45 @@ export class BagPanel {
             .join("")
         : `<div class="muted">升級後可在此分配能力點數</div>`;
 
-    const gemSlots: Array<[string, string, boolean]> = [
-      ["🔥", "焰心石", this.gems.flameOwned],
-      ["🌪️", "風語石", this.gems.windOwned],
-      ["🪨", "地殼石", this.gems.earthOwned],
-      ["❄️", "霜語晶", this.gems.frostOwned],
-      ["🌊", "潮汐石", this.gems.tideOwned],
-      ["🌀", "虛空石", this.gems.voidOwned],
-      ["🌋", "溶岩石", this.gems.lavaOwned],
-      ["💧", "碧波石", this.gems.aquaOwned],
-      ["🌿", "翠生石", this.gems.lifeOwned],
+    const gemSlots: Array<[GemKey, string, string]> = [
+      ["flame", "🔥", "焰心石"],
+      ["wind", "🌪️", "風語石"],
+      ["earth", "🪨", "地殼石"],
+      ["frost", "❄️", "霜語晶"],
+      ["tide", "🌊", "潮汐石"],
+      ["void", "🌀", "虛空石"],
+      ["lava", "🌋", "溶岩石"],
+      ["aqua", "💧", "碧波石"],
+      ["life", "🌿", "翠生石"],
     ];
+    const gemFull = !this.gems.hasFreeSlot();
     const gemGrid = gemSlots
-      .map(
-        ([icon, name, owned]) =>
-          `<div class="gem-slot ${owned ? "" : "off"}">${icon}<br/>${name}${owned ? "" : "<br/><span class='muted'>未取得</span>"}</div>`,
-      )
+      .map(([key, icon, name]) => {
+        const owned = this.gems.ownedOf(key);
+        if (!owned)
+          return `<div class="gem-slot off">${icon}<br/>${name}<br/><span class='muted'>未取得</span></div>`;
+        const eq = this.gems.isEquipped(key);
+        const disabled = !eq && gemFull;
+        return `<div class="gem-slot ${eq ? "eq" : ""}">${icon}<br/>${name}<br/>
+          <button class="gembtn ${eq ? "on" : ""}" data-gemtoggle="${key}" ${disabled ? "disabled" : ""}>${eq ? "✅ 出戰" : "裝備"}</button></div>`;
+      })
       .join("");
 
-    const fruitSlots: Array<[string, string, boolean]> = [
-      ["⚡", "雷光果", this.fruits.thunderOwned],
-      ["🌀", "引力果", this.fruits.gravityOwned],
+    const fruitSlots: Array<[FruitKey, string, string]> = [
+      ["thunder", "⚡", "雷光果"],
+      ["gravity", "🌀", "引力果"],
     ];
+    const fruitFull = !this.fruits.hasFreeSlot();
     const fruitGrid = fruitSlots
-      .map(
-        ([icon, name, owned]) =>
-          `<div class="gem-slot ${owned ? "" : "off"}">${icon}<br/>${name}${owned ? "" : "<br/><span class='muted'>未取得</span>"}</div>`,
-      )
+      .map(([key, icon, name]) => {
+        const owned = this.fruits.ownedOf(key);
+        if (!owned)
+          return `<div class="gem-slot off">${icon}<br/>${name}<br/><span class='muted'>未取得</span></div>`;
+        const eq = this.fruits.isEquipped(key);
+        const disabled = !eq && fruitFull;
+        return `<div class="gem-slot ${eq ? "eq" : ""}">${icon}<br/>${name}<br/>
+          <button class="gembtn ${eq ? "on" : ""}" data-fruittoggle="${key}" ${disabled ? "disabled" : ""}>${eq ? "✅ 出戰" : "裝備"}</button></div>`;
+      })
       .join("");
 
     const seaGemRows: string[] = [];
@@ -180,8 +196,10 @@ export class BagPanel {
       <div class="section">${crystalRows}</div>
       ${seaGemRows.length > 0 ? `<div class="section"><h3>重要道具</h3>${seaGemRows.join("")}</div>` : ""}
       <div class="section"><h3>裝備</h3>${equipRows || '<div class="muted">尚無裝備,去商人圓圓那裡看看吧</div>'}</div>
-      <div class="section"><h3>靈紋寶石盤</h3><div class="gems">${gemGrid}</div></div>
-      <div class="section"><h3>靈樹果實</h3><div class="gems">${fruitGrid}</div></div>
+      <div class="section"><h3>靈紋寶石盤(出戰 ${this.gems.equipped.length}/${MAX_EQUIPPED_GEMS})</h3>
+        <div class="muted" style="margin-bottom:6px;">點「裝備」選擇出戰寶石,只有出戰中的技能與被動才生效</div>
+        <div class="gems">${gemGrid}</div></div>
+      <div class="section"><h3>靈樹果實(出戰 ${this.fruits.equipped.length}/${MAX_EQUIPPED_FRUITS})</h3><div class="gems">${fruitGrid}</div></div>
       <div class="section alloc"><h3>能力點分配</h3>${allocRows}</div>
       <div class="section"><h3>傳送</h3>${this.renderTeleport()}</div>
       <div class="muted">按 Tab 關閉</div>
@@ -225,6 +243,24 @@ export class BagPanel {
       btn.addEventListener("click", () => {
         this.equipment.unequip(btn.dataset.unequip as EquipSlot);
         this.onEquipChange();
+        this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-gemtoggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.gemtoggle as GemKey;
+        if (this.gems.isEquipped(key)) this.gems.unequip(key);
+        else this.gems.equip(key);
+        this.onLoadoutChange();
+        this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-fruittoggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.fruittoggle as FruitKey;
+        if (this.fruits.isEquipped(key)) this.fruits.unequip(key);
+        else this.fruits.equip(key);
+        this.onLoadoutChange();
         this.render();
       });
     });

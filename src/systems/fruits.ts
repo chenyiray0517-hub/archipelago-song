@@ -23,6 +23,13 @@ export const VORTEX_TICK = 0.3;
 /** 可升階的果實 */
 export type UpgradableFruit = "thunder" | "gravity";
 
+/** 所有靈樹果實 key */
+export type FruitKey = "thunder" | "gravity";
+/** 果實出戰格上限:唯有出戰中的果實技能才生效 */
+export const MAX_EQUIPPED_FRUITS = 2;
+/** 果實標準排序(背包顯示與舊存檔遷移預設裝備皆依此序) */
+export const FRUIT_ORDER: FruitKey[] = ["thunder", "gravity"];
+
 /** 升階費用:1→2 與 2→3(貝拉幣;比寶石貴一階,定位後期) */
 export const FRUIT_UPGRADE_COSTS = [500, 1100];
 export const FRUIT_MAX_LEVEL = 3;
@@ -70,4 +77,33 @@ export class FruitBag {
   gravityOwned = false;
   /** 各果實升階等級(1–3;持有後才有意義) */
   levels: Record<UpgradableFruit, number> = { thunder: 1, gravity: 1 };
+  /** 已出戰(裝備)的果實,依裝備順序;上限 MAX_EQUIPPED_FRUITS */
+  equipped: FruitKey[] = [];
+
+  /** 是否持有指定果實 */
+  ownedOf(key: FruitKey): boolean {
+    return key === "thunder" ? this.thunderOwned : this.gravityOwned;
+  }
+
+  /** 是否已出戰 */
+  isEquipped(key: FruitKey): boolean {
+    return this.equipped.includes(key);
+  }
+
+  /** 出戰格是否還有空位 */
+  hasFreeSlot(): boolean {
+    return this.equipped.length < MAX_EQUIPPED_FRUITS;
+  }
+
+  /** 裝備出戰(需已持有、未裝備且尚有空位);成功回傳 true */
+  equip(key: FruitKey): boolean {
+    if (!this.ownedOf(key) || this.isEquipped(key) || !this.hasFreeSlot()) return false;
+    this.equipped.push(key);
+    return true;
+  }
+
+  /** 卸下出戰 */
+  unequip(key: FruitKey): void {
+    this.equipped = this.equipped.filter((k) => k !== key);
+  }
 }

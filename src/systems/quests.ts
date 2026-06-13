@@ -11,6 +11,9 @@ export type QuestId =
   | "emberHunt"
   | "frostHunt"
   | "deepHunt"
+  | "sandHunt"
+  | "reefHunt"
+  | "sporeHunt"
   | "sea2"
   | "lava"
   | "aqua"
@@ -21,7 +24,14 @@ export type QuestState = "active" | "done";
 export const JELLY_TARGET = 5;
 
 /** 各島清剿任務 id */
-export type HuntId = "vineHunt" | "emberHunt" | "frostHunt" | "deepHunt";
+export type HuntId =
+  | "vineHunt"
+  | "emberHunt"
+  | "frostHunt"
+  | "deepHunt"
+  | "sandHunt"
+  | "reefHunt"
+  | "sporeHunt";
 
 /** 清剿任務配置:目標敵人種類與數量(敵人重新整理頁面後會重生,不會卡關) */
 export const HUNTS: Record<HuntId, { kind: string; target: number }> = {
@@ -29,6 +39,10 @@ export const HUNTS: Record<HuntId, { kind: string; target: number }> = {
   emberHunt: { kind: "ember", target: 4 },
   frostHunt: { kind: "frost", target: 4 },
   deepHunt: { kind: "deep", target: 3 },
+  // 第二海三島
+  sandHunt: { kind: "sand", target: 4 },
+  reefHunt: { kind: "reef", target: 4 },
+  sporeHunt: { kind: "spore", target: 4 },
 };
 
 /** 任務存檔格式(huntKills/huntBases 後加,optional 保持舊檔相容) */

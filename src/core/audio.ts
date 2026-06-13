@@ -164,8 +164,8 @@ export class AudioEngine {
   /** 雨聲環境音開關(平滑淡入淡出) */
   setRain(on: boolean): void {
     if (!this.ctx || !this.rainGain) return;
-    const target = on ? 0.16 : 0.0001;
-    this.rainGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.8);
+    const target = on ? 0.09 : 0.0001;
+    this.rainGain.gain.setTargetAtTime(target, this.ctx.currentTime, 1.2);
   }
 
   /** 設定主音量(0–1),未 unlock 前也會記住 */
@@ -382,7 +382,7 @@ export class AudioEngine {
     lfo.start();
   }
 
-  /** 雨聲:常駐迴圈雜訊,setRain 控制音量 */
+  /** 雨聲:常駐迴圈雜訊(帶通+低通柔化高頻嘶聲)+ 慢速 LFO 起伏,setRain 控制音量 */
   private startRain(): void {
     if (!this.ctx || !this.musicBus || !this.noiseBuffer) return;
     const src = this.ctx.createBufferSource();
@@ -390,12 +390,24 @@ export class AudioEngine {
     src.loop = true;
     const filter = this.ctx.createBiquadFilter();
     filter.type = "bandpass";
-    filter.frequency.value = 2200;
-    filter.Q.value = 0.4;
+    filter.frequency.value = 1400;
+    filter.Q.value = 0.7;
+    const soften = this.ctx.createBiquadFilter();
+    soften.type = "lowpass";
+    soften.frequency.value = 2600;
+    // 雨勢微微起伏,聽起來不像死板的固定噪音
+    const swell = this.ctx.createGain();
+    swell.gain.value = 1;
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 0.13;
+    const lfoDepth = this.ctx.createGain();
+    lfoDepth.gain.value = 0.18;
+    lfo.connect(lfoDepth).connect(swell.gain);
     this.rainGain = this.ctx.createGain();
     this.rainGain.gain.value = 0.0001;
-    src.connect(filter).connect(this.rainGain).connect(this.musicBus);
+    src.connect(filter).connect(soften).connect(swell).connect(this.rainGain).connect(this.musicBus);
     src.start();
+    lfo.start();
   }
 
   /**

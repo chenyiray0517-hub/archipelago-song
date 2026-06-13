@@ -1,5 +1,11 @@
 # PROGRESS
 
+## 2026-06-13(調整:降低第二海等級門檻 35→25)
+
+- `main.ts` 第二海解鎖常數 `SEA2_LEVEL` 35→25(唯一數值來源,同時管解鎖檢查與領航者對話顯示)
+- smoke 第 903 行測試前把等級設 35 仍 ≥ 25,無需改動;HUD 追蹤列確認顯示「Lv.x/25」
+- 驗證:build 綠 + smoke 95 項全綠
+
 ## 2026-06-13(上線:GitHub Pages 網頁版)
 
 - GitHub 私人 repo 建立後改公開:`https://github.com/chenyiray0517-hub/archipelago-song`

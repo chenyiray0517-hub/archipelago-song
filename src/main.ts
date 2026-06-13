@@ -246,7 +246,7 @@ function main(): void {
     "voidGuardian",
     "voidLord",
   ];
-  const SEA2_LEVEL = 35;
+  const SEA2_LEVEL = 25;
   const ownedGemCount = (): number =>
     [
       gems.flameOwned,

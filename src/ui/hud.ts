@@ -113,6 +113,8 @@ export class Hud {
     tideOwned: boolean;
     voidOwned: boolean;
     lavaOwned: boolean;
+    aquaOwned: boolean;
+    lifeOwned: boolean;
   }): void {
     const parts: string[] = [];
     if (gems.flameOwned) parts.push("🔥 焰心石｜E 火焰斬(10 靈力)");
@@ -122,6 +124,8 @@ export class Hud {
     if (gems.tideOwned) parts.push("🌊 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)");
     if (gems.voidOwned) parts.push("🌀 虛空石｜X 瞬移(8 靈力)");
     if (gems.lavaOwned) parts.push("🌋 溶岩石｜G 熔岩噴發(14 靈力,灼燒)");
+    if (gems.aquaOwned) parts.push("💧 碧波石｜B 碧波震盪(16 靈力,凍結周圍)");
+    if (gems.lifeOwned) parts.push("🌿 翠生石｜H 生命汲取(14 靈力,吸血)");
     const el = this.byId("hud-gem");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");

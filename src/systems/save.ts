@@ -36,6 +36,10 @@ export interface SaveData {
   seaGems?: { first: boolean; second: boolean };
   /** 溶岩石持有狀態(第七顆靈紋寶石,熔砂島取得) */
   lavaOwned?: boolean;
+  /** 碧波石持有狀態(第二海・珊瑚礁島取得) */
+  aquaOwned?: boolean;
+  /** 翠生石持有狀態(第二海・靈脈島取得) */
+  lifeOwned?: boolean;
   /** 靈樹果實持有狀態與升階(雷光果/引力果) */
   fruits?: {
     thunderOwned: boolean;

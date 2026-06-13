@@ -16,9 +16,15 @@ export const BLINK_DIST = 8;
 export const LAVA_MP_COST = 14;
 /** 熔岩噴發命中後的灼燒持續秒數 */
 export const LAVA_BURN_DURATION = 3;
+/** 碧波石碧波震盪靈力消耗(第二海・珊瑚礁島) */
+export const AQUA_MP_COST = 16;
+/** 碧波震盪基礎作用半徑(自身周圍 AoE;升階 +1/級) */
+export const AQUA_RANGE = 7;
+/** 翠生石生命汲取靈力消耗(第二海・靈脈島) */
+export const LIFE_MP_COST = 14;
 
 /** 可升階的寶石(潮汐石為被動解鎖,不升階) */
-export type UpgradableGem = "flame" | "wind" | "earth" | "frost" | "void" | "lava";
+export type UpgradableGem = "flame" | "wind" | "earth" | "frost" | "void" | "lava" | "aqua" | "life";
 
 /** 升階費用:1→2 與 2→3(貝拉幣) */
 export const GEM_UPGRADE_COSTS = [400, 900];
@@ -71,6 +77,31 @@ export function lavaBurnDps(level = 1): number {
   return 8 + 4 * (level - 1);
 }
 
+/** 碧波震盪傷害(自身周圍 AoE) */
+export function aquaDamage(spirit: number, level = 1): number {
+  return Math.round((20 + spirit * 2) * levelScale(level));
+}
+
+/** 碧波震盪凍結秒數(2/2.7/3.4) */
+export function aquaFreeze(level = 1): number {
+  return 2 + 0.7 * (level - 1);
+}
+
+/** 碧波震盪半徑(升階 +1/級) */
+export function aquaRange(level = 1): number {
+  return AQUA_RANGE + (level - 1);
+}
+
+/** 生命汲取傷害(前方衝擊波) */
+export function lifeDamage(spirit: number, level = 1): number {
+  return Math.round((18 + spirit * 2) * levelScale(level));
+}
+
+/** 生命汲取吸血比率(回復造成傷害的比例;0.4/0.5/0.6) */
+export function lifeLeech(level = 1): number {
+  return 0.4 + 0.1 * (level - 1);
+}
+
 /**
  * 靈紋寶石持有狀態。
  * 之後擴充為寶石盤(2 格起,可擴 4 格)時再泛化。
@@ -90,6 +121,10 @@ export class GemBag {
   voidOwned = false;
   /** 溶岩石:G 熔岩噴發(向前噴岩漿 + 灼燒 DoT) */
   lavaOwned = false;
+  /** 碧波石:B 碧波震盪(自身周圍 AoE 傷害 + 凍結) */
+  aquaOwned = false;
+  /** 翠生石:H 生命汲取(前方衝擊波傷害 + 吸血回血) */
+  lifeOwned = false;
   /** 各寶石升階等級(1–3;持有後才有意義) */
-  levels: Record<UpgradableGem, number> = { flame: 1, wind: 1, earth: 1, frost: 1, void: 1, lava: 1 };
+  levels: Record<UpgradableGem, number> = { flame: 1, wind: 1, earth: 1, frost: 1, void: 1, lava: 1, aqua: 1, life: 1 };
 }

@@ -122,6 +122,8 @@ export class BagPanel {
       ["🌊", "潮汐石", this.gems.tideOwned],
       ["🌀", "虛空石", this.gems.voidOwned],
       ["🌋", "溶岩石", this.gems.lavaOwned],
+      ["💧", "碧波石", this.gems.aquaOwned],
+      ["🌿", "翠生石", this.gems.lifeOwned],
     ];
     const gemGrid = gemSlots
       .map(

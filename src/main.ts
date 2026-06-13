@@ -42,6 +42,13 @@ import {
   LAVA_BURN_DURATION,
   lavaDamage,
   lavaBurnDps,
+  AQUA_MP_COST,
+  aquaDamage,
+  aquaFreeze,
+  aquaRange,
+  LIFE_MP_COST,
+  lifeDamage,
+  lifeLeech,
 } from "./systems/gems";
 import {
   FruitBag,
@@ -234,6 +241,20 @@ function main(): void {
     new Enemy("sand", 2234, 166),
     new Enemy("sand", 2196, 190),
     new Enemy("magmaGuardian", 2200, 144),
+    // 第二海・珊瑚礁島(中心 1790,-110):礁石果凍 + 珊瑚守護者(掉碧波石)
+    new Enemy("reef", 1770, -138),
+    new Enemy("reef", 1812, -134),
+    new Enemy("reef", 1756, -110),
+    new Enemy("reef", 1824, -102),
+    new Enemy("reef", 1786, -82),
+    new Enemy("coralGuardian", 1790, -124),
+    // 第二海・靈脈島(中心 2120,-180):孢子果凍 + 靈脈守護者(掉翠生石)
+    new Enemy("spore", 2100, -208),
+    new Enemy("spore", 2142, -204),
+    new Enemy("spore", 2086, -180),
+    new Enemy("spore", 2154, -172),
+    new Enemy("spore", 2116, -152),
+    new Enemy("lifeGuardian", 2120, -194),
   ];
   for (const enemy of enemies) scene.add(enemy.mesh);
   // 各島頭目首殺掉落對應靈紋寶石
@@ -244,6 +265,8 @@ function main(): void {
   const voidGuardian = enemies.find((e) => e.kind === "voidGuardian") as Enemy;
   const voidLord = enemies.find((e) => e.kind === "voidLord") as Enemy;
   const magmaGuardian = enemies.find((e) => e.kind === "magmaGuardian") as Enemy;
+  const coralGuardian = enemies.find((e) => e.kind === "coralGuardian") as Enemy;
+  const lifeGuardian = enemies.find((e) => e.kind === "lifeGuardian") as Enemy;
 
   let pickups: Pickup[] = [];
   let shockwaves: Shockwave[] = [];
@@ -259,6 +282,8 @@ function main(): void {
   let frostGemDropSpawned = false;
   let voidGemDropSpawned = false;
   let lavaGemDropSpawned = false;
+  let aquaGemDropSpawned = false;
+  let lifeGemDropSpawned = false;
   let lavaTickT = 0;
   let diving = false;
   let voidDefeated = false;
@@ -744,6 +769,76 @@ function main(): void {
         "想回第一海?在背包使用【第一海寶石】就行。",
       ];
     }),
+    // 第二海・珊瑚礁島:給予「礁海的低語」,珊瑚守護者掉落碧波石
+    new Npc("珊瑚祭司娜瑪", 1768, -92, 0x3aa6c0, () => {
+      const qa = quests.get("aqua");
+      if (qa === "done")
+        return [
+          "礁海重歸寧靜,潮聲又能入眠了……",
+          "碧波石在你手中,連海浪都聽你號令。",
+        ];
+      if (qa === "active" && gems.aquaOwned) {
+        quests.complete("aqua");
+        inventory.coins += 700;
+        inventory.crystals.large += 2;
+        audio.sfx("gem");
+        hud.showToast("任務完成:礁海的低語!獲得 700 貝拉幣 + 大型結晶×2");
+        doSave();
+        return [
+          "碧波石!你真的制伏了珊瑚守護者……",
+          "謝禮:700 貝拉幣和兩顆大型經驗結晶。",
+          "按 B 就能震盪出碧波,凍結周身所有敵人——危急時的救命符。",
+        ];
+      }
+      if (qa === "active")
+        return [
+          "珊瑚守護者就盤踞在礁島中心的礁石之上。",
+          "牠身上嵌著傳說中的『碧波石』,小心牠的衝撞。",
+        ];
+      quests.accept("aqua");
+      hud.showToast("接受任務:礁海的低語");
+      return [
+        "歡迎來到珊瑚礁島,旅人。我是祭司娜瑪。",
+        "這片礁海被『珊瑚守護者』攪得不得安寧……",
+        "牠守著一顆『碧波石』——能凝聚潮汐凍結萬物的靈紋寶石。",
+        "【任務】擊敗島心的珊瑚守護者,取得碧波石!",
+      ];
+    }),
+    // 第二海・靈脈島:給予「靈脈的搏動」,靈脈守護者掉落翠生石
+    new Npc("靈脈守林人葉羅", 2098, -162, 0x3ab060, () => {
+      const ql = quests.get("life");
+      if (ql === "done")
+        return [
+          "靈脈的搏動恢復了,林木又開始低聲歌唱。",
+          "翠生石與你同在,傷痕都能化作前行的力量。",
+        ];
+      if (ql === "active" && gems.lifeOwned) {
+        quests.complete("life");
+        inventory.coins += 700;
+        inventory.crystals.large += 2;
+        audio.sfx("gem");
+        hud.showToast("任務完成:靈脈的搏動!獲得 700 貝拉幣 + 大型結晶×2");
+        doSave();
+        return [
+          "翠生石!靈脈守護者終於肯把它交還大地了……",
+          "謝禮:700 貝拉幣和兩顆大型經驗結晶。",
+          "按 H 向前汲取生命,傷害敵人的同時還能回復自身——攻守兼備。",
+        ];
+      }
+      if (ql === "active")
+        return [
+          "靈脈守護者在島心的生命之樹下扎了根。",
+          "牠體內的『翠生石』,是這座島搏動的源頭。",
+        ];
+      quests.accept("life");
+      hud.showToast("接受任務:靈脈的搏動");
+      return [
+        "你也感覺到了嗎?這座島像有心跳一樣搏動著。",
+        "我是守林人葉羅。靈脈的力量被『靈脈守護者』奪走了……",
+        "牠藏著一顆『翠生石』——能將傷害化為生命的靈紋寶石。",
+        "【任務】擊敗島心的靈脈守護者,取得翠生石!",
+      ];
+    }),
   ];
   for (const npc of npcs) scene.add(npc.mesh);
 
@@ -944,6 +1039,8 @@ function main(): void {
     shrines: [...shrineActiveIds],
     seaGems: { first: inventory.firstSeaGem, second: inventory.secondSeaGem },
     lavaOwned: gems.lavaOwned,
+    aquaOwned: gems.aquaOwned,
+    lifeOwned: gems.lifeOwned,
     fruits: {
       thunderOwned: fruits.thunderOwned,
       gravityOwned: fruits.gravityOwned,
@@ -970,6 +1067,8 @@ function main(): void {
     gems.tideOwned = saved.tideOwned ?? false;
     gems.voidOwned = saved.voidOwned ?? false;
     gems.lavaOwned = saved.lavaOwned ?? false;
+    gems.aquaOwned = saved.aquaOwned ?? false;
+    gems.lifeOwned = saved.lifeOwned ?? false;
     if (saved.fruits) {
       fruits.thunderOwned = saved.fruits.thunderOwned;
       fruits.gravityOwned = saved.fruits.gravityOwned;
@@ -1105,6 +1204,14 @@ function main(): void {
       lavaGemDropSpawned = true;
       drops.push(new Pickup("gem-lava", x, z));
     }
+    if (enemy === coralGuardian && !gems.aquaOwned && !aquaGemDropSpawned) {
+      aquaGemDropSpawned = true;
+      drops.push(new Pickup("gem-aqua", x, z));
+    }
+    if (enemy === lifeGuardian && !gems.lifeOwned && !lifeGemDropSpawned) {
+      lifeGemDropSpawned = true;
+      drops.push(new Pickup("gem-life", x, z));
+    }
     if (enemy.kind === "slime") quests.slimeKills++;
     quests.addKill(enemy.kind);
     if (enemy.kind === "voidLord" || enemy.kind === "voidGuardian") {
@@ -1122,6 +1229,12 @@ function main(): void {
     } else if (enemy.kind === "magmaGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "sand") {
+      drops.push(new Pickup("medium", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "coralGuardian") {
+      drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "lifeGuardian") {
+      drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "reef" || enemy.kind === "spore") {
       drops.push(new Pickup("medium", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "windGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
@@ -1498,6 +1611,49 @@ function main(): void {
         fx.burst(front, 0xff4a1c, 16, 7);
       }
 
+      // 碧波石:B 碧波震盪(自身周圍範圍傷害 + 凍結所有命中的敵人)
+      if (
+        input.wasPressed("KeyB") &&
+        gems.aquaOwned &&
+        !player.blocking &&
+        player.mp >= AQUA_MP_COST
+      ) {
+        player.mp -= AQUA_MP_COST;
+        audio.sfx("aqua");
+        fx.shake(0.3, 0.3);
+        fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 0.6), 0x3ad8d8, 24, 8);
+        const dmg = aquaDamage(player.stats.attrs.spirit, gems.levels.aqua);
+        const range = aquaRange(gems.levels.aqua);
+        const freezeSec = aquaFreeze(gems.levels.aqua);
+        for (const enemy of enemies) {
+          if (enemy.isDead) continue;
+          const toEnemy = new THREE.Vector3().subVectors(enemy.mesh.position, player.mesh.position);
+          toEnemy.y = 0;
+          if (toEnemy.length() > range) continue;
+          hitEnemy(enemy, dmg, toEnemy);
+          if (!enemy.isDead) enemy.freeze(freezeSec);
+        }
+      }
+
+      // 翠生石:H 生命汲取(向前噴出衝擊波,命中回復自身生命)
+      if (
+        input.wasPressed("KeyH") &&
+        gems.lifeOwned &&
+        !player.blocking &&
+        player.mp >= LIFE_MP_COST
+      ) {
+        player.mp -= LIFE_MP_COST;
+        audio.sfx("life");
+        const lifeWave = new Shockwave(
+          player.mesh.position,
+          player.facing,
+          lifeDamage(player.stats.attrs.spirit, gems.levels.life),
+          { color: 0x5ae85a, lifetime: 0.7, speed: 22, leech: lifeLeech(gems.levels.life) },
+        );
+        scene.add(lifeWave.mesh);
+        shockwaves.push(lifeWave);
+      }
+
       // 雷光果:Z 連鎖閃電(索敵最近敵人,向鄰近敵人跳躍,傷害遞減 + 麻痺)
       if (
         input.wasPressed("KeyZ") &&
@@ -1713,6 +1869,15 @@ function main(): void {
         const died = enemy.takeDamage(wave.damage, toEnemy);
         if (wave.freezes && !died) enemy.freeze(freezeDuration(gems.levels.frost));
         if (wave.burns && !died) enemy.burn(LAVA_BURN_DURATION, lavaBurnDps(gems.levels.lava));
+        if (wave.leech > 0 && player.hp < player.stats.maxHP) {
+          const heal = Math.max(1, Math.round(wave.damage * wave.leech));
+          player.hp = Math.min(player.stats.maxHP, player.hp + heal);
+          floats.spawn(
+            player.mesh.position.clone().setY(player.mesh.position.y + 2.6),
+            `+${heal}`,
+            "#7be87b",
+          );
+        }
         const hitPos = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1);
         floats.spawn(hitPos.clone().setY(hitPos.y + 1.2), String(wave.damage), "#7fe8ff");
         fx.burst(hitPos, died ? 0x9be89b : 0x7fe8ff, died ? 16 : 8);
@@ -1832,6 +1997,20 @@ function main(): void {
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【溶岩石】!按 G 噴發岩漿並點燃敵人");
           doSave();
+        } else if (pickup.kind === "gem-aqua") {
+          feed.push("💧 獲得靈紋寶石【碧波石】");
+          gems.aquaOwned = true;
+          hud.setGems(gems);
+          audio.sfx("gem");
+          hud.showToast("獲得靈紋寶石【碧波石】!按 B 震盪碧波凍結周身敵人");
+          doSave();
+        } else if (pickup.kind === "gem-life") {
+          feed.push("🌿 獲得靈紋寶石【翠生石】");
+          gems.lifeOwned = true;
+          hud.setGems(gems);
+          audio.sfx("gem");
+          hud.showToast("獲得靈紋寶石【翠生石】!按 H 生命汲取,傷敵回血");
+          doSave();
         } else if (pickup.kind === "fruit-thunder") {
           feed.push("⚡ 獲得靈樹果實【雷光果】");
           fruits.thunderOwned = true;
@@ -1926,6 +2105,20 @@ function main(): void {
         gems.lavaOwned
           ? "熔砂的試煉:回港口鎮找鎮長波叔回報"
           : "熔砂的試煉:港口鎮東方的熔砂島,擊敗島心的熔岩守護者",
+      );
+    }
+    if (quests.get("aqua") === "active") {
+      questLines.push(
+        gems.aquaOwned
+          ? "礁海的低語:回珊瑚礁島找祭司娜瑪回報"
+          : "礁海的低語:登上珊瑚礁島,擊敗島心的珊瑚守護者",
+      );
+    }
+    if (quests.get("life") === "active") {
+      questLines.push(
+        gems.lifeOwned
+          ? "靈脈的搏動:回靈脈島找守林人葉羅回報"
+          : "靈脈的搏動:登上靈脈島,擊敗島心的靈脈守護者",
       );
     }
     const huntTracks: { id: HuntId; title: string; npc: string }[] = [

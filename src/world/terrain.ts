@@ -168,6 +168,38 @@ export const ISLANDS: IslandDef[] = [
     treeColor: 0x6a8a4a,
     crater: { x: 0, z: 0, r: 11, depth: 7 },
   },
+  {
+    name: "珊瑚礁島",
+    x: 1790,
+    z: -110,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 34, h: 13 },
+      { x: -20, z: 16, r: 16, h: 5 },
+      { x: 22, z: -12, r: 14, h: 4.5 },
+    ],
+    sand: 0xf0e0c0,
+    grass: 0x46c8b8,
+    dark: 0x2a8a9a,
+    treeCount: 16,
+    treeColor: 0x2a9a8a,
+  },
+  {
+    name: "靈脈島",
+    x: 2120,
+    z: -180,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 36, h: 15 },
+      { x: -22, z: 14, r: 18, h: 6 },
+      { x: 24, z: -16, r: 16, h: 5 },
+    ],
+    sand: 0xd8d098,
+    grass: 0x6ac84a,
+    dark: 0x2e8a3a,
+    treeCount: 64,
+    treeColor: 0x2a8a3a,
+  },
 ];
 
 /** 隱藏海域:潮汐石漂浮處(企劃書:潮汐石取得地點「隱藏海域」) */

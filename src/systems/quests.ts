@@ -12,7 +12,9 @@ export type QuestId =
   | "frostHunt"
   | "deepHunt"
   | "sea2"
-  | "lava";
+  | "lava"
+  | "aqua"
+  | "life";
 export type QuestState = "active" | "done";
 
 /** 果凍清理任務目標數 */

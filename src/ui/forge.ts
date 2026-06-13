@@ -76,6 +76,8 @@ export class ForgePanel {
       ["frost", "❄️ 霜語晶(冰箭威力與凍結時間)", this.gems.frostOwned],
       ["void", "🌀 虛空石(瞬移距離)", this.gems.voidOwned],
       ["lava", "🌋 溶岩石(熔岩噴發威力與灼燒)", this.gems.lavaOwned],
+      ["aqua", "💧 碧波石(碧波震盪威力與凍結)", this.gems.aquaOwned],
+      ["life", "🌿 翠生石(生命汲取威力與吸血)", this.gems.lifeOwned],
     ];
     const gemRows = GEM_INFO.filter(([, , owned]) => owned)
       .map(([gem, label]) => {

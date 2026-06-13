@@ -15,7 +15,11 @@ export type EnemyKind =
   | "voidGuardian"
   | "voidLord"
   | "sand"
-  | "magmaGuardian";
+  | "magmaGuardian"
+  | "reef"
+  | "coralGuardian"
+  | "spore"
+  | "lifeGuardian";
 
 type EnemyState = "patrol" | "chase" | "windup" | "lunge" | "recover" | "dying" | "dead";
 
@@ -58,6 +62,12 @@ const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   // 第二海・熔砂島(界海之後的後期帶)
   sand: { hp: 200, dmg: 26, speed: 3.8, scale: 1.4, color: 0xe0b860 },
   magmaGuardian: { hp: 680, dmg: 34, speed: 2.9, scale: 3.0, color: 0xff5a2c },
+  // 第二海・珊瑚礁島:礁石果凍 + 珊瑚守護者(掉碧波石)
+  reef: { hp: 210, dmg: 27, speed: 3.7, scale: 1.4, color: 0x46c8b8 },
+  coralGuardian: { hp: 700, dmg: 34, speed: 2.9, scale: 3.0, color: 0x2aa6c0 },
+  // 第二海・靈脈島:孢子果凍 + 靈脈守護者(掉翠生石)
+  spore: { hp: 220, dmg: 28, speed: 3.9, scale: 1.45, color: 0x86d24a },
+  lifeGuardian: { hp: 720, dmg: 35, speed: 2.9, scale: 3.1, color: 0x3ab060 },
 };
 
 /**

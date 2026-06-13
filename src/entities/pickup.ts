@@ -13,6 +13,8 @@ export type PickupKind =
   | "gem-tide"
   | "gem-void"
   | "gem-lava"
+  | "gem-aqua"
+  | "gem-life"
   | "fruit-thunder"
   | "fruit-gravity";
 
@@ -51,7 +53,9 @@ export class Pickup {
       kind === "gem-frost" ||
       kind === "gem-tide" ||
       kind === "gem-void" ||
-      kind === "gem-lava"
+      kind === "gem-lava" ||
+      kind === "gem-aqua" ||
+      kind === "gem-life"
     ) {
       // 靈紋寶石:大顆八面體,強烈發光
       const GEM_COLORS = {
@@ -62,6 +66,8 @@ export class Pickup {
         "gem-tide": 0x2a6fe8,
         "gem-void": 0x8a4ae8,
         "gem-lava": 0xff4a1c,
+        "gem-aqua": 0x3ad8d8,
+        "gem-life": 0x5ae85a,
       } as const;
       const gemColor = GEM_COLORS[kind];
       this.mesh = new THREE.Mesh(

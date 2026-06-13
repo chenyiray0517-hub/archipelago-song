@@ -16,6 +16,8 @@ export class Shockwave {
   readonly freezes: boolean;
   /** 命中時是否點燃敵人(溶岩石熔岩噴發) */
   readonly burns: boolean;
+  /** 命中時回復玩家的吸血比率(0 = 無;翠生石生命汲取) */
+  readonly leech: number;
 
   private life: number;
   private readonly lifetime: number;
@@ -34,11 +36,13 @@ export class Shockwave {
       speed?: number;
       freezes?: boolean;
       burns?: boolean;
+      leech?: number;
     } = {},
   ) {
     this.damage = damage;
     this.freezes = options.freezes ?? false;
     this.burns = options.burns ?? false;
+    this.leech = options.leech ?? 0;
     this.lifetime = options.lifetime ?? 0.9;
     this.speed = options.speed ?? 22;
     this.life = this.lifetime;

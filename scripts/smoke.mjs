@@ -815,7 +815,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 10 ? ok("任務 NPC 到位(共 10 位,含領航者與鎮長)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 12 ? ok("任務 NPC 到位(共 12 位,含領航者、鎮長與兩島祭司/守林人)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
@@ -1060,6 +1060,143 @@ lavaDone.state === "done" && lavaDone.coins >= coinsBeforeLava + 600
   ? ok(`「熔砂的試煉」完成(獲得 ${lavaDone.coins - coinsBeforeLava} 貝拉幣)`)
   : fail(`熔砂任務未完成:${JSON.stringify(lavaDone)}`);
 
+// 45g. 第二海新島生成:珊瑚礁島(礁石果凍×5 + 珊瑚守護者)、靈脈島(孢子果凍×5 + 靈脈守護者),守護者立於島心(y>0.5)
+const sea2Islands = await page.evaluate(() => {
+  const g = window.__game;
+  const coral = g.enemies.find((e) => e.kind === "coralGuardian");
+  const life = g.enemies.find((e) => e.kind === "lifeGuardian");
+  return {
+    reef: g.enemies.filter((e) => e.kind === "reef").length,
+    spore: g.enemies.filter((e) => e.kind === "spore").length,
+    coralY: coral ? coral.mesh.position.y : -99,
+    lifeY: life ? life.mesh.position.y : -99,
+  };
+});
+sea2Islands.reef === 5 && sea2Islands.coralY > 0.5
+  ? ok(`珊瑚礁島生成(礁石果凍×${sea2Islands.reef} + 珊瑚守護者,島心 y=${sea2Islands.coralY.toFixed(1)})`)
+  : fail(`珊瑚礁島異常:${JSON.stringify(sea2Islands)}`);
+sea2Islands.spore === 5 && sea2Islands.lifeY > 0.5
+  ? ok(`靈脈島生成(孢子果凍×${sea2Islands.spore} + 靈脈守護者,島心 y=${sea2Islands.lifeY.toFixed(1)})`)
+  : fail(`靈脈島異常:${JSON.stringify(sea2Islands)}`);
+
+// 45h. 碧波石碧波震盪:授予寶石 → 站到礁島心、聚集礁石果凍 → B 施放 → 靈力扣除 + 周身敵人凍結受傷
+const aquaBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.aquaOwned = true;
+  g.player.mp = g.player.stats.maxMP;
+  g.player.mesh.position.set(1790, 14, -110);
+  const reefs = g.enemies.filter((e) => e.kind === "reef").slice(0, 3);
+  reefs.forEach((e, i) => e.mesh.position.set(1790 + (i - 1) * 2, 14, -108));
+  return { mp: g.player.mp, hp: reefs.map((r) => r.hp) };
+});
+await page.keyboard.press("b");
+await page.waitForTimeout(150);
+const aquaAfter = await page.evaluate(() => {
+  const g = window.__game;
+  const reefs = g.enemies.filter((e) => e.kind === "reef").slice(0, 3);
+  return {
+    mp: g.player.mp,
+    frozen: reefs.filter((r) => r.freezeT > 0).length,
+    hp: reefs.map((r) => r.hp),
+  };
+});
+aquaAfter.mp <= aquaBefore.mp - 15
+  ? ok(`碧波震盪消耗靈力(${Math.round(aquaBefore.mp)} → ${Math.round(aquaAfter.mp)})`)
+  : fail(`靈力未扣除:${aquaBefore.mp} → ${aquaAfter.mp}`);
+const aquaHurt = aquaAfter.hp.filter((hp, i) => hp < aquaBefore.hp[i]).length;
+aquaAfter.frozen >= 2 && aquaHurt >= 2
+  ? ok(`碧波震盪凍結並擊傷 ${aquaAfter.frozen} 個周身敵人`)
+  : fail(`碧波震盪異常:frozen=${aquaAfter.frozen} hurt=${aquaHurt}`);
+await page.screenshot({ path: "/tmp/archipelago-33-aqua.png" });
+
+// 45i. 翠生石生命汲取:授予寶石 → 壓低生命、前方放一隻孢子果凍 → H 施放 → 衝擊波吸血(leech)+ 生命回復
+const lifeBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.lifeOwned = true;
+  g.player.mp = g.player.stats.maxMP;
+  g.player.hp = 30;
+  g.player.facing = 0; // 面向 +z
+  g.player.mesh.position.set(2120, 18, -180);
+  const spore = g.enemies.find((e) => e.kind === "spore" && !e.isDead);
+  spore.stun(5); // 定身排除自走/攻擊干擾
+  spore.mesh.position.set(2120, 18, -176); // 玩家前方(+z)約 4
+  return { mp: g.player.mp, hp: g.player.hp, sphp: spore.hp };
+});
+await page.keyboard.press("h");
+await page.waitForTimeout(250);
+const lifeAfter = await page.evaluate(() => {
+  const g = window.__game;
+  const waves = g.shockwaves;
+  const spore = g.enemies.find((e) => e.kind === "spore");
+  return {
+    mp: g.player.mp,
+    hp: g.player.hp,
+    leech: waves.length > 0 && waves[waves.length - 1].leech > 0,
+    sphp: spore.hp,
+  };
+});
+lifeAfter.mp <= lifeBefore.mp - 13
+  ? ok(`生命汲取消耗靈力(${Math.round(lifeBefore.mp)} → ${Math.round(lifeAfter.mp)})`)
+  : fail(`靈力未扣除:${lifeBefore.mp} → ${lifeAfter.mp}`);
+lifeAfter.leech && lifeAfter.sphp < lifeBefore.sphp && lifeAfter.hp > lifeBefore.hp
+  ? ok(`生命汲取命中孢子果凍並回血(HP ${lifeBefore.hp} → ${lifeAfter.hp})`)
+  : fail(`生命汲取異常:${JSON.stringify({ lifeBefore, lifeAfter })}`);
+await page.screenshot({ path: "/tmp/archipelago-34-life.png" });
+
+// 45j. 持有碧波石後找珊瑚祭司娜瑪回報 →「礁海的低語」完成 + 發獎
+await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.aquaOwned = true;
+  g.quests.accept("aqua");
+  g.player.mesh.position.set(1768, 12, -89); // 祭司娜瑪旁
+});
+await page.waitForTimeout(200);
+const coinsBeforeAqua = await page.evaluate(() => window.__game.inventory.coins);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const aquaQuestDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("aqua"),
+  coins: window.__game.inventory.coins,
+}));
+aquaQuestDone.state === "done" && aquaQuestDone.coins >= coinsBeforeAqua + 700
+  ? ok(`「礁海的低語」完成(獲得 ${aquaQuestDone.coins - coinsBeforeAqua} 貝拉幣)`)
+  : fail(`礁海任務未完成:${JSON.stringify(aquaQuestDone)}`);
+
+// 45k. 持有翠生石後找靈脈守林人葉羅回報 →「靈脈的搏動」完成 + 發獎
+await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.lifeOwned = true;
+  g.quests.accept("life");
+  g.player.mesh.position.set(2098, 12, -159); // 守林人葉羅旁
+});
+await page.waitForTimeout(200);
+const coinsBeforeLife = await page.evaluate(() => window.__game.inventory.coins);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const lifeQuestDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("life"),
+  coins: window.__game.inventory.coins,
+}));
+lifeQuestDone.state === "done" && lifeQuestDone.coins >= coinsBeforeLife + 700
+  ? ok(`「靈脈的搏動」完成(獲得 ${lifeQuestDone.coins - coinsBeforeLife} 貝拉幣)`)
+  : fail(`靈脈任務未完成:${JSON.stringify(lifeQuestDone)}`);
+
 // 46. 使用第一海寶石 → 回到第一海曙光嶼,船回泊點
 await page.keyboard.press("Tab");
 await page.waitForTimeout(300);
@@ -1235,6 +1372,10 @@ const afterReload = await page.evaluate(() => ({
   lavaQuest: window.__game.quests.get("lava"),
   thunder: window.__game.fruits.thunderOwned,
   gravity: window.__game.fruits.gravityOwned,
+  aqua: window.__game.gems.aquaOwned,
+  aquaQuest: window.__game.quests.get("aqua"),
+  life: window.__game.gems.lifeOwned,
+  lifeQuest: window.__game.quests.get("life"),
 }));
 afterReload.level === beforeReload.level
   ? ok(`重新整理後等級保留(Lv.${afterReload.level})`)
@@ -1262,6 +1403,9 @@ afterReload.thunder && afterReload.gravity
 afterReload.seaFirst && afterReload.seaSecond && afterReload.sea2 === "done"
   ? ok("重新整理後海寶石與跨越界海進度保留")
   : fail(`海寶石未保留:${JSON.stringify({ seaFirst: afterReload.seaFirst, seaSecond: afterReload.seaSecond, sea2: afterReload.sea2 })}`);
+afterReload.aqua && afterReload.aquaQuest === "done" && afterReload.life && afterReload.lifeQuest === "done"
+  ? ok("重新整理後碧波石/翠生石與兩島任務進度保留")
+  : fail(`新寶石未保留:${JSON.stringify({ aqua: afterReload.aqua, aquaQuest: afterReload.aquaQuest, life: afterReload.life, lifeQuest: afterReload.lifeQuest })}`);
 
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");

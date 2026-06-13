@@ -27,6 +27,8 @@ export type SfxName =
   | "victory"
   | "thunder"
   | "vortex"
+  | "aqua"
+  | "life"
   | "shrine"
   | "seaTravel"
   | "shrineTravel";
@@ -296,6 +298,16 @@ export class AudioEngine {
         // 低頻吸氣:音高上揚 + 帶通掃頻,營造「捲入」感
         this.tone("sine", 90, 320, 0.7, 0.3);
         this.noiseBurst("bandpass", 300, 900, 0.7, 0.2);
+        break;
+      case "aqua":
+        // 碧波震盪:水流上揚 + 高頻碎冰感
+        this.tone("sine", 620, 1500, 0.32, 0.28);
+        this.noiseBurst("highpass", 1800, 4200, 0.28, 0.16);
+        break;
+      case "life":
+        // 生命汲取:溫潤的回復和弦
+        this.tone("sine", 523.25, 880, 0.26, 0.25);
+        this.tone("sine", 783.99, 1046.5, 0.3, 0.2, 0.08);
         break;
       case "shrine":
         [659.25, 987.77, 1318.5].forEach((freq, i) =>

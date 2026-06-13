@@ -1778,8 +1778,8 @@ function main(): void {
       const collected = pickup.update(worldDt, player.mesh.position);
       if (collected) {
         if (pickup.kind === "coin") {
-          inventory.coins += 5;
-          feed.push("🪙 獲得 5 貝拉幣");
+          inventory.coins += 8; // 每枚貝拉幣 5 → 8(掉落量 +50%,7.5 取整)
+          feed.push("🪙 獲得 8 貝拉幣");
           audio.sfx("coin");
         } else if (pickup.kind === "gem-flame") {
           feed.push("🔥 獲得靈紋寶石【焰心石】");

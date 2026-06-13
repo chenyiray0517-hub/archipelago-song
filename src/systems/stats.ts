@@ -55,7 +55,7 @@ export class PlayerStats {
 
   /** 升到下一級所需 EXP */
   expToNext(): number {
-    return Math.round(100 * Math.pow(this.level, 1.35));
+    return Math.round(65 * Math.pow(this.level, 1.35));
   }
 
   /**

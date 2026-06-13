@@ -151,6 +151,23 @@ export const ISLANDS: IslandDef[] = [
     treeCount: 28,
     treeColor: 0x3d8b4d,
   },
+  {
+    name: "熔砂島",
+    x: 2200,
+    z: 160,
+    r: 56,
+    hills: [
+      { x: 0, z: 0, r: 36, h: 18 },
+      { x: -22, z: 16, r: 18, h: 6 },
+      { x: 24, z: -14, r: 16, h: 5 },
+    ],
+    sand: 0xe8c878,
+    grass: 0xd8a850,
+    dark: 0xa86838,
+    treeCount: 6,
+    treeColor: 0x6a8a4a,
+    crater: { x: 0, z: 0, r: 11, depth: 7 },
+  },
 ];
 
 /** 隱藏海域:潮汐石漂浮處(企劃書:潮汐石取得地點「隱藏海域」) */
@@ -159,11 +176,20 @@ export const TIDE_SITE = { x: -60, z: -120 };
 /** 沉沒古城:開放海域的水下遺跡區(需潮汐石潛入) */
 export const SUNKEN_CITY = { x: -40, z: 230, r: 26 };
 
+/** 雷光果:霜雪峰島山頂,只在風暴天氣雷雲落下時顯現 */
+export const THUNDER_FRUIT_SITE = { x: 60, z: -170 };
+/** 引力果:虛空之心,擊敗虛空魔王後從殘留的引力裂隙顯現 */
+export const GRAVITY_FRUIT_SITE = { x: 0, z: 288 };
+
 /** 熔岩區(站立會持續受到環境傷害,企劃書:火山島環境傷害機制) */
 export const LAVA_ZONES = [
   { x: -150, z: 120, r: 7 },
   { x: -132, z: 128, r: 4 },
   { x: -163, z: 134, r: 4.5 },
+  // 熔砂島(第二海):熱砂底下的遠古岩漿坑
+  { x: 2200, z: 160, r: 8 },
+  { x: 2186, z: 168, r: 4 },
+  { x: 2214, z: 152, r: 4 },
 ];
 
 /** 該座標是否在熔岩區內 */

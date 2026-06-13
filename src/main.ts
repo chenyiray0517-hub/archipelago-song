@@ -14,6 +14,8 @@ import {
   SUNKEN_CITY,
   SECOND_SEA,
   seaOf,
+  THUNDER_FRUIT_SITE,
+  GRAVITY_FRUIT_SITE,
 } from "./world/terrain";
 import { Boat } from "./entities/boat";
 import { Player, ATTACK_RANGE, ATTACK_ARC_COS, SPIN_RANGE } from "./entities/player";
@@ -21,6 +23,8 @@ import { Enemy } from "./entities/enemy";
 import { Npc } from "./entities/npc";
 import { Pickup } from "./entities/pickup";
 import { Shockwave } from "./entities/shockwave";
+import { Vortex } from "./entities/vortex";
+import { LightningBolt } from "./entities/lightning";
 import {
   GemBag,
   FLAME_MP_COST,
@@ -34,7 +38,26 @@ import {
   freezeDuration,
   BLINK_MP_COST,
   blinkDist,
+  LAVA_MP_COST,
+  LAVA_BURN_DURATION,
+  lavaDamage,
+  lavaBurnDps,
 } from "./systems/gems";
+import {
+  FruitBag,
+  THUNDER_MP_COST,
+  THUNDER_RANGE,
+  THUNDER_CHAIN_RANGE,
+  THUNDER_CHAIN_FALLOFF,
+  thunderDamage,
+  thunderChainCount,
+  thunderStunDuration,
+  GRAVITY_MP_COST,
+  VORTEX_FORWARD,
+  vortexDamage,
+  vortexRadius,
+  vortexDuration,
+} from "./systems/fruits";
 import { EquipmentState } from "./systems/equipment";
 import { QuestLog, JELLY_TARGET, HUNTS, type HuntId } from "./systems/quests";
 import { loadGame, saveGame, type SaveData } from "./systems/save";
@@ -204,6 +227,13 @@ function main(): void {
     new Enemy("voidGuardian", -40, 230),
     // 虛空之心:最終頭目
     new Enemy("voidLord", 0, 300),
+    // 第二海・熔砂島(中心 2200,160):熔砂果凍 + 熔岩守護者(掉溶岩石)
+    new Enemy("sand", 2180, 130),
+    new Enemy("sand", 2222, 134),
+    new Enemy("sand", 2166, 158),
+    new Enemy("sand", 2234, 166),
+    new Enemy("sand", 2196, 190),
+    new Enemy("magmaGuardian", 2200, 144),
   ];
   for (const enemy of enemies) scene.add(enemy.mesh);
   // 各島頭目首殺掉落對應靈紋寶石
@@ -213,20 +243,29 @@ function main(): void {
   const frostGuardian = enemies.find((e) => e.kind === "frostGuardian") as Enemy;
   const voidGuardian = enemies.find((e) => e.kind === "voidGuardian") as Enemy;
   const voidLord = enemies.find((e) => e.kind === "voidLord") as Enemy;
+  const magmaGuardian = enemies.find((e) => e.kind === "magmaGuardian") as Enemy;
 
   let pickups: Pickup[] = [];
   let shockwaves: Shockwave[] = [];
+  let vortexes: Vortex[] = [];
+  let bolts: LightningBolt[] = [];
+  /** 雷光果只在風暴天氣顯現:存著當前場上的果實引用,風暴離去未撿則收回 */
+  let thunderFruit: Pickup | null = null;
+  /** 引力果在擊敗虛空魔王後生成一次(避免重複) */
+  let gravityFruitSpawned = false;
   let gemDropSpawned = false;
   let windGemDropSpawned = false;
   let earthGemDropSpawned = false;
   let frostGemDropSpawned = false;
   let voidGemDropSpawned = false;
+  let lavaGemDropSpawned = false;
   let lavaTickT = 0;
   let diving = false;
   let voidDefeated = false;
   let endingShown = false;
 
   const gems = new GemBag();
+  const fruits = new FruitBag();
   const equipment = new EquipmentState();
   const dialog = new DialogBox();
   const quests = new QuestLog();
@@ -666,13 +705,45 @@ function main(): void {
         "達成之後,再回來找我。",
       ];
     }),
-    // 第二海・港口鎮
-    new Npc("鎮長波叔", SECOND_SEA.x, SECOND_SEA.z - 36, 0xc8a04a, () => [
-      "歡迎來到第二海的門戶——港口鎮!",
-      "能跨越界海的,都是了不起的冒險者。",
-      "這片海域還有更多島嶼沉睡著,等待被喚醒……",
-      "想回第一海?在背包使用【第一海寶石】就行。",
-    ]),
+    // 第二海・港口鎮:給予「熔砂的試煉」,熔岩守護者掉落第七顆寶石溶岩石
+    new Npc("鎮長波叔", SECOND_SEA.x, SECOND_SEA.z - 36, 0xc8a04a, () => {
+      const ql = quests.get("lava");
+      if (ql === "done")
+        return [
+          "熔砂島的熱浪,連海風都燙得發顫……",
+          "有了溶岩石,你連腳下的岩漿都能驅使了。",
+          "想回第一海?在背包使用【第一海寶石】就行。",
+        ];
+      if (ql === "active" && gems.lavaOwned) {
+        quests.complete("lava");
+        inventory.coins += 600;
+        inventory.crystals.large += 2;
+        audio.sfx("gem");
+        hud.showToast("任務完成:熔砂的試煉!獲得 600 貝拉幣 + 大型結晶×2");
+        doSave();
+        return [
+          "溶岩石!你真的從熔岩守護者手裡奪回來了……",
+          "謝禮:600 貝拉幣和兩顆大型經驗結晶。",
+          "按 G 就能向前噴出岩漿,還會點燃敵人持續灼燒——小心別自己踩進岩漿。",
+        ];
+      }
+      if (ql === "active")
+        return [
+          "熔砂島在港口鎮東方的外海,整座島覆著滾燙的熱砂。",
+          "島心的熔岩坑盤踞著『熔岩守護者』,溶岩石就在牠身上。",
+          "踩到岩漿會被燙傷,留意腳下!",
+        ];
+      quests.accept("lava");
+      hud.showToast("接受任務:熔砂的試煉");
+      return [
+        "歡迎來到第二海的門戶——港口鎮!",
+        "能跨越界海的,都是了不起的冒險者。",
+        "東方外海有座『熔砂島』,熱砂底下埋著遠古的岩漿。",
+        "島心的『熔岩守護者』守著第七顆靈紋寶石——『溶岩石』。",
+        "【任務】登上熔砂島,擊敗熔岩守護者,取得溶岩石!",
+        "想回第一海?在背包使用【第一海寶石】就行。",
+      ];
+    }),
   ];
   for (const npc of npcs) scene.add(npc.mesh);
 
@@ -745,6 +816,7 @@ function main(): void {
     inventory,
     player.stats,
     gems,
+    fruits,
     equipment,
     (size, count) => {
       const exp = inventory.useCrystals(size, count);
@@ -826,6 +898,7 @@ function main(): void {
     inventory,
     player.stats,
     gems,
+    fruits,
     () => {
       audio.sfx("anvil");
       hud.showToast(`武器強化成功!攻擊力 ${player.stats.atk}`);
@@ -835,6 +908,11 @@ function main(): void {
       audio.sfx("anvil");
       if (gem === "wind") player.windLevel = gems.levels.wind;
       hud.showToast(`寶石升階成功!(Lv.${gems.levels[gem]})`);
+      doSave();
+    },
+    (fruit) => {
+      audio.sfx("anvil");
+      hud.showToast(`果實升階成功!(Lv.${fruits.levels[fruit]})`);
       doSave();
     },
   );
@@ -865,6 +943,12 @@ function main(): void {
     equipment: equipment.serialize(),
     shrines: [...shrineActiveIds],
     seaGems: { first: inventory.firstSeaGem, second: inventory.secondSeaGem },
+    lavaOwned: gems.lavaOwned,
+    fruits: {
+      thunderOwned: fruits.thunderOwned,
+      gravityOwned: fruits.gravityOwned,
+      levels: { ...fruits.levels },
+    },
   });
   const doSave = (): void => saveGame(collectSave());
   setInterval(doSave, 12000);
@@ -885,6 +969,12 @@ function main(): void {
     gems.frostOwned = saved.frostOwned ?? false;
     gems.tideOwned = saved.tideOwned ?? false;
     gems.voidOwned = saved.voidOwned ?? false;
+    gems.lavaOwned = saved.lavaOwned ?? false;
+    if (saved.fruits) {
+      fruits.thunderOwned = saved.fruits.thunderOwned;
+      fruits.gravityOwned = saved.fruits.gravityOwned;
+      Object.assign(fruits.levels, saved.fruits.levels);
+    }
     voidDefeated = saved.voidDefeated ?? false;
     inventory.firstSeaGem = saved.seaGems?.first ?? false;
     inventory.secondSeaGem = saved.seaGems?.second ?? false;
@@ -903,6 +993,7 @@ function main(): void {
     player.hasFrostGem = gems.frostOwned;
     player.windLevel = gems.levels.wind;
     hud.setGems(gems);
+    hud.setFruits(fruits);
     player.hp = player.stats.maxHP;
     player.mp = player.stats.maxMP;
     player.mesh.position.set(saved.pos[0], groundHeight(saved.pos[0], saved.pos[1]), saved.pos[1]);
@@ -917,6 +1008,17 @@ function main(): void {
     scene.add(tideGem.mesh);
     pickups.push(tideGem);
   }
+
+  /** 引力果:擊敗虛空魔王後,從虛空之心殘留的引力裂隙顯現一次 */
+  const spawnGravityFruit = (): void => {
+    if (gravityFruitSpawned || fruits.gravityOwned) return;
+    gravityFruitSpawned = true;
+    const fruit = new Pickup("fruit-gravity", GRAVITY_FRUIT_SITE.x, GRAVITY_FRUIT_SITE.z);
+    scene.add(fruit.mesh);
+    pickups.push(fruit);
+  };
+  // 讀檔時若已通關但尚未取得引力果,補放到虛空之心
+  if (voidDefeated && !fruits.gravityOwned) spawnGravityFruit();
 
   // 潛水濾鏡與結局畫面
   const diveOverlay = document.createElement("div");
@@ -999,6 +1101,10 @@ function main(): void {
       voidGemDropSpawned = true;
       drops.push(new Pickup("gem-void", x, z));
     }
+    if (enemy === magmaGuardian && !gems.lavaOwned && !lavaGemDropSpawned) {
+      lavaGemDropSpawned = true;
+      drops.push(new Pickup("gem-lava", x, z));
+    }
     if (enemy.kind === "slime") quests.slimeKills++;
     quests.addKill(enemy.kind);
     if (enemy.kind === "voidLord" || enemy.kind === "voidGuardian") {
@@ -1012,6 +1118,10 @@ function main(): void {
     } else if (enemy.kind === "earthGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("medium", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "ember") {
+      drops.push(new Pickup("medium", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "magmaGuardian") {
+      drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "sand") {
       drops.push(new Pickup("medium", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "windGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
@@ -1043,7 +1153,14 @@ function main(): void {
         get shockwaves() {
           return shockwaves;
         },
+        get vortexes() {
+          return vortexes;
+        },
+        get bolts() {
+          return bolts;
+        },
         gems,
+        fruits,
         npcs,
         dialog,
         doSave,
@@ -1357,6 +1474,120 @@ function main(): void {
           }
         }
       }
+
+      // 溶岩石:G 熔岩噴發(向前噴出岩漿衝擊波,命中附加灼燒 DoT)
+      if (
+        input.wasPressed("KeyG") &&
+        gems.lavaOwned &&
+        !player.blocking &&
+        player.mp >= LAVA_MP_COST
+      ) {
+        player.mp -= LAVA_MP_COST;
+        audio.sfx("lava");
+        const lavaWave = new Shockwave(
+          player.mesh.position,
+          player.facing,
+          lavaDamage(player.stats.attrs.spirit, gems.levels.lava),
+          { color: 0xff4a1c, lifetime: 0.5, speed: 17, burns: true },
+        );
+        scene.add(lavaWave.mesh);
+        shockwaves.push(lavaWave);
+        const front = player.mesh.position
+          .clone()
+          .add(new THREE.Vector3(Math.sin(player.facing), 1, Math.cos(player.facing)));
+        fx.burst(front, 0xff4a1c, 16, 7);
+      }
+
+      // 雷光果:Z 連鎖閃電(索敵最近敵人,向鄰近敵人跳躍,傷害遞減 + 麻痺)
+      if (
+        input.wasPressed("KeyZ") &&
+        fruits.thunderOwned &&
+        !player.blocking &&
+        player.mp >= THUNDER_MP_COST
+      ) {
+        // 先找射程內最近的活敵作為起點
+        let nearest: Enemy | null = null;
+        let nearestD = THUNDER_RANGE;
+        for (const enemy of enemies) {
+          if (enemy.isDead) continue;
+          const d = enemy.mesh.position.distanceTo(player.mesh.position);
+          if (d < nearestD) {
+            nearestD = d;
+            nearest = enemy;
+          }
+        }
+        if (nearest) {
+          player.mp -= THUNDER_MP_COST;
+          audio.sfx("thunder");
+          const maxChain = thunderChainCount(fruits.levels.thunder);
+          const stunSec = thunderStunDuration(fruits.levels.thunder);
+          const baseDmg = thunderDamage(player.stats.attrs.spirit, fruits.levels.thunder);
+          const chainHit = new Set<Enemy>();
+          // 折線起點為玩家上半身,逐跳連到各目標胸口
+          const boltPoints: THREE.Vector3[] = [
+            player.mesh.position.clone().setY(player.mesh.position.y + 1.4),
+          ];
+          let current: Enemy | null = nearest;
+          let hopDmg = baseDmg;
+          while (current && chainHit.size < maxChain) {
+            const target: Enemy = current;
+            chainHit.add(target);
+            const dmg = Math.round(hopDmg);
+            const toEnemy = new THREE.Vector3().subVectors(
+              target.mesh.position,
+              player.mesh.position,
+            );
+            const died = target.takeDamage(dmg, toEnemy);
+            if (!died) target.stun(stunSec);
+            const hitPos = target.mesh.position.clone().setY(target.mesh.position.y + 1);
+            boltPoints.push(hitPos.clone());
+            floats.spawn(hitPos.clone().setY(hitPos.y + 1.4), String(dmg), "#bfe8ff");
+            fx.burst(hitPos, died ? 0x9be89b : 0xbfe8ff, died ? 16 : 8);
+            audio.sfx(died ? "enemyDie" : "hit");
+            if (died) spawnDrops(target);
+            // 找下一個未命中、在跳躍範圍內、最近的活敵
+            let next: Enemy | null = null;
+            let nextD = THUNDER_CHAIN_RANGE;
+            for (const enemy of enemies) {
+              if (enemy.isDead || chainHit.has(enemy)) continue;
+              const d = enemy.mesh.position.distanceTo(target.mesh.position);
+              if (d < nextD) {
+                nextD = d;
+                next = enemy;
+              }
+            }
+            current = next;
+            hopDmg *= THUNDER_CHAIN_FALLOFF;
+          }
+          const bolt = new LightningBolt(boltPoints);
+          scene.add(bolt.group);
+          bolts.push(bolt);
+          fx.shake(0.2, 0.16);
+        }
+      }
+
+      // 引力果:T 引力漩渦(在面前生成漩渦,吸引聚怪 + 持續傷害)
+      if (
+        input.wasPressed("KeyT") &&
+        fruits.gravityOwned &&
+        !player.blocking &&
+        player.mp >= GRAVITY_MP_COST
+      ) {
+        player.mp -= GRAVITY_MP_COST;
+        audio.sfx("vortex");
+        const vx = player.mesh.position.x + Math.sin(player.facing) * VORTEX_FORWARD;
+        const vz = player.mesh.position.z + Math.cos(player.facing) * VORTEX_FORWARD;
+        const vortex = new Vortex(
+          vx,
+          vz,
+          vortexRadius(fruits.levels.gravity),
+          vortexDuration(fruits.levels.gravity),
+          vortexDamage(player.stats.attrs.spirit, fruits.levels.gravity),
+        );
+        scene.add(vortex.mesh);
+        vortexes.push(vortex);
+        fx.burst(new THREE.Vector3(vx, groundHeight(vx, vz) + 1, vz), 0xb060ff, 14, 6);
+      }
     }
 
     // 熔岩環境傷害:每 0.8 秒灼傷一次(企劃書:火山島環境傷害機制)
@@ -1422,6 +1653,21 @@ function main(): void {
         }
         if (player.isDead) showDeathScreen();
       }
+      // 灼燒 DoT 結算(溶岩石熔岩噴發點燃;每 0.5 秒跳一次)
+      const burnDmg = enemy.tickBurn(worldDt);
+      if (burnDmg > 0 && !enemy.isDead) {
+        const burnDied = enemy.takeDamage(burnDmg);
+        floats.spawn(
+          enemy.mesh.position.clone().setY(enemy.mesh.position.y + 2.4),
+          String(burnDmg),
+          "#ff7a3c",
+        );
+        if (burnDied) {
+          audio.sfx("enemyDie");
+          fx.burst(enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1), 0x9be89b, 16);
+          spawnDrops(enemy);
+        }
+      }
     }
 
     // 漂流寶箱:漂浮 + 開船靠近開啟,隨機獎勵,計時重生到新海點
@@ -1466,6 +1712,7 @@ function main(): void {
         toEnemy.y = 0;
         const died = enemy.takeDamage(wave.damage, toEnemy);
         if (wave.freezes && !died) enemy.freeze(freezeDuration(gems.levels.frost));
+        if (wave.burns && !died) enemy.burn(LAVA_BURN_DURATION, lavaBurnDps(gems.levels.lava));
         const hitPos = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1);
         floats.spawn(hitPos.clone().setY(hitPos.y + 1.2), String(wave.damage), "#7fe8ff");
         fx.burst(hitPos, died ? 0x9be89b : 0x7fe8ff, died ? 16 : 8);
@@ -1479,6 +1726,52 @@ function main(): void {
       }
       return true;
     });
+
+    // 引力漩渦:旋轉 + 吸引聚怪 + 每 tick 範圍傷害結算
+    vortexes = vortexes.filter((vortex) => {
+      const hits = vortex.update(worldDt, enemies);
+      for (const enemy of hits) {
+        const died = enemy.takeDamage(vortex.damage);
+        const hitPos = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1);
+        floats.spawn(hitPos.clone().setY(hitPos.y + 1.2), String(vortex.damage), "#d8b0ff");
+        fx.burst(hitPos, died ? 0x9be89b : 0xb060ff, died ? 16 : 6);
+        if (died) {
+          audio.sfx("enemyDie");
+          spawnDrops(enemy);
+        }
+      }
+      if (vortex.expired) {
+        scene.remove(vortex.mesh);
+        vortex.dispose();
+        return false;
+      }
+      return true;
+    });
+
+    // 連鎖閃電折線:淡出後移除(純特效)
+    bolts = bolts.filter((bolt) => {
+      bolt.update(worldDt);
+      if (bolt.expired) {
+        scene.remove(bolt.group);
+        bolt.dispose();
+        return false;
+      }
+      return true;
+    });
+
+    // 雷光果只在風暴天氣顯現:風暴起則落於霜雪峰山頂,風暴歇而未撿走則收回
+    if (!fruits.thunderOwned) {
+      const storming = sky.weather === "storm";
+      if (storming && !thunderFruit) {
+        thunderFruit = new Pickup("fruit-thunder", THUNDER_FRUIT_SITE.x, THUNDER_FRUIT_SITE.z);
+        scene.add(thunderFruit.mesh);
+        pickups.push(thunderFruit);
+      } else if (!storming && thunderFruit) {
+        scene.remove(thunderFruit.mesh);
+        pickups = pickups.filter((p) => p !== thunderFruit);
+        thunderFruit = null;
+      }
+    }
 
     pickups = pickups.filter((pickup) => {
       if (player.isDead) return true;
@@ -1531,6 +1824,28 @@ function main(): void {
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【虛空石】!按 X 短距離瞬移");
+          doSave();
+        } else if (pickup.kind === "gem-lava") {
+          feed.push("🌋 獲得靈紋寶石【溶岩石】");
+          gems.lavaOwned = true;
+          hud.setGems(gems);
+          audio.sfx("gem");
+          hud.showToast("獲得靈紋寶石【溶岩石】!按 G 噴發岩漿並點燃敵人");
+          doSave();
+        } else if (pickup.kind === "fruit-thunder") {
+          feed.push("⚡ 獲得靈樹果實【雷光果】");
+          fruits.thunderOwned = true;
+          thunderFruit = null;
+          hud.setFruits(fruits);
+          audio.sfx("gem");
+          hud.showToast("獲得靈樹果實【雷光果】!按 Z 召喚連鎖閃電(麻痺敵人)");
+          doSave();
+        } else if (pickup.kind === "fruit-gravity") {
+          feed.push("🌀 獲得靈樹果實【引力果】");
+          fruits.gravityOwned = true;
+          hud.setFruits(fruits);
+          audio.sfx("gem");
+          hud.showToast("獲得靈樹果實【引力果】!按 T 生成引力漩渦聚怪");
           doSave();
         } else {
           inventory.crystals[pickup.kind]++;
@@ -1606,6 +1921,13 @@ function main(): void {
           : `跨越界海:寶石${ownedGemCount()}/6・圖鑑${killedKindCount()}/${ENEMY_KINDS.length}・Lv.${player.stats.level}/${SEA2_LEVEL}`,
       );
     }
+    if (quests.get("lava") === "active") {
+      questLines.push(
+        gems.lavaOwned
+          ? "熔砂的試煉:回港口鎮找鎮長波叔回報"
+          : "熔砂的試煉:港口鎮東方的熔砂島,擊敗島心的熔岩守護者",
+      );
+    }
     const huntTracks: { id: HuntId; title: string; npc: string }[] = [
       { id: "vineHunt", title: "藤蔓清剿", npc: "獵人小藤" },
       { id: "emberHunt", title: "餘燼清剿", npc: "礦工岩叔" },
@@ -1627,6 +1949,7 @@ function main(): void {
     if (!endingShown && voidLord.isDead) {
       endingShown = true;
       voidDefeated = true;
+      spawnGravityFruit(); // 通關後引力果於虛空之心顯現
       audio.sfx("victory");
       endingOverlay.style.display = "flex";
       doSave();

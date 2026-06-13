@@ -6,6 +6,7 @@ import {
   type PlayerStats,
 } from "../systems/stats";
 import type { GemBag } from "../systems/gems";
+import type { FruitBag } from "../systems/fruits";
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 
 const BAG_CSS = `
@@ -52,6 +53,7 @@ export class BagPanel {
     private inventory: Inventory,
     private stats: PlayerStats,
     private gems: GemBag,
+    private fruits: FruitBag,
     private equipment: EquipmentState,
     private onUseCrystal: (size: CrystalSize, count: number) => void,
     private onAllocate: (key: AttributeKey) => void,
@@ -119,8 +121,20 @@ export class BagPanel {
       ["❄️", "霜語晶", this.gems.frostOwned],
       ["🌊", "潮汐石", this.gems.tideOwned],
       ["🌀", "虛空石", this.gems.voidOwned],
+      ["🌋", "溶岩石", this.gems.lavaOwned],
     ];
     const gemGrid = gemSlots
+      .map(
+        ([icon, name, owned]) =>
+          `<div class="gem-slot ${owned ? "" : "off"}">${icon}<br/>${name}${owned ? "" : "<br/><span class='muted'>未取得</span>"}</div>`,
+      )
+      .join("");
+
+    const fruitSlots: Array<[string, string, boolean]> = [
+      ["⚡", "雷光果", this.fruits.thunderOwned],
+      ["🌀", "引力果", this.fruits.gravityOwned],
+    ];
+    const fruitGrid = fruitSlots
       .map(
         ([icon, name, owned]) =>
           `<div class="gem-slot ${owned ? "" : "off"}">${icon}<br/>${name}${owned ? "" : "<br/><span class='muted'>未取得</span>"}</div>`,
@@ -165,6 +179,7 @@ export class BagPanel {
       ${seaGemRows.length > 0 ? `<div class="section"><h3>重要道具</h3>${seaGemRows.join("")}</div>` : ""}
       <div class="section"><h3>裝備</h3>${equipRows || '<div class="muted">尚無裝備,去商人圓圓那裡看看吧</div>'}</div>
       <div class="section"><h3>靈紋寶石盤</h3><div class="gems">${gemGrid}</div></div>
+      <div class="section"><h3>靈樹果實</h3><div class="gems">${fruitGrid}</div></div>
       <div class="section alloc"><h3>能力點分配</h3>${allocRows}</div>
       <div class="section"><h3>傳送</h3>${this.renderTeleport()}</div>
       <div class="muted">按 Tab 關閉</div>

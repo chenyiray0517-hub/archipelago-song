@@ -5,6 +5,12 @@ import {
   type GemBag,
   type UpgradableGem,
 } from "../systems/gems";
+import {
+  FRUIT_UPGRADE_COSTS,
+  FRUIT_MAX_LEVEL,
+  type FruitBag,
+  type UpgradableFruit,
+} from "../systems/fruits";
 
 const FORGE_CSS = `
 #forge { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 380px; background: rgba(26, 16, 10, 0.95); border: 1px solid rgba(255,170,80,0.3); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
@@ -30,8 +36,10 @@ export class ForgePanel {
     private inventory: Inventory,
     private stats: PlayerStats,
     private gems: GemBag,
+    private fruits: FruitBag,
     private onUpgrade: () => void,
     private onGemUpgrade: (gem: UpgradableGem) => void,
+    private onFruitUpgrade: (fruit: UpgradableFruit) => void,
   ) {
     const style = document.createElement("style");
     style.textContent = FORGE_CSS;
@@ -67,6 +75,7 @@ export class ForgePanel {
       ["earth", "🪨 地殼石(地震波威力與範圍)", this.gems.earthOwned],
       ["frost", "❄️ 霜語晶(冰箭威力與凍結時間)", this.gems.frostOwned],
       ["void", "🌀 虛空石(瞬移距離)", this.gems.voidOwned],
+      ["lava", "🌋 溶岩石(熔岩噴發威力與灼燒)", this.gems.lavaOwned],
     ];
     const gemRows = GEM_INFO.filter(([, , owned]) => owned)
       .map(([gem, label]) => {
@@ -77,6 +86,24 @@ export class ForgePanel {
           <span>${label} Lv.${lv}</span>
           <button data-gemup="${gem}" ${gemMaxed || this.inventory.coins < gemCost ? "disabled" : ""}>
             ${gemMaxed ? "已滿階" : `升階(🪙 ${gemCost})`}
+          </button>
+        </div>`;
+      })
+      .join("");
+
+    const FRUIT_INFO: Array<[UpgradableFruit, string, boolean]> = [
+      ["thunder", "⚡ 雷光果(連鎖閃電威力與跳數)", this.fruits.thunderOwned],
+      ["gravity", "🌀 引力果(漩渦威力與範圍)", this.fruits.gravityOwned],
+    ];
+    const fruitRows = FRUIT_INFO.filter(([, , owned]) => owned)
+      .map(([fruit, label]) => {
+        const lv = this.fruits.levels[fruit];
+        const fruitMaxed = lv >= FRUIT_MAX_LEVEL;
+        const fruitCost = fruitMaxed ? 0 : FRUIT_UPGRADE_COSTS[lv - 1];
+        return `<div class="info" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span>${label} Lv.${lv}</span>
+          <button data-fruitup="${fruit}" ${fruitMaxed || this.inventory.coins < fruitCost ? "disabled" : ""}>
+            ${fruitMaxed ? "已滿階" : `升階(🪙 ${fruitCost})`}
           </button>
         </div>`;
       })
@@ -94,6 +121,7 @@ export class ForgePanel {
       </button>
       <h3 style="margin-top:16px;">寶石升階</h3>
       ${gemRows || '<div class="info" style="opacity:0.6;">取得靈紋寶石後可在此升階</div>'}
+      ${fruitRows ? `<h3 style="margin-top:16px;">果實升階</h3>${fruitRows}` : ""}
       <div class="muted">按 F 關閉</div>
     `;
     const btn = this.root.querySelector<HTMLButtonElement>("#forge-btn");
@@ -114,6 +142,19 @@ export class ForgePanel {
         this.inventory.coins -= gemCost;
         this.gems.levels[gem]++;
         this.onGemUpgrade(gem);
+        this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-fruitup]").forEach((fruitBtn) => {
+      fruitBtn.addEventListener("click", () => {
+        const fruit = fruitBtn.dataset.fruitup as UpgradableFruit;
+        const lv = this.fruits.levels[fruit];
+        if (lv >= FRUIT_MAX_LEVEL) return;
+        const fruitCost = FRUIT_UPGRADE_COSTS[lv - 1];
+        if (this.inventory.coins < fruitCost) return;
+        this.inventory.coins -= fruitCost;
+        this.fruits.levels[fruit]++;
+        this.onFruitUpgrade(fruit);
         this.render();
       });
     });

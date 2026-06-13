@@ -26,6 +26,7 @@ export type SfxName =
   | "dive"
   | "victory"
   | "thunder"
+  | "vortex"
   | "shrine"
   | "seaTravel"
   | "shrineTravel";
@@ -290,6 +291,11 @@ export class AudioEngine {
       case "thunder":
         this.noiseBurst("lowpass", 200, 40, 0.9, 0.5);
         this.tone("sine", 60, 30, 0.8, 0.35);
+        break;
+      case "vortex":
+        // 低頻吸氣:音高上揚 + 帶通掃頻,營造「捲入」感
+        this.tone("sine", 90, 320, 0.7, 0.3);
+        this.noiseBurst("bandpass", 300, 900, 0.7, 0.2);
         break;
       case "shrine":
         [659.25, 987.77, 1318.5].forEach((freq, i) =>

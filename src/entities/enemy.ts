@@ -13,7 +13,9 @@ export type EnemyKind =
   | "frostGuardian"
   | "deep"
   | "voidGuardian"
-  | "voidLord";
+  | "voidLord"
+  | "sand"
+  | "magmaGuardian";
 
 type EnemyState = "patrol" | "chase" | "windup" | "lunge" | "recover" | "dying" | "dead";
 
@@ -53,6 +55,9 @@ const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   voidGuardian: { hp: 550, dmg: 30, speed: 2.8, scale: 2.8, color: 0x6a3a9a },
   // 虛空之心(最終頭目)
   voidLord: { hp: 800, dmg: 35, speed: 3.2, scale: 3.6, color: 0x2a1a3a },
+  // 第二海・熔砂島(界海之後的後期帶)
+  sand: { hp: 200, dmg: 26, speed: 3.8, scale: 1.4, color: 0xe0b860 },
+  magmaGuardian: { hp: 680, dmg: 34, speed: 2.9, scale: 3.0, color: 0xff5a2c },
 };
 
 /**
@@ -75,6 +80,12 @@ export class Enemy {
   private flashT = 0;
   /** 冰凍剩餘秒數(凍結中不移動不攻擊,仍可受擊) */
   freezeT = 0;
+  /** 灼燒剩餘秒數(溶岩石熔岩噴發;持續扣血,傷害由 main 每 0.5s 結算) */
+  burnT = 0;
+  private burnDps = 0;
+  private burnTickAccum = 0;
+  /** 麻痺剩餘秒數(雷光果連鎖閃電;定身不動,仍可受擊) */
+  stunT = 0;
   private hopPhase = Math.random() * Math.PI * 2;
   private lungeDir = new THREE.Vector3();
   private lungeHitDone = false;
@@ -181,6 +192,14 @@ export class Enemy {
       return 0;
     }
 
+    // 麻痺:定身不動,泛黃白閃爍
+    if (this.stunT > 0) {
+      this.stunT -= dt;
+      const flicker = 0.4 + 0.4 * Math.abs(Math.sin(this.stunT * 30));
+      this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xfff080), flicker);
+      return 0;
+    }
+
     const pos = this.mesh.position;
     const distToPlayer = pos.distanceTo(playerPos);
     const distToHome = pos.distanceTo(this.home);
@@ -276,6 +295,10 @@ export class Enemy {
     } else {
       this.blobMaterial.color.copy(this.baseColor);
     }
+    // 灼燒中泛橘紅(疊在前面的基礎色上)
+    if (this.burnT > 0 && this.flashT <= 0) {
+      this.blobMaterial.color.lerp(new THREE.Color(0xff6a2c), 0.5);
+    }
 
     pos.y = groundHeight(pos.x, pos.z);
     return dealt;
@@ -285,6 +308,34 @@ export class Enemy {
   freeze(seconds: number): void {
     if (this.isDead) return;
     this.freezeT = Math.max(this.freezeT, seconds);
+  }
+
+  /** 點燃:持續灼燒(溶岩石熔岩噴發);時間與每秒傷害取較大值疊加 */
+  burn(seconds: number, dps: number): void {
+    if (this.isDead) return;
+    this.burnT = Math.max(this.burnT, seconds);
+    this.burnDps = Math.max(this.burnDps, dps);
+  }
+
+  /** 麻痺指定秒數(雷光果連鎖閃電) */
+  stun(seconds: number): void {
+    if (this.isDead) return;
+    this.stunT = Math.max(this.stunT, seconds);
+  }
+
+  /**
+   * 推進灼燒計時(由 main 每幀呼叫)。
+   * @returns 本幀應結算的灼燒傷害(每 0.5 秒跳一次),無則 0;由 main 走死亡/掉落流程
+   */
+  tickBurn(dt: number): number {
+    if (this.burnT <= 0 || this.isDead) return 0;
+    this.burnT -= dt;
+    this.burnTickAccum += dt;
+    if (this.burnTickAccum >= 0.5) {
+      this.burnTickAccum -= 0.5;
+      return Math.round(this.burnDps * 0.5);
+    }
+    return 0;
   }
 
   /**
@@ -309,6 +360,11 @@ export class Enemy {
   private revive(): void {
     this.hp = this.config.hp;
     this.state = "patrol";
+    this.freezeT = 0;
+    this.burnT = 0;
+    this.burnDps = 0;
+    this.burnTickAccum = 0;
+    this.stunT = 0;
     this.mesh.visible = true;
     this.hpBar.visible = true;
     this.body.scale.setScalar(1);

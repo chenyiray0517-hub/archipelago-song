@@ -1,6 +1,7 @@
 import type { Attributes, CrystalSize } from "./stats";
 import type { QuestSave } from "./quests";
 import type { UpgradableGem } from "./gems";
+import type { UpgradableFruit } from "./fruits";
 import type { EquipSlot } from "./equipment";
 
 const SAVE_KEY = "archipelago-save-v1";
@@ -33,6 +34,14 @@ export interface SaveData {
   shrines?: string[];
   /** 海寶石持有狀態(往返第一/第二海的重要道具) */
   seaGems?: { first: boolean; second: boolean };
+  /** 溶岩石持有狀態(第七顆靈紋寶石,熔砂島取得) */
+  lavaOwned?: boolean;
+  /** 靈樹果實持有狀態與升階(雷光果/引力果) */
+  fruits?: {
+    thunderOwned: boolean;
+    gravityOwned: boolean;
+    levels: Record<UpgradableFruit, number>;
+  };
 }
 
 /** 寫入 localStorage(失敗靜默,遊戲不因存檔掛掉) */

@@ -14,6 +14,8 @@ export class Shockwave {
   readonly damage: number;
   /** 命中時是否冰凍敵人(霜語晶冰箭) */
   readonly freezes: boolean;
+  /** 命中時是否點燃敵人(溶岩石熔岩噴發) */
+  readonly burns: boolean;
 
   private life: number;
   private readonly lifetime: number;
@@ -26,10 +28,17 @@ export class Shockwave {
     origin: THREE.Vector3,
     facing: number,
     damage: number,
-    options: { color?: number; lifetime?: number; speed?: number; freezes?: boolean } = {},
+    options: {
+      color?: number;
+      lifetime?: number;
+      speed?: number;
+      freezes?: boolean;
+      burns?: boolean;
+    } = {},
   ) {
     this.damage = damage;
     this.freezes = options.freezes ?? false;
+    this.burns = options.burns ?? false;
     this.lifetime = options.lifetime ?? 0.9;
     this.speed = options.speed ?? 22;
     this.life = this.lifetime;

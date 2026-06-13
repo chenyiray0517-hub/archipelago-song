@@ -978,6 +978,88 @@ for (let i = 0; i < 10; i++) {
   await page.waitForTimeout(150);
 }
 
+// 45b. 鎮長波叔給予「熔砂的試煉」任務(第七顆寶石溶岩石)
+const lavaQuest = await page.evaluate(() => window.__game.quests.get("lava"));
+lavaQuest === "active"
+  ? ok("鎮長波叔給予「熔砂的試煉」任務")
+  : fail(`熔砂任務未接取:${lavaQuest}`);
+
+// 45c. 熔砂島存在:熔砂果凍 ×5 + 熔岩守護者,且島心為陸地(groundHeight>0)
+const desertIsland = await page.evaluate(() => {
+  const g = window.__game;
+  const sand = g.enemies.filter((e) => e.kind === "sand").length;
+  const guardian = g.enemies.find((e) => e.kind === "magmaGuardian");
+  // 熔岩守護者位在 ~2200,144,停在島上 → y 高於海平面
+  return { sand, hasGuardian: !!guardian, guardianY: guardian ? guardian.mesh.position.y : -99 };
+});
+desertIsland.sand === 5 && desertIsland.hasGuardian && desertIsland.guardianY > 0.5
+  ? ok(`熔砂島生成(熔砂果凍×${desertIsland.sand} + 熔岩守護者,島心 y=${desertIsland.guardianY.toFixed(1)})`)
+  : fail(`熔砂島異常:${JSON.stringify(desertIsland)}`);
+
+// 45d. 溶岩石熔岩噴發:授予寶石 → G 施放 → 靈力扣除 + 岩漿衝擊波(附帶灼燒旗標)
+const lavaMpBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.lavaOwned = true;
+  g.player.mp = g.player.stats.maxMP;
+  return g.player.mp;
+});
+await page.keyboard.press("g");
+await page.waitForTimeout(200);
+const afterLava = await page.evaluate(() => {
+  const waves = window.__game.shockwaves;
+  return {
+    mp: window.__game.player.mp,
+    waves: waves.length,
+    burns: waves.length > 0 && waves[waves.length - 1].burns === true,
+  };
+});
+afterLava.mp <= lavaMpBefore - 13
+  ? ok(`熔岩噴發消耗靈力(${Math.round(lavaMpBefore)} → ${Math.round(afterLava.mp)})`)
+  : fail(`靈力未扣除:${lavaMpBefore} → ${afterLava.mp}`);
+afterLava.waves > 0 && afterLava.burns
+  ? ok("岩漿衝擊波生成(附帶灼燒旗標)")
+  : fail(`衝擊波/灼燒旗標異常:${JSON.stringify(afterLava)}`);
+await page.screenshot({ path: "/tmp/archipelago-30-lava.png" });
+
+// 45e. 灼燒 DoT:點燃熔砂果凍 → 主迴圈每 0.5s 結算,持續扣血
+const burnStart = await page.evaluate(() => {
+  const e = window.__game.enemies.find((x) => x.kind === "sand" && !x.isDead);
+  e.burn(3, 40);
+  return e.hp;
+});
+await page.waitForTimeout(1200);
+const burnNow = await page.evaluate(() => {
+  const e = window.__game.enemies.find((x) => x.kind === "sand");
+  return { hp: e.hp, burnT: e.burnT };
+});
+burnNow.hp < burnStart && burnNow.burnT > 0
+  ? ok(`灼燒 DoT 持續扣血(${burnStart} → ${burnNow.hp},剩餘 ${burnNow.burnT.toFixed(1)}s)`)
+  : fail(`灼燒未生效:${JSON.stringify({ burnStart, ...burnNow })}`);
+
+// 45f. 持有溶岩石後回報鎮長 → 「熔砂的試煉」完成 + 發獎
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(2000, 2, -38.5); // 鎮長波叔旁
+});
+await page.waitForTimeout(200);
+const coinsBeforeLava = await page.evaluate(() => window.__game.inventory.coins);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const lavaDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("lava"),
+  coins: window.__game.inventory.coins,
+}));
+lavaDone.state === "done" && lavaDone.coins >= coinsBeforeLava + 600
+  ? ok(`「熔砂的試煉」完成(獲得 ${lavaDone.coins - coinsBeforeLava} 貝拉幣)`)
+  : fail(`熔砂任務未完成:${JSON.stringify(lavaDone)}`);
+
 // 46. 使用第一海寶石 → 回到第一海曙光嶼,船回泊點
 await page.keyboard.press("Tab");
 await page.waitForTimeout(300);
@@ -1027,6 +1109,108 @@ Math.hypot(tpResult.bx - -150, tpResult.bz - 62) < 5
   ? ok("船隻同行移到燼岩島近岸")
   : fail(`船位異常:${tpResult.bx.toFixed(0)},${tpResult.bz.toFixed(0)}`);
 
+// 48. 雷光果取得:只在風暴天氣於霜雪峰山頂顯現,走近即拾取
+await page.evaluate(() => window.__game.sky.forceWeather("clear"));
+await page.waitForTimeout(200);
+const clearNoFruit = await page.evaluate(
+  () => window.__game.pickups.filter((p) => p.kind === "fruit-thunder").length,
+);
+clearNoFruit === 0 ? ok("晴天時雷光果未顯現") : fail(`晴天不應有雷光果:${clearNoFruit}`);
+await page.evaluate(() => window.__game.sky.forceWeather("storm"));
+await page.waitForTimeout(250);
+const stormFruit = await page.evaluate(
+  () => window.__game.pickups.filter((p) => p.kind === "fruit-thunder").length,
+);
+stormFruit >= 1 ? ok("風暴天氣雷光果於霜雪峰山頂顯現") : fail(`風暴應顯現雷光果:${stormFruit}`);
+await page.evaluate(() => window.__game.player.mesh.position.set(60, 30, -170));
+await page.waitForTimeout(300);
+const thunderGot = await page.evaluate(() => window.__game.fruits.thunderOwned);
+thunderGot ? ok("走近拾取雷光果(thunderOwned)") : fail("雷光果未拾取");
+await page.screenshot({ path: "/tmp/archipelago-31-thunder.png" });
+
+// 49. 連鎖閃電:聚集敵人 → Z → 多目標連鎖 + 折線 + 麻痺
+const thunderBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.player.mp = g.player.stats.maxMP;
+  g.player.mesh.position.set(60, 30, -170);
+  const frosts = g.enemies.filter((e) => e.kind === "frost").slice(0, 3);
+  frosts[0].mesh.position.set(60, 28, -164);
+  frosts[1].mesh.position.set(63, 28, -161);
+  frosts[2].mesh.position.set(57, 28, -167);
+  return { mp: g.player.mp, hp: frosts.map((f) => f.hp) };
+});
+await page.keyboard.press("z");
+await page.waitForTimeout(150);
+const thunderAfter = await page.evaluate(() => {
+  const g = window.__game;
+  const frosts = g.enemies.filter((e) => e.kind === "frost").slice(0, 3);
+  return {
+    mp: g.player.mp,
+    bolts: g.bolts.length,
+    hp: frosts.map((f) => f.hp),
+    stunned: frosts.filter((f) => f.stunT > 0).length,
+  };
+});
+thunderAfter.mp <= thunderBefore.mp - 15
+  ? ok(`連鎖閃電消耗靈力(${Math.round(thunderBefore.mp)} → ${Math.round(thunderAfter.mp)})`)
+  : fail(`靈力未扣:${thunderBefore.mp} → ${thunderAfter.mp}`);
+const chained = thunderAfter.hp.filter((hp, i) => hp < thunderBefore.hp[i]).length;
+thunderAfter.bolts > 0 && chained >= 2
+  ? ok(`連鎖閃電命中 ${chained} 個目標(折線生成)`)
+  : fail(`連鎖異常:bolts=${thunderAfter.bolts} chained=${chained}`);
+thunderAfter.stunned >= 1
+  ? ok(`命中目標被麻痺(${thunderAfter.stunned} 個)`)
+  : fail("連鎖閃電未造成麻痺");
+
+// 50. 引力果引力漩渦:聚怪 + 持續傷害(先麻痺定身以隔離測「吸引位移」)
+const gravBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.fruits.gravityOwned = true;
+  g.player.mp = g.player.stats.maxMP;
+  g.player.facing = 0; // 面向 +z → 漩渦生成於玩家前方 8(中心 60,-162)
+  g.player.mesh.position.set(60, 30, -170);
+  const cx = 60;
+  const cz = -162;
+  const frosts = g.enemies.filter((e) => e.kind === "frost").slice(0, 3);
+  frosts.forEach((f, i) => {
+    f.stun(5); // 定身,排除自走干擾,專測漩渦吸引
+    f.mesh.position.set(cx + (i - 1) * 3, 28, cz + 2);
+  });
+  return {
+    mp: g.player.mp,
+    hp: frosts.map((f) => f.hp),
+    dist: frosts.map((f) => Math.hypot(f.mesh.position.x - cx, f.mesh.position.z - cz)),
+  };
+});
+await page.keyboard.press("t");
+// 立刻量靈力(漩渦持續期間靈力會自然回復,量太晚會誤判沒扣)
+await page.waitForTimeout(70);
+const gravMpAfter = await page.evaluate(() => window.__game.player.mp);
+await page.waitForTimeout(700);
+const gravAfter = await page.evaluate(() => {
+  const g = window.__game;
+  const cx = 60;
+  const cz = -162;
+  const frosts = g.enemies.filter((e) => e.kind === "frost").slice(0, 3);
+  return {
+    vortexes: g.vortexes.length,
+    hp: frosts.map((f) => f.hp),
+    dist: frosts.map((f) => Math.hypot(f.mesh.position.x - cx, f.mesh.position.z - cz)),
+  };
+});
+gravMpAfter <= gravBefore.mp - 17
+  ? ok(`引力漩渦消耗靈力(${Math.round(gravBefore.mp)} → ${Math.round(gravMpAfter)})`)
+  : fail(`靈力未扣:${gravBefore.mp} → ${gravMpAfter}`);
+const pulled = gravAfter.dist.filter((d, i) => d < gravBefore.dist[i] - 0.3).length;
+pulled >= 2
+  ? ok(`引力漩渦把 ${pulled} 個敵人吸向中心`)
+  : fail(`吸引異常:${JSON.stringify({ before: gravBefore.dist, after: gravAfter.dist })}`);
+const hurt = gravAfter.hp.filter((hp, i) => hp < gravBefore.hp[i]).length;
+hurt >= 2
+  ? ok(`引力漩渦持續傷害命中 ${hurt} 個敵人`)
+  : fail(`漩渦傷害異常:${JSON.stringify({ before: gravBefore.hp, after: gravAfter.hp })}`);
+await page.screenshot({ path: "/tmp/archipelago-32-vortex.png" });
+
 // 10. 存檔:手動觸發存檔後重新整理,等級與寶石持有應保留
 const beforeReload = await page.evaluate(() => {
   window.__game.doSave();
@@ -1047,6 +1231,10 @@ const afterReload = await page.evaluate(() => ({
   seaFirst: window.__game.inventory.firstSeaGem,
   seaSecond: window.__game.inventory.secondSeaGem,
   sea2: window.__game.quests.get("sea2"),
+  lava: window.__game.gems.lavaOwned,
+  lavaQuest: window.__game.quests.get("lava"),
+  thunder: window.__game.fruits.thunderOwned,
+  gravity: window.__game.fruits.gravityOwned,
 }));
 afterReload.level === beforeReload.level
   ? ok(`重新整理後等級保留(Lv.${afterReload.level})`)
@@ -1065,6 +1253,12 @@ afterReload.shrineIds.length === 2 && afterReload.shrineIds.includes("ember")
 afterReload.vineHunt === "done"
   ? ok("重新整理後清剿任務進度保留")
   : fail(`清剿任務未保留:${afterReload.vineHunt}`);
+afterReload.lava && afterReload.lavaQuest === "done"
+  ? ok("重新整理後溶岩石與熔砂試煉進度保留")
+  : fail(`溶岩石未保留:${JSON.stringify({ lava: afterReload.lava, lavaQuest: afterReload.lavaQuest })}`);
+afterReload.thunder && afterReload.gravity
+  ? ok("重新整理後靈樹果實(雷光果+引力果)保留")
+  : fail(`果實未保留:${JSON.stringify({ thunder: afterReload.thunder, gravity: afterReload.gravity })}`);
 afterReload.seaFirst && afterReload.seaSecond && afterReload.sea2 === "done"
   ? ok("重新整理後海寶石與跨越界海進度保留")
   : fail(`海寶石未保留:${JSON.stringify({ seaFirst: afterReload.seaFirst, seaSecond: afterReload.seaSecond, sea2: afterReload.sea2 })}`);

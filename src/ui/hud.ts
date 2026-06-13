@@ -17,6 +17,8 @@ const HUD_CSS = `
 #hud .toast.show { opacity: 1; }
 #hud .gem-row { font-size: 13px; margin-top: 6px; display: none; color: #ffb08a; }
 #hud .gem-row.show { display: block; }
+#hud .fruit-row { font-size: 13px; margin-top: 4px; display: none; color: #cfa8ff; }
+#hud .fruit-row.show { display: block; }
 #hud .quests { position: absolute; top: 14px; right: 14px; background: rgba(10,26,42,0.72); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.8; max-width: 260px; display: none; }
 #hud .quests.show { display: block; }
 #hud .quests .title { font-weight: 700; font-size: 13px; opacity: 0.8; margin-bottom: 2px; }
@@ -62,6 +64,7 @@ export class Hud {
         <div class="bar xp"><div id="hud-xp"></div></div>
         <div class="row"><span>🧪 <span id="hud-potion">0</span>(R 使用)</span><span id="hud-env">☀️</span></div>
         <div class="gem-row" id="hud-gem">🔥 焰心石｜E 火焰斬(10 靈力)</div>
+        <div class="fruit-row" id="hud-fruit"></div>
       </div>
       <div class="quests" id="hud-quests"><div class="title">任務</div><div id="hud-quest-list"></div></div>
       <div class="talk" id="hud-talk">按 F 對話</div>
@@ -109,6 +112,7 @@ export class Hud {
     frostOwned: boolean;
     tideOwned: boolean;
     voidOwned: boolean;
+    lavaOwned: boolean;
   }): void {
     const parts: string[] = [];
     if (gems.flameOwned) parts.push("🔥 焰心石｜E 火焰斬(10 靈力)");
@@ -117,7 +121,18 @@ export class Hud {
     if (gems.frostOwned) parts.push("❄️ 霜語晶｜V 冰箭(12 靈力)/海上行走耗靈力");
     if (gems.tideOwned) parts.push("🌊 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)");
     if (gems.voidOwned) parts.push("🌀 虛空石｜X 瞬移(8 靈力)");
+    if (gems.lavaOwned) parts.push("🌋 溶岩石｜G 熔岩噴發(14 靈力,灼燒)");
     const el = this.byId("hud-gem");
+    el.classList.toggle("show", parts.length > 0);
+    el.innerHTML = parts.join("<br/>");
+  }
+
+  /** 更新靈樹果實技能提示列(雷光果/引力果) */
+  setFruits(fruits: { thunderOwned: boolean; gravityOwned: boolean }): void {
+    const parts: string[] = [];
+    if (fruits.thunderOwned) parts.push("⚡ 雷光果｜Z 連鎖閃電(16 靈力,麻痺)");
+    if (fruits.gravityOwned) parts.push("🌀 引力果｜T 引力漩渦(18 靈力,聚怪)");
+    const el = this.byId("hud-fruit");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");
   }

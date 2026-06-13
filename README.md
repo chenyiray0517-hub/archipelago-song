@@ -1,5 +1,7 @@
 # 群島之歌(Archipelago Song)
 
+**🎮 線上遊玩:https://chenyiray0517-hub.github.io/archipelago-song/**(瀏覽器直接玩,建議電腦 + Chrome)
+
 3D 海島探索 ARPG/開放世界。玩家駕船航行群島、收集「靈紋寶石」解鎖能力(類銀河惡魔城式探索循環),經驗值以道具「經驗結晶」形式存在背包、由玩家決定升級時機。
 
 - 企劃書:`docs/群島之歌_遊戲企劃書.pdf`(v1.0,2026-06)

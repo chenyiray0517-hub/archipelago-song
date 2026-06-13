@@ -1,5 +1,13 @@
 # PROGRESS
 
+## 2026-06-13(上線:GitHub Pages 網頁版)
+
+- GitHub 私人 repo 建立後改公開:`https://github.com/chenyiray0517-hub/archipelago-song`
+- **網頁版上線**:`https://chenyiray0517-hub.github.io/archipelago-song/`——朋友點連結即玩
+- `vite.config.ts` 設 `base: "./"`(Pages 子目錄網址需相對路徑);`scripts/deploy.sh` 一鍵部署(build → dist 強推 gh-pages 分支)
+- 驗證:Playwright 開線上網址確認 canvas 渲染 + HUD 正常 + 0 console 錯誤,截圖目視;本機 dev/smoke 不受 base 影響
+- 之後更新網頁版:`bash scripts/deploy.sh`
+
 ## 2026-06-13(打磨:雨聲柔化,Rai 之子反映太吵雜)
 
 - `audio.ts` startRain:帶通中心 2200→1400Hz(Q 0.4→0.7)+ 新增低通 2600Hz 削掉刺耳高頻嘶聲;加 0.13Hz LFO(深度 0.18)讓雨勢微微起伏不死板

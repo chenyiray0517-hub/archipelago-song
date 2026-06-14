@@ -19,7 +19,10 @@ export type EnemyKind =
   | "reef"
   | "coralGuardian"
   | "spore"
-  | "lifeGuardian";
+  | "lifeGuardian"
+  | "marsh"
+  | "brine"
+  | "solar";
 
 type EnemyState = "patrol" | "chase" | "windup" | "lunge" | "recover" | "dying" | "dead";
 
@@ -68,6 +71,12 @@ const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   // 第二海・靈脈島:孢子果凍 + 靈脈守護者(掉翠生石)
   spore: { hp: 220, dmg: 28, speed: 3.9, scale: 1.45, color: 0x86d24a },
   lifeGuardian: { hp: 720, dmg: 35, speed: 2.9, scale: 3.1, color: 0x3ab060 },
+  // 第二海・迷霧沼島:沼氣果凍(委託清剿,無守護者)
+  marsh: { hp: 215, dmg: 27, speed: 3.8, scale: 1.42, color: 0x6a9a6a },
+  // 第二海・鹽晶島:鹽晶果凍
+  brine: { hp: 230, dmg: 26, speed: 3.6, scale: 1.45, color: 0xc8e8f0 },
+  // 第二海・烈陽礁:熾光果凍
+  solar: { hp: 225, dmg: 29, speed: 4.0, scale: 1.4, color: 0xf0a838 },
 };
 
 /**
@@ -120,33 +129,83 @@ export class Enemy {
     this.body = new THREE.Group();
     this.mesh.add(this.body);
 
+    // 頭目級(菁英/守護者/魔王)外觀更兇:長角 + 怒眉 + 大嘴
+    const boss = this.config.scale >= 1.8;
+    const accent = new THREE.Color(this.config.color).offsetHSL(0, 0.1, -0.28).getHex();
+
     // 果凍身體:圓滾水滴狀,半透明
-    this.blobMaterial = toonMaterial(this.config.color, { transparent: true, opacity: 0.88 });
-    this.blob = new THREE.Mesh(new THREE.SphereGeometry(0.8, 14, 12), this.blobMaterial);
+    this.blobMaterial = toonMaterial(this.config.color, { transparent: true, opacity: 0.86 });
+    this.blob = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 14), this.blobMaterial);
     this.blob.scale.set(1, 0.85, 1);
     this.blob.position.y = 0.62;
     const crown = new THREE.Mesh(
-      new THREE.ConeGeometry(0.28, 0.45, 10),
-      toonMaterial(this.config.color, { transparent: true, opacity: 0.88 }),
+      new THREE.ConeGeometry(0.26, boss ? 0.6 : 0.45, 10),
+      toonMaterial(this.config.color, { transparent: true, opacity: 0.86 }),
     );
-    crown.position.y = 1.35;
+    crown.position.y = boss ? 1.42 : 1.35;
+    crown.rotation.z = 0.12;
     this.body.add(this.blob, crown);
 
-    // 卡通大眼
+    // 頭目長角:頭頂兩側往外上方翹
+    if (boss) {
+      const hornMat = toonMaterial(accent);
+      for (const side of [-1, 1]) {
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 8), hornMat);
+        horn.position.set(0.42 * side, 1.18, -0.05);
+        horn.rotation.z = side * -0.7;
+        this.body.add(horn);
+      }
+    }
+
+    // 卡通大眼 + 眉毛
     const eyeWhiteMat = toonMaterial(0xffffff);
     const pupilMat = toonMaterial(0x202030);
+    const browMat = toonMaterial(accent);
+    const eyeR = boss ? 0.2 : 0.17;
     for (const side of [-1, 1]) {
-      const white = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), eyeWhiteMat);
-      white.position.set(0.3 * side, 0.78, 0.62);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), pupilMat);
-      pupil.position.set(0.3 * side, 0.78, 0.76);
-      this.body.add(white, pupil);
+      const white = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 12, 10), eyeWhiteMat);
+      white.position.set(0.3 * side, 0.82, 0.6);
+      white.scale.set(0.85, 1.05, 0.7);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.5, 8, 6), pupilMat);
+      pupil.position.set(0.3 * side + 0.02 * side, 0.8, 0.74);
+      // 眉:頭目向內下壓成怒容,雜魚平緩
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.07), browMat);
+      brow.position.set(0.3 * side, 1.04, 0.62);
+      brow.rotation.z = side * (boss ? 0.5 : 0.15);
+      this.body.add(white, pupil, brow);
     }
+
+    // 嘴:頭目咧開大口(深色),雜魚一抹小嘴
+    const mouth = new THREE.Mesh(
+      new THREE.SphereGeometry(boss ? 0.22 : 0.12, 12, 8),
+      toonMaterial(0x301820),
+    );
+    mouth.position.set(0, boss ? 0.5 : 0.54, 0.66);
+    mouth.scale.set(1.3, boss ? 0.8 : 0.45, 0.5);
+    this.body.add(mouth);
 
     addOutlines(this.body);
     this.body.traverse((child) => {
       if (child instanceof THREE.Mesh) child.castShadow = true;
     });
+
+    // 描邊之後再加:不參與卡通輪廓的內核與高光,做出果凍通透感
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 12, 10),
+      toonMaterial(accent, { transparent: true, opacity: 0.55 }),
+    );
+    core.position.y = 0.58;
+    core.raycast = () => undefined;
+    this.body.add(core);
+
+    const sheen = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
+    );
+    sheen.position.set(-0.28, 0.95, 0.42);
+    sheen.scale.set(1.2, 0.7, 0.6);
+    sheen.raycast = () => undefined;
+    this.body.add(sheen);
 
     this.hpCanvas = document.createElement("canvas");
     this.hpCanvas.width = 96;

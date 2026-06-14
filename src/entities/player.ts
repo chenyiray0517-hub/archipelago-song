@@ -48,6 +48,10 @@ const COLOR = {
   gold: 0xf0c040,
   shield: 0x2e4fa8,
   shieldRim: 0x9aa4b8,
+  glove: 0x6a4a2a,
+  brow: 0xb8902e,
+  eye: 0x35506e,
+  collar: 0xf0d878,
 };
 
 /**
@@ -101,8 +105,12 @@ export class Player {
   private body: THREE.Group;
   private armL: THREE.Group;
   private armR: THREE.Group;
+  private forearmL!: THREE.Group;
+  private forearmR!: THREE.Group;
   private legL: THREE.Group;
   private legR: THREE.Group;
+  private shinL!: THREE.Group;
+  private shinR!: THREE.Group;
   private shield: THREE.Group;
   private sword!: THREE.Group;
   private bladeMaterial!: THREE.MeshToonMaterial;
@@ -118,42 +126,89 @@ export class Player {
     this.mesh.add(this.body);
 
     // 腿與靴
-    this.legL = this.buildLeg(0.17);
-    this.legR = this.buildLeg(-0.17);
+    this.legL = this.buildLeg(0.17, "L");
+    this.legR = this.buildLeg(-0.17, "R");
     this.body.add(this.legL, this.legR);
 
-    // 綠色長袍軀幹 + 腰帶
-    const tunic = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.3, 0.46, 0.9, 12),
-      toonMaterial(COLOR.tunic),
+    // 綠色長袍軀幹:胸甲 + 外翻下襬 + 腰帶 + 領口
+    const tunicMat = toonMaterial(COLOR.tunic);
+    const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.44, 0.72, 14), tunicMat);
+    chest.position.y = 1.4;
+    // 外翻長袍下襬(腰帶以下罩住大腿,做出長衣剪影)
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.6, 0.5, 14, 1, true), tunicMat);
+    skirt.position.y = 0.74;
+    const collar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.26, 0.34, 0.16, 14),
+      toonMaterial(COLOR.collar),
     );
-    tunic.position.y = 1.32;
+    collar.position.y = 1.78;
     const belt = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.45, 0.47, 0.12, 12),
+      new THREE.CylinderGeometry(0.46, 0.48, 0.13, 14),
       toonMaterial(COLOR.belt),
     );
     belt.position.y = 0.98;
-    const buckle = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.1, 0.04),
-      toonMaterial(COLOR.gold),
-    );
-    buckle.position.set(0, 0.98, 0.46);
-    this.body.add(tunic, belt, buckle);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.05), toonMaterial(COLOR.gold));
+    buckle.position.set(0, 0.98, 0.47);
+    // 腰側小包
+    const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.12), toonMaterial(COLOR.glove));
+    pouch.position.set(0.34, 0.9, 0.18);
+    this.body.add(chest, skirt, collar, belt, buckle, pouch);
+
+    // 脖子
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.2, 10), toonMaterial(COLOR.skin));
+    neck.position.y = 1.86;
+    this.body.add(neck);
 
     // 頭、髮、尖帽
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 14), toonMaterial(COLOR.skin));
-    head.position.y = 2.06;
+    head.position.y = 2.08;
     const hair = new THREE.Mesh(new THREE.SphereGeometry(0.37, 16, 14), toonMaterial(COLOR.hair));
-    hair.position.set(0, 2.14, -0.07);
+    hair.position.set(0, 2.16, -0.07);
     hair.scale.set(1, 0.85, 1);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.62, 12), toonMaterial(COLOR.tunicDark));
-    cap.position.set(0, 2.5, -0.12);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.66, 14), toonMaterial(COLOR.tunicDark));
+    cap.position.set(0, 2.54, -0.12);
     cap.rotation.x = -0.5;
-    this.body.add(head, hair, cap);
+    // 帽尖垂墜
+    const capTip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 10), toonMaterial(COLOR.tunic));
+    capTip.position.set(0, 2.78, -0.5);
+    capTip.rotation.x = -1.5;
+    // 帽檐
+    const capBand = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.05, 8, 16), toonMaterial(COLOR.gold));
+    capBand.position.set(0, 2.28, -0.04);
+    capBand.rotation.x = Math.PI / 2;
+    this.body.add(head, hair, cap, capTip, capBand);
+
+    // 臉:精靈尖耳 + 眼睛 + 眉 + 鼻 + 鬢髮
+    const skinMat = toonMaterial(COLOR.skin);
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 6), skinMat);
+      ear.position.set(0.32 * side, 2.06, -0.02);
+      ear.rotation.z = side * -1.1; // 尖耳朝外上方
+      this.body.add(ear);
+
+      const sideburn = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), toonMaterial(COLOR.hair));
+      sideburn.position.set(0.28 * side, 1.96, -0.04);
+      sideburn.scale.set(0.7, 1.1, 0.8);
+      this.body.add(sideburn);
+
+      const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), toonMaterial(0xffffff));
+      eyeWhite.position.set(0.13 * side, 2.1, 0.29);
+      eyeWhite.scale.set(0.8, 1.1, 0.6);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 6), toonMaterial(COLOR.eye));
+      pupil.position.set(0.13 * side, 2.09, 0.34);
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.035, 0.04), toonMaterial(COLOR.brow));
+      brow.position.set(0.13 * side, 2.21, 0.3);
+      brow.rotation.z = side * -0.12;
+      this.body.add(eyeWhite, pupil, brow);
+    }
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 6), skinMat);
+    nose.position.set(0, 2.02, 0.34);
+    nose.rotation.x = Math.PI / 2;
+    this.body.add(nose);
 
     // 手臂(右手持劍)
-    this.armL = this.buildArm(0.46);
-    this.armR = this.buildArm(-0.46);
+    this.armL = this.buildArm(0.46, "L");
+    this.armR = this.buildArm(-0.46, "R");
     this.armR.add(this.buildSword());
     this.body.add(this.armL, this.armR);
 
@@ -184,31 +239,68 @@ export class Player {
     this.respawn();
   }
 
-  private buildLeg(x: number): THREE.Group {
+  /** 大腿(髖關節群)+ 可彎曲小腿群(膝)+ 靴 */
+  private buildLeg(x: number, side: "L" | "R"): THREE.Group {
     const leg = new THREE.Group();
     const thigh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.13, 0.12, 0.6, 10),
+      new THREE.CylinderGeometry(0.14, 0.12, 0.36, 10),
       toonMaterial(COLOR.legs),
     );
-    thigh.position.y = -0.3;
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.34), toonMaterial(COLOR.boots));
-    boot.position.set(0, -0.62, 0.05);
-    leg.add(thigh, boot);
+    thigh.position.y = -0.18;
+
+    const shin = new THREE.Group();
+    shin.position.y = -0.36;
+    const calf = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.1, 0.32, 10),
+      toonMaterial(COLOR.legs),
+    );
+    calf.position.y = -0.16;
+    // 靴:鞋身 + 外翻靴口
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.18, 0.36), toonMaterial(COLOR.boots));
+    boot.position.set(0, -0.36, 0.05);
+    const bootCuff = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.13, 0.12, 10),
+      toonMaterial(COLOR.boots),
+    );
+    bootCuff.position.y = -0.28;
+    shin.add(calf, boot, bootCuff);
+    leg.add(thigh, shin);
     leg.position.set(x, 0.72, 0);
+    if (side === "L") this.shinL = shin;
+    else this.shinR = shin;
     return leg;
   }
 
-  private buildArm(x: number): THREE.Group {
+  /** 肩甲 + 上臂 + 可彎曲前臂群(肘)+ 護腕 + 手 */
+  private buildArm(x: number, side: "L" | "R"): THREE.Group {
     const arm = new THREE.Group();
+    const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), toonMaterial(COLOR.guard));
+    pauldron.position.y = 0.02;
+    pauldron.scale.set(1, 0.8, 1);
     const upper = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.1, 0.08, 0.58, 10),
+      new THREE.CylinderGeometry(0.1, 0.085, 0.34, 10),
       toonMaterial(COLOR.tunic),
     );
-    upper.position.y = -0.26;
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), toonMaterial(COLOR.skin));
-    hand.position.y = -0.58;
-    arm.add(upper, hand);
+    upper.position.y = -0.18;
+
+    const forearm = new THREE.Group();
+    forearm.position.y = -0.35;
+    const lower = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.085, 0.07, 0.26, 10),
+      toonMaterial(COLOR.skin),
+    );
+    lower.position.y = -0.13;
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.035, 8, 12), toonMaterial(COLOR.glove));
+    cuff.position.y = -0.02;
+    cuff.rotation.x = Math.PI / 2;
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), toonMaterial(COLOR.glove));
+    hand.position.y = -0.25;
+    forearm.add(lower, cuff, hand);
+
+    arm.add(pauldron, upper, forearm);
     arm.position.set(x, 1.7, 0);
+    if (side === "L") this.forearmL = forearm;
+    else this.forearmR = forearm;
     return arm;
   }
 
@@ -467,12 +559,22 @@ export class Player {
     const moving = this.moveAmount > 0.05;
     if (moving) this.walkPhase += dt * 11 * Math.min(this.moveAmount, 1.4);
 
+    const rolling = this.dodgeT > 0;
     const swing = moving ? Math.sin(this.walkPhase) * 0.65 : 0;
-    this.legL.rotation.x = swing;
-    this.legR.rotation.x = -swing;
+    this.legL.rotation.x = rolling ? 1.4 : swing;
+    this.legR.rotation.x = rolling ? 1.4 : -swing;
+    // 膝關節:跨步時抬起的腿屈膝;翻滾時雙膝收起
+    this.shinL.rotation.x = rolling ? 1.3 : moving ? Math.max(0, -Math.sin(this.walkPhase)) * 0.8 : 0;
+    this.shinR.rotation.x = rolling ? 1.3 : moving ? Math.max(0, Math.sin(this.walkPhase)) * 0.8 : 0;
 
     // 左臂:舉盾優先,否則走路擺動
-    this.armL.rotation.x = this.blocking ? -1.1 : -swing * 0.8;
+    this.armL.rotation.x = this.blocking ? -1.1 : rolling ? -1.6 : -swing * 0.8;
+    // 左前臂(肘):舉盾握緊、翻滾收起、平時微屈 + 走路擺動
+    this.forearmL.rotation.x = this.blocking
+      ? -0.7
+      : rolling
+        ? -1.4
+        : -0.25 - Math.max(0, -swing) * 0.5;
 
     // 盾牌:防禦時舉到身前,平時揹回背後
     const shieldTarget = this.blocking ? this.shieldBlockPos : this.shieldHomePos;
@@ -496,6 +598,13 @@ export class Player {
       this.armR.rotation.x = swing * 0.8;
       this.armR.rotation.z = 0;
     }
+    // 右前臂(肘):攻擊/集氣時保持伸直讓劍貼手,平時微屈
+    this.forearmR.rotation.x =
+      this.spinT > 0 || this.swingT > 0 || charging
+        ? 0
+        : rolling
+          ? -1.4
+          : -0.2 - Math.max(0, swing) * 0.4;
     if (this.spinT <= 0) this.sword.rotation.x = Math.PI / 2;
 
     // 集氣劍身發光:集氣中漸亮,滿氣時強烈閃爍 + 劍身刃色閃白

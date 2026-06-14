@@ -261,6 +261,24 @@ function main(): void {
     new Enemy("spore", 2154, -172),
     new Enemy("spore", 2116, -152),
     new Enemy("lifeGuardian", 2120, -194),
+    // 第二海・迷霧沼島(中心 1740,160):沼氣果凍(委託清剿,無守護者)
+    new Enemy("marsh", 1722, 135),
+    new Enemy("marsh", 1758, 138),
+    new Enemy("marsh", 1712, 160),
+    new Enemy("marsh", 1768, 162),
+    new Enemy("marsh", 1740, 188),
+    // 第二海・鹽晶島(中心 1980,250):鹽晶果凍
+    new Enemy("brine", 1962, 228),
+    new Enemy("brine", 1998, 230),
+    new Enemy("brine", 1952, 252),
+    new Enemy("brine", 2008, 252),
+    new Enemy("brine", 1980, 278),
+    // 第二海・烈陽礁(中心 2260,-40):熾光果凍
+    new Enemy("solar", 2242, -62),
+    new Enemy("solar", 2278, -60),
+    new Enemy("solar", 2232, -38),
+    new Enemy("solar", 2288, -38),
+    new Enemy("solar", 2260, -14),
   ];
   for (const enemy of enemies) scene.add(enemy.mesh);
   // 各島頭目首殺掉落對應靈紋寶石
@@ -901,6 +919,63 @@ function main(): void {
       crystalSize: "large",
       crystalCount: 2,
       doneLines: ["草藥園恢復生機了,謝謝你!", "島心的靈脈守護者,就拜託你了。"],
+    }),
+    // 第二海・迷霧沼島:打怪委託(沼氣果凍)
+    makeHuntNpc({
+      name: "沼澤嚮導苔翁",
+      x: 1740,
+      z: 142,
+      color: 0x4a7a5a,
+      quest: "marshHunt",
+      title: "沼氣清剿",
+      enemyLabel: "沼氣果凍",
+      intro: [
+        "霧裡那些沼氣果凍,吐的毒霧連我都迷了路。",
+        "【任務】幫我清掉 4 隻沼氣果凍!",
+        "牠們藏在霧裡,靠近了再出手。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["霧散了些,我又能帶路了,謝謝!", "這片沼地總算安寧了。"],
+    }),
+    // 第二海・鹽晶島:打怪委託(鹽晶果凍)
+    makeHuntNpc({
+      name: "鹽工鹵伯",
+      x: 1980,
+      z: 232,
+      color: 0x9ab8c0,
+      quest: "brineHunt",
+      title: "鹽晶清剿",
+      enemyLabel: "鹽晶果凍",
+      intro: [
+        "鹽田被鹽晶果凍佔了,結的鹽都帶著怪味。",
+        "【任務】幫我清掉 4 隻鹽晶果凍!",
+        "牠們殼硬,多砍幾刀準沒錯。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["鹽田能開工了,這下有好鹽了!", "改天送你一袋雪鹽。"],
+    }),
+    // 第二海・烈陽礁:打怪委託(熾光果凍)
+    makeHuntNpc({
+      name: "拾光人焰娃",
+      x: 2260,
+      z: -22,
+      color: 0xe09838,
+      quest: "solarHunt",
+      title: "熾光清剿",
+      enemyLabel: "熾光果凍",
+      intro: [
+        "礁上的熾光果凍燙得發亮,曬鹽曬果都得繞著走。",
+        "【任務】幫我清掉 4 隻熾光果凍!",
+        "牠們動作快,小心被撲到。",
+      ],
+      coins: 500,
+      crystalSize: "large",
+      crystalCount: 2,
+      doneLines: ["礁石涼下來了,可以好好拾光啦!", "謝謝你,旅人。"],
     }),
   ];
   for (const npc of npcs) scene.add(npc.mesh);

@@ -752,7 +752,7 @@ dayState.mode === "day" && !dayState.rain
 
 // 38. 重生點:每島一座石碑;F 設置(上限 2,第三座替換最早的)
 const shrineCount = await page.evaluate(() => window.__game.shrines.length);
-shrineCount === 9 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 4,共 9 座)") : fail(`石碑數量異常:${shrineCount}`);
+shrineCount === 12 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7,共 12 座)") : fail(`石碑數量異常:${shrineCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(-9, 1, -46); // 曙光嶼石碑旁
@@ -819,7 +819,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 15 ? ok("任務 NPC 到位(共 15 位,含領航者、鎮長、兩島祭司/守林人與第二海三位委託人)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 18 ? ok("任務 NPC 到位(共 18 位,含領航者、鎮長、兩島祭司/守林人與第二海六位委託人)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
@@ -1209,8 +1209,9 @@ const SEA2_SHRINES = ["port", "desert", "coral", "spring"];
 const sea2ShrineDefs = await page.evaluate(
   () => window.__game.shrines.filter((s) => s.def.x > 1100).map((s) => s.def.id),
 );
-sea2ShrineDefs.length === 4 && ["port", "desert", "coral", "spring"].every((id) => sea2ShrineDefs.includes(id))
-  ? ok(`第二海四座重生石碑就位(${sea2ShrineDefs.join("/")})`)
+sea2ShrineDefs.length === 7 &&
+["port", "desert", "coral", "spring", "marsh", "brine", "solar"].every((id) => sea2ShrineDefs.includes(id))
+  ? ok(`第二海七座重生石碑就位(${sea2ShrineDefs.join("/")})`)
   : fail(`第二海石碑異常:${JSON.stringify(sea2ShrineDefs)}`);
 
 // 依序設置 3 座(port → desert → coral),港口鎮應被替換(每海上限 2)
@@ -1290,6 +1291,60 @@ const reefDone = await page.evaluate(() => ({
 reefAccepted === "active" && reefDone.state === "done" && reefDone.coins >= reefCoinsBefore + 500
   ? ok(`第二海委託「礁石清剿」可接取並完成(獲得 ${reefDone.coins - reefCoinsBefore} 貝拉幣)`)
   : fail(`礁石清剿異常:${JSON.stringify({ reefAccepted, reefDone })}`);
+
+// 45o. 第二海三座委託島生成:沼氣/鹽晶/熾光果凍各 ×5,且各島心為陸地(敵人 y>0.5)
+const sea2HuntIslands = await page.evaluate(() => {
+  const g = window.__game;
+  const stat = (kind) => {
+    const list = g.enemies.filter((e) => e.kind === kind);
+    return { count: list.length, onLand: list.some((e) => e.mesh.position.y > 0.5) };
+  };
+  return { marsh: stat("marsh"), brine: stat("brine"), solar: stat("solar") };
+});
+sea2HuntIslands.marsh.count === 5 &&
+sea2HuntIslands.brine.count === 5 &&
+sea2HuntIslands.solar.count === 5 &&
+sea2HuntIslands.marsh.onLand &&
+sea2HuntIslands.brine.onLand &&
+sea2HuntIslands.solar.onLand
+  ? ok("第二海三座委託島生成(沼氣/鹽晶/熾光果凍各×5,立於陸地)")
+  : fail(`委託島生成異常:${JSON.stringify(sea2HuntIslands)}`);
+
+// 45p. 迷霧沼島打怪委託:沼澤嚮導苔翁「沼氣清剿」接取 → 模擬擊殺 → 回報領獎
+await page.evaluate(() => window.__game.player.mesh.position.set(1740, 12, 142)); // 沼澤嚮導苔翁旁
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const marshAccepted = await page.evaluate(() => window.__game.quests.get("marshHunt"));
+const marshCoinsBefore = await page.evaluate(() => {
+  for (let i = 0; i < 4; i++) window.__game.quests.addKill("marsh"); // 模擬擊殺 4 隻
+  return window.__game.inventory.coins;
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const marshDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("marshHunt"),
+  coins: window.__game.inventory.coins,
+}));
+marshAccepted === "active" && marshDone.state === "done" && marshDone.coins >= marshCoinsBefore + 500
+  ? ok(`迷霧沼島委託「沼氣清剿」可接取並完成(獲得 ${marshDone.coins - marshCoinsBefore} 貝拉幣)`)
+  : fail(`沼氣清剿異常:${JSON.stringify({ marshAccepted, marshDone })}`);
 
 // 45l. 出戰配置上限:9 顆寶石只能同時裝備 4 顆,第 5 顆被拒
 const capTest = await page.evaluate(() => {

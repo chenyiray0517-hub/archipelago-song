@@ -32,6 +32,9 @@ export const SHRINE_DEFS: ShrineDef[] = [
   { id: "desert", island: "熔砂島", x: 2178, z: 130, boat: { x: 2200, z: 98 } },
   { id: "coral", island: "珊瑚礁島", x: 1812, z: -92, boat: { x: 1790, z: -54 } },
   { id: "spring", island: "靈脈島", x: 2142, z: -162, boat: { x: 2120, z: -124 } },
+  { id: "marsh", island: "迷霧沼島", x: 1758, z: 142, boat: { x: 1740, z: 222 } },
+  { id: "brine", island: "鹽晶島", x: 1962, z: 268, boat: { x: 1980, z: 312 } },
+  { id: "solar", island: "烈陽礁", x: 2278, z: -22, boat: { x: 2260, z: 28 } },
 ];
 
 /**

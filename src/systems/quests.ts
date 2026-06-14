@@ -14,6 +14,9 @@ export type QuestId =
   | "sandHunt"
   | "reefHunt"
   | "sporeHunt"
+  | "marshHunt"
+  | "brineHunt"
+  | "solarHunt"
   | "sea2"
   | "lava"
   | "aqua"
@@ -31,7 +34,10 @@ export type HuntId =
   | "deepHunt"
   | "sandHunt"
   | "reefHunt"
-  | "sporeHunt";
+  | "sporeHunt"
+  | "marshHunt"
+  | "brineHunt"
+  | "solarHunt";
 
 /** 清剿任務配置:目標敵人種類與數量(敵人重新整理頁面後會重生,不會卡關) */
 export const HUNTS: Record<HuntId, { kind: string; target: number }> = {
@@ -39,10 +45,14 @@ export const HUNTS: Record<HuntId, { kind: string; target: number }> = {
   emberHunt: { kind: "ember", target: 4 },
   frostHunt: { kind: "frost", target: 4 },
   deepHunt: { kind: "deep", target: 3 },
-  // 第二海三島
+  // 第二海三島(守護者島)
   sandHunt: { kind: "sand", target: 4 },
   reefHunt: { kind: "reef", target: 4 },
   sporeHunt: { kind: "spore", target: 4 },
+  // 第二海三島(委託島)
+  marshHunt: { kind: "marsh", target: 4 },
+  brineHunt: { kind: "brine", target: 4 },
+  solarHunt: { kind: "solar", target: 4 },
 };
 
 /** 任務存檔格式(huntKills/huntBases 後加,optional 保持舊檔相容) */

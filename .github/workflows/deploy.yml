@@ -1,0 +1,44 @@
+name: Deploy to GitHub Pages
+
+# push 到 main 即自動 build 並部署到 gh-pages 分支(線上版來源)。
+# 維持原有「Pages 從 gh-pages 分支部署」設定,不需改 repo 設定。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 也可在 Actions 頁面手動觸發
+
+# 允許工作流用 GITHUB_TOKEN 推送 gh-pages 分支
+permissions:
+  contents: write
+
+# 同時間只跑一個部署,新的取代排隊中的舊的
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tsc strict 當 gate:型別錯就讓 build 失敗、不部署
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          # 部署 commit 訊息,沿用原本人工部署的格式風格
+          commit_message: "deploy: ${{ github.sha }}"

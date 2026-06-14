@@ -56,7 +56,7 @@ function levelScale(level: number): number {
  * 火焰斬傷害(企劃書 3.3:靈能每點 +2 寶石技能威力;升階強化)。
  */
 export function flameDamage(spirit: number, level = 1): number {
-  return Math.round((18 + spirit * 2) * levelScale(level));
+  return Math.round((18 + spirit * 2) * levelScale(level) * 1.4);
 }
 
 /** 地震波傷害 */
@@ -86,7 +86,7 @@ export function blinkDist(level = 1): number {
 
 /** 熔岩噴發命中傷害(岩漿衝擊波本體) */
 export function lavaDamage(spirit: number, level = 1): number {
-  return Math.round((22 + spirit * 2) * levelScale(level));
+  return Math.round((22 + spirit * 2) * levelScale(level) * 1.4);
 }
 
 /** 灼燒每秒傷害(命中後持續 LAVA_BURN_DURATION 秒;8/12/16) */
@@ -96,7 +96,7 @@ export function lavaBurnDps(level = 1): number {
 
 /** 碧波震盪傷害(自身周圍 AoE) */
 export function aquaDamage(spirit: number, level = 1): number {
-  return Math.round((20 + spirit * 2) * levelScale(level));
+  return Math.round((20 + spirit * 2) * levelScale(level) * 1.35);
 }
 
 /** 碧波震盪凍結秒數(2/2.7/3.4) */
@@ -111,7 +111,7 @@ export function aquaRange(level = 1): number {
 
 /** 生命汲取傷害(前方衝擊波) */
 export function lifeDamage(spirit: number, level = 1): number {
-  return Math.round((18 + spirit * 2) * levelScale(level));
+  return Math.round((18 + spirit * 2) * levelScale(level) * 1.5);
 }
 
 /** 生命汲取吸血比率(回復造成傷害的比例;0.4/0.5/0.6) */

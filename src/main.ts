@@ -2001,6 +2001,41 @@ function main(): void {
         }
         if (player.isDead) showDeathScreen();
       }
+      // 頭目特殊技能引爆:警示特效 + 範圍命中玩家 + 附加狀態
+      const ev = enemy.specialEvent;
+      if (ev) {
+        enemy.specialEvent = null;
+        const bossTop = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 3.2);
+        floats.spawn(bossTop, `⚡${ev.name}`, "#ffd23c");
+        audio.sfx(ev.sfx);
+        fx.shake(0.3, 0.25);
+        fx.burst(enemy.mesh.position.clone().setY(enemy.mesh.position.y + 0.6), ev.color, 24, 9);
+        if (ev.healed > 0) {
+          floats.spawn(
+            enemy.mesh.position.clone().setY(enemy.mesh.position.y + 2.4),
+            `+${ev.healed}`,
+            "#7be87b",
+          );
+        }
+        if (ev.hitPlayer && !player.isDead) {
+          const hit = player.takeDamage(ev.dmg, enemy.mesh.position);
+          const head = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
+          if (hit.blocked) {
+            floats.spawn(head, `格擋 -${hit.taken}`, "#cfd8e8");
+            audio.sfx("block");
+          } else if (hit.taken > 0) {
+            floats.spawn(head, `-${hit.taken}`, "#ff5544");
+            audio.sfx("hurt");
+            fx.shake(0.5, 0.35);
+            fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), ev.color, 12);
+            player.shove(enemy.mesh.position, ev.knock);
+            if (ev.effect === "chill") player.chill(3);
+            else if (ev.effect === "burn")
+              player.applyBurn(4, Math.max(2, Math.round(ev.dmg * 0.15)));
+          }
+          if (player.isDead) showDeathScreen();
+        }
+      }
       // 灼燒 DoT 結算(溶岩石熔岩噴發點燃;每 0.5 秒跳一次)
       const burnDmg = enemy.tickBurn(worldDt);
       if (burnDmg > 0 && !enemy.isDead) {
@@ -2016,6 +2051,18 @@ function main(): void {
           spawnDrops(enemy);
         }
       }
+    }
+
+    // 玩家灼燒 DoT 結算(頭目熔核震爆點燃;每 0.5 秒跳一次)
+    const playerBurn = player.tickBurn(worldDt);
+    if (playerBurn > 0 && !player.isDead) {
+      player.applyEnvironmentDamage(playerBurn);
+      floats.spawn(
+        player.mesh.position.clone().setY(player.mesh.position.y + 2.6),
+        `-${playerBurn}`,
+        "#ff7a3c",
+      );
+      if (player.isDead) showDeathScreen();
     }
 
     // 漂流寶箱:漂浮 + 開船靠近開啟,隨機獎勵,計時重生到新海點

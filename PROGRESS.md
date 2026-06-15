@@ -1,5 +1,18 @@
 # PROGRESS
 
+## 2026-06-15(戰鬥:每座島頭目史萊姆各加一個專屬特殊技能)
+
+- **新系統「頭目特殊技能」**(`enemy.ts`):僅 `scale>=1.8` 的九位頭目(菁英/各島守護者/最終魔王)擁有,雜魚無。機制統一為**蓄力預警圈 → 範圍震盪波**,但各島名稱/顏色/音效/作用半徑/傷害/附加效果不同:
+  - **怒震波**(曙光嶼菁英,quake,擊退)/ **旋風斬**(風之守護者,spin,大範圍強擊退)/ **震地裂**(大地守護者,quake,高傷)/ **寒霜爆**(霜之守護者,shatter,命中緩速)/ **虛空波動**(虛空守護者,blink,吸血)/ **虛空崩裂**(最終魔王,blink,超大範圍+吸血)/ **熔核震爆**(熔岩守護者,lava,命中點燃)/ **潮汐衝擊**(珊瑚守護者,aqua,強擊退)/ **靈脈汲取**(靈脈守護者,life,強力吸血)
+  - FSM 新增 `special` 狀態(telegraph 蓄力 → blast 擴散);冷卻獨立計時,開場給 60% 冷卻避免一接觸就被引爆;玩家進入 `radius+2` 內且冷卻好即施放(優先於普攻)
+  - 地面警示圈:`RingGeometry` 懶建立,掛在 mesh 上並除回 `config.scale` 換算世界半徑;telegraph 全幅閃爍預警、blast 由中心爆開淡出;死亡/重生會清圈與清狀態
+  - 引爆透過 `enemy.specialEvent`(main 每幀讀取後清空)走**回饋三件套**:boss 頭上跳字 `⚡技能名`、`audio.sfx(各自音效)`、`fx.shake`+`fx.burst`(各自顏色);命中玩家再走 `player.takeDamage`(吃格擋/防禦)+ 跳字/音效
+- **玩家新狀態**(`player.ts`,鏡像既有敵人狀態系統):
+  - `chill`(緩速,移速×0.5)、`applyBurn`+`tickBurn`(灼燒 DoT,每 0.5s 結算,鏡像 `Enemy.tickBurn`,由 main 呼叫走 `applyEnvironmentDamage`+跳字)、`shove`(擊退衝量,每幀套用後衰減,吃 `canWalk` 邊界)
+  - drain 效果由 boss 端直接回血(上限不超過 maxHP)並回報 `healed` 供跳字
+- 測試掛鉤:`enemy.specialSkill`(技能名 getter)、`enemy.specialPhase`、`enemy.forceSpecial()`(忽略冷卻立即施放)
+- 驗證:build 綠(tsc strict,36 模組)+ smoke **135 項全綠**(新增 4 測項:九頭目皆有技能名/雜魚無技能/蓄力進入預警/引爆範圍命中玩家扣血)。截圖目視:旋風斬引爆 `/tmp/archipelago-33-boss-special.png`
+
 ## 2026-06-14(數值:四個主動寶石技能傷害上調)
 
 - **四個寶石傷害函式整體乘上倍率**(`gems.ts`,對總傷害精準加成,不論靈力高低與升階倍率 lv1×1/lv2×1.5/lv3×2 都等比放大):

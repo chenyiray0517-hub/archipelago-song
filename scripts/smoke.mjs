@@ -1524,6 +1524,61 @@ hurt >= 2
   : fail(`漩渦傷害異常:${JSON.stringify({ before: gravBefore.hp, after: gravAfter.hp })}`);
 await page.screenshot({ path: "/tmp/archipelago-32-vortex.png" });
 
+// 51. 島嶼頭目特殊技能:每位守護者皆具專屬技能,且能蓄力 → 範圍命中玩家
+const BOSS_KINDS = [
+  "elite",
+  "windGuardian",
+  "earthGuardian",
+  "frostGuardian",
+  "voidGuardian",
+  "voidLord",
+  "magmaGuardian",
+  "coralGuardian",
+  "lifeGuardian",
+];
+const bossSkills = await page.evaluate((kinds) => {
+  const g = window.__game;
+  const map = {};
+  for (const k of kinds) {
+    const e = g.enemies.find((en) => en.kind === k);
+    map[k] = e ? e.specialSkill : null;
+  }
+  const slime = g.enemies.find((en) => en.kind === "slime");
+  return { map, slimeSkill: slime ? slime.specialSkill : "MISSING" };
+}, BOSS_KINDS);
+const missingSkill = BOSS_KINDS.filter((k) => !bossSkills.map[k]);
+missingSkill.length === 0
+  ? ok(`九位島嶼頭目皆具特殊技能(${BOSS_KINDS.map((k) => bossSkills.map[k]).join("/")})`)
+  : fail(`頭目缺特殊技能:${missingSkill.join(",")}`);
+bossSkills.slimeSkill === null
+  ? ok("雜魚史萊姆無特殊技能(僅頭目擁有)")
+  : fail(`雜魚不應有特殊技能:${bossSkills.slimeSkill}`);
+
+// 引爆風之守護者的特殊技能 → 蓄力預警 + 範圍命中玩家扣血
+const bossBefore = await page.evaluate(() => {
+  const g = window.__game;
+  const wg = g.enemies.find((e) => e.kind === "windGuardian");
+  const p = wg.mesh.position;
+  g.player.mesh.position.set(p.x + 3, p.y + 1, p.z);
+  g.player.hp = g.player.stats.maxHP;
+  g.player.blocking = false;
+  wg.forceSpecial();
+  return { hp: g.player.hp, phase: wg.specialPhase };
+});
+await page.waitForTimeout(1100); // telegraph(0.6) + blast(0.45) + 餘裕
+const bossAfter = await page.evaluate(() => {
+  const g = window.__game;
+  const wg = g.enemies.find((e) => e.kind === "windGuardian");
+  return { hp: g.player.hp, phase: wg.specialPhase };
+});
+bossBefore.phase === "telegraph"
+  ? ok("頭目特殊技能進入蓄力預警階段")
+  : fail(`未進入蓄力預警:${bossBefore.phase}`);
+bossAfter.hp < bossBefore.hp
+  ? ok(`頭目特殊技能範圍命中玩家(HP ${Math.round(bossBefore.hp)} → ${Math.round(bossAfter.hp)})`)
+  : fail(`特殊技能未造成傷害:${bossBefore.hp} → ${bossAfter.hp}`);
+await page.screenshot({ path: "/tmp/archipelago-33-boss-special.png" });
+
 // 10. 存檔:手動觸發存檔後重新整理,等級與寶石持有應保留
 const beforeReload = await page.evaluate(() => {
   window.__game.doSave();

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { toonMaterial, addOutlines } from "../core/toon";
 import { groundHeight } from "../world/terrain";
+import type { SfxName } from "../core/audio";
 
 export type EnemyKind =
   | "slime"
@@ -24,7 +25,78 @@ export type EnemyKind =
   | "brine"
   | "solar";
 
-type EnemyState = "patrol" | "chase" | "windup" | "lunge" | "recover" | "dying" | "dead";
+type EnemyState =
+  | "patrol"
+  | "chase"
+  | "windup"
+  | "lunge"
+  | "recover"
+  | "special"
+  | "dying"
+  | "dead";
+
+/** 頭目特殊技能附加效果:knockback 純擊退、chill 緩速玩家、burn 點燃玩家、drain 吸血回復自身 */
+export type SpecialEffect = "knockback" | "chill" | "burn" | "drain";
+
+/** 頭目特殊技能引爆事件:由 main 每幀讀取後清空,負責跳字/音效/結算玩家傷害與狀態 */
+export interface SpecialEvent {
+  name: string;
+  /** 引爆音效名(對應 audio.sfx) */
+  sfx: SfxName;
+  /** 特效顏色(粒子爆裂 + 警示跳字) */
+  color: number;
+  dmg: number;
+  knock: number;
+  effect: SpecialEffect;
+  /** 玩家是否落在範圍內(否則只播特效) */
+  hitPlayer: boolean;
+  /** drain 效果回復自身的量(供跳字顯示) */
+  healed: number;
+}
+
+interface SpecialDef {
+  name: string;
+  sfx: SfxName;
+  color: number;
+  /** 世界座標下的作用半徑 */
+  radius: number;
+  /** 傷害 = config.dmg × dmgMul */
+  dmgMul: number;
+  /** 命中時推開玩家的力道 */
+  knock: number;
+  /** 蓄力預警時間(秒) */
+  telegraph: number;
+  /** 冷卻(秒) */
+  cooldown: number;
+  effect: SpecialEffect;
+}
+
+/** 各島頭目史萊姆的專屬特殊技能(僅守護者/菁英/魔王擁有) */
+const SPECIALS: Partial<Record<EnemyKind, SpecialDef>> = {
+  // 曙光嶼菁英:怒震波——強力擊退
+  elite: { name: "怒震波", sfx: "quake", color: 0xffae5a, radius: 6.5, dmgMul: 1.4, knock: 14, telegraph: 0.7, cooldown: 7, effect: "knockback" },
+  // 翠風林・風之守護者:旋風斬——大範圍強擊退
+  windGuardian: { name: "旋風斬", sfx: "spin", color: 0x7ff0e0, radius: 8.0, dmgMul: 1.1, knock: 24, telegraph: 0.6, cooldown: 6, effect: "knockback" },
+  // 燼岩火山・大地守護者:震地裂——高傷大範圍
+  earthGuardian: { name: "震地裂", sfx: "quake", color: 0xc88a4a, radius: 8.5, dmgMul: 1.6, knock: 18, telegraph: 0.85, cooldown: 8, effect: "knockback" },
+  // 霜雪峰・霜之守護者:寒霜爆——命中緩速玩家
+  frostGuardian: { name: "寒霜爆", sfx: "shatter", color: 0xbfeaff, radius: 7.5, dmgMul: 1.2, knock: 8, telegraph: 0.7, cooldown: 7, effect: "chill" },
+  // 沉沒古城・虛空守護者:虛空波動——吸取玩家生命回復自身
+  voidGuardian: { name: "虛空波動", sfx: "blink", color: 0x9a5ad0, radius: 7.0, dmgMul: 1.4, knock: 10, telegraph: 0.75, cooldown: 8, effect: "drain" },
+  // 虛空之心・最終魔王:虛空崩裂——超大範圍 + 吸血
+  voidLord: { name: "虛空崩裂", sfx: "blink", color: 0x7a3ad0, radius: 10.0, dmgMul: 1.6, knock: 16, telegraph: 0.85, cooldown: 7, effect: "drain" },
+  // 第二海・熔砂島・熔岩守護者:熔核震爆——命中點燃玩家
+  magmaGuardian: { name: "熔核震爆", sfx: "lava", color: 0xff5a2c, radius: 8.0, dmgMul: 1.4, knock: 12, telegraph: 0.75, cooldown: 7, effect: "burn" },
+  // 第二海・珊瑚礁・珊瑚守護者:潮汐衝擊——大範圍強擊退
+  coralGuardian: { name: "潮汐衝擊", sfx: "aqua", color: 0x46c8e0, radius: 8.5, dmgMul: 1.3, knock: 20, telegraph: 0.7, cooldown: 7, effect: "knockback" },
+  // 第二海・靈脈島・靈脈守護者:靈脈汲取——強力吸血回復
+  lifeGuardian: { name: "靈脈汲取", sfx: "life", color: 0x5ae07a, radius: 7.5, dmgMul: 1.3, knock: 8, telegraph: 0.75, cooldown: 6, effect: "drain" },
+};
+
+/** drain 效果回復自身傷害量的倍率 */
+const DRAIN_HEAL_MUL = 1.5;
+/** 引爆後的擴散特效持續時間 */
+const BLAST_TIME = 0.45;
 
 const CHASE_RANGE = 12;
 const ATTACK_TRIGGER_RANGE = 3.2;
@@ -105,6 +177,10 @@ export class Enemy {
   private burnTickAccum = 0;
   /** 麻痺剩餘秒數(雷光果連鎖閃電;定身不動,仍可受擊) */
   stunT = 0;
+  /** 特殊技能引爆事件:由 main 每幀讀取後清空(無則 null) */
+  specialEvent: SpecialEvent | null = null;
+  /** 特殊技能階段:""=未施放、telegraph=蓄力預警、blast=擴散中(供 HUD/測試讀取) */
+  specialPhase: "" | "telegraph" | "blast" = "";
   private hopPhase = Math.random() * Math.PI * 2;
   private lungeDir = new THREE.Vector3();
   private lungeHitDone = false;
@@ -116,6 +192,12 @@ export class Enemy {
   private readonly hpBar: THREE.Sprite;
   private readonly hpCanvas: HTMLCanvasElement;
   private readonly hpTexture: THREE.CanvasTexture;
+  /** 本島頭目專屬特殊技能(雜魚為 null) */
+  private readonly special: SpecialDef | null;
+  private specialCd = 0;
+  private specialRing: THREE.Mesh | null = null;
+  private specialRingMat: THREE.MeshBasicMaterial | null = null;
+  private specialRingT = 0;
 
   constructor(kind: EnemyKind, x: number, z: number) {
     this.kind = kind;
@@ -124,6 +206,9 @@ export class Enemy {
     this.home = new THREE.Vector3(x, 0, z);
     this.waypoint = this.home.clone();
     this.baseColor = new THREE.Color(this.config.color);
+    this.special = SPECIALS[kind] ?? null;
+    // 開場給部分冷卻,避免玩家一接觸就被引爆
+    this.specialCd = this.special ? this.special.cooldown * 0.6 : 0;
 
     this.mesh = new THREE.Group();
     this.body = new THREE.Group();
@@ -252,6 +337,7 @@ export class Enemy {
     }
 
     this.attackCd = Math.max(0, this.attackCd - dt);
+    this.specialCd = Math.max(0, this.specialCd - dt);
     this.flashT = Math.max(0, this.flashT - dt);
 
     // 冰凍:定格不動,只更新顏色
@@ -316,6 +402,54 @@ export class Enemy {
         if (this.stateT <= 0) this.state = "chase";
         break;
       }
+      case "special": {
+        const sp = this.special!;
+        this.stateT -= dt;
+        if (this.specialPhase === "telegraph") {
+          // 蓄力:鼓脹顫抖 + 地面警示圈閃爍
+          const prog = 1 - Math.max(this.stateT, 0) / sp.telegraph;
+          this.body.scale.setScalar(1 + prog * 0.25);
+          this.updateRing(prog, true);
+          if (this.stateT <= 0) {
+            // 引爆:範圍內命中玩家,drain 效果順帶回復自身
+            const hit = !playerDead && distToPlayer <= sp.radius;
+            const dmg = Math.round(this.config.dmg * sp.dmgMul);
+            let healed = 0;
+            if (hit && sp.effect === "drain") {
+              healed = Math.min(this.config.hp - this.hp, Math.round(dmg * DRAIN_HEAL_MUL));
+              if (healed > 0) {
+                this.hp += healed;
+                this.drawHpBar();
+              }
+            }
+            this.specialEvent = {
+              name: sp.name,
+              sfx: sp.sfx,
+              color: sp.color,
+              dmg,
+              knock: sp.knock,
+              effect: sp.effect,
+              hitPlayer: hit,
+              healed,
+            };
+            this.specialPhase = "blast";
+            this.specialRingT = 0;
+            this.stateT = BLAST_TIME;
+            this.body.scale.setScalar(1);
+          }
+        } else {
+          // 擴散:警示圈由中心爆開、淡出
+          this.specialRingT += dt;
+          this.updateRing(this.specialRingT / BLAST_TIME, false);
+          if (this.stateT <= 0) {
+            this.hideRing();
+            this.specialPhase = "";
+            this.state = "recover";
+            this.stateT = RECOVER_TIME;
+          }
+        }
+        break;
+      }
       default: {
         // patrol / chase 決策
         if (playerDead) {
@@ -323,6 +457,15 @@ export class Enemy {
         } else if (distToHome > LEASH_RANGE) {
           this.state = "patrol";
           this.waypoint.copy(this.home);
+        } else if (
+          this.special &&
+          this.specialCd <= 0 &&
+          distToPlayer <= CHASE_RANGE &&
+          distToPlayer <= this.special.radius + 2
+        ) {
+          // 頭目特殊技能:鎖定開始蓄力
+          this.startSpecial();
+          break;
         } else if (distToPlayer <= ATTACK_TRIGGER_RANGE && this.attackCd <= 0) {
           this.state = "windup";
           this.stateT = WINDUP_TIME;
@@ -392,6 +535,72 @@ export class Enemy {
     this.stunT = Math.max(this.stunT, seconds);
   }
 
+  /** 本島頭目專屬特殊技能名稱(雜魚為 null) */
+  get specialSkill(): string | null {
+    return this.special?.name ?? null;
+  }
+
+  /** 測試掛鉤:立即施放特殊技能(忽略冷卻),供 smoke 引爆驗證 */
+  forceSpecial(): void {
+    if (!this.special || this.isDead) return;
+    this.specialCd = 0;
+    this.startSpecial();
+  }
+
+  /** 進入特殊技能蓄力階段(設定冷卻、顯示警示圈) */
+  private startSpecial(): void {
+    if (!this.special) return;
+    this.state = "special";
+    this.specialPhase = "telegraph";
+    this.stateT = this.special.telegraph;
+    this.specialCd = this.special.cooldown;
+    this.attackCd = Math.max(this.attackCd, 1);
+    this.ensureRing();
+  }
+
+  /** 懶建立地面警示圈(不參與描邊/raycast) */
+  private ensureRing(): void {
+    if (!this.special) return;
+    if (this.specialRing && this.specialRingMat) {
+      this.specialRingMat.color.setHex(this.special.color);
+      this.specialRing.visible = true;
+      return;
+    }
+    const mat = new THREE.MeshBasicMaterial({
+      color: this.special.color,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 1.0, 48), mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.12;
+    ring.raycast = () => undefined;
+    // 加在 mesh(已被 config.scale 縮放),縮放半徑時需除回 scale 才是世界半徑
+    this.mesh.add(ring);
+    this.specialRing = ring;
+    this.specialRingMat = mat;
+  }
+
+  /** 更新警示圈:telegraph 全幅閃爍預警、blast 由中心爆開淡出 */
+  private updateRing(t: number, telegraph: boolean): void {
+    if (!this.special || !this.specialRing || !this.specialRingMat) return;
+    const ls = this.special.radius / this.config.scale;
+    if (telegraph) {
+      this.specialRing.scale.set(ls, ls, ls);
+      this.specialRingMat.opacity = 0.25 + 0.4 * Math.abs(Math.sin(t * Math.PI * 6));
+    } else {
+      const s = (0.15 + 0.95 * Math.min(t, 1)) * ls;
+      this.specialRing.scale.set(s, s, s);
+      this.specialRingMat.opacity = 0.7 * (1 - Math.min(t, 1));
+    }
+  }
+
+  private hideRing(): void {
+    if (this.specialRing) this.specialRing.visible = false;
+  }
+
   /**
    * 推進灼燒計時(由 main 每幀呼叫)。
    * @returns 本幀應結算的灼燒傷害(每 0.5 秒跳一次),無則 0;由 main 走死亡/掉落流程
@@ -421,6 +630,9 @@ export class Enemy {
       this.state = "dying";
       this.stateT = DYING_TIME;
       this.hpBar.visible = false;
+      this.specialPhase = "";
+      this.specialEvent = null;
+      this.hideRing();
       return true;
     }
     return false;
@@ -434,6 +646,10 @@ export class Enemy {
     this.burnDps = 0;
     this.burnTickAccum = 0;
     this.stunT = 0;
+    this.specialPhase = "";
+    this.specialEvent = null;
+    this.specialCd = this.special ? this.special.cooldown * 0.6 : 0;
+    this.hideRing();
     this.mesh.visible = true;
     this.hpBar.visible = true;
     this.body.scale.setScalar(1);

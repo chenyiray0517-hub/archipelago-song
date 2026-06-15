@@ -27,6 +27,8 @@ const BLOCK_STAMINA_COST = 10;
 const BLOCK_DAMAGE_FACTOR = 0.15;
 /** 格擋有效正面夾角(cos 值,約 ±75°) */
 const BLOCK_ARC_COS = 0.26;
+/** 緩速時的移速倍率(頭目寒霜爆) */
+const CHILL_MOVE_FACTOR = 0.5;
 
 /** 攻擊判定參數:距離與面向夾角 */
 export const ATTACK_RANGE = 3.4;
@@ -85,6 +87,14 @@ export class Player {
   airJumpsUsed = 0;
   /** 滑翔中(供動畫與測試讀取) */
   gliding = false;
+  /** 緩速剩餘秒數(頭目寒霜爆;移速下降) */
+  chillT = 0;
+  /** 灼燒剩餘秒數(頭目熔核震爆;持續扣血) */
+  burnT = 0;
+  private burnDps = 0;
+  private burnTickAccum = 0;
+  /** 被頭目特殊技能擊退的衝量(每幀套用後衰減) */
+  private knockbackVel = new THREE.Vector3();
 
   private velocityY = 0;
   private grounded = true;
@@ -387,6 +397,7 @@ export class Player {
     this.dodgeT = Math.max(0, this.dodgeT - dt);
     this.lungeT = Math.max(0, this.lungeT - dt);
     this.spinT = Math.max(0, this.spinT - dt);
+    this.chillT = Math.max(0, this.chillT - dt);
 
     const speedMul = this.stats.speedMultiplier;
     const move = new THREE.Vector3();
@@ -408,11 +419,12 @@ export class Player {
         move.normalize();
         this.facing = Math.atan2(move.x, move.z);
         // 舉盾與集氣時移速下降
-        const slowFactor = this.blocking
-          ? BLOCK_MOVE_FACTOR
-          : this.holdT > CHARGE_HOLD_MIN
-            ? CHARGE_MOVE_FACTOR
-            : 1;
+        const slowFactor =
+          (this.blocking
+            ? BLOCK_MOVE_FACTOR
+            : this.holdT > CHARGE_HOLD_MIN
+              ? CHARGE_MOVE_FACTOR
+              : 1) * (this.chillT > 0 ? CHILL_MOVE_FACTOR : 1);
         move.multiplyScalar(BASE_MOVE_SPEED * speedMul * slowFactor * dt);
       }
 
@@ -459,6 +471,14 @@ export class Player {
         move.x += (-gx / steep) * 6.5 * dt;
         move.z += (-gz / steep) * 6.5 * dt;
       }
+    }
+
+    // 頭目特殊技能擊退:套用衝量後衰減
+    if (this.knockbackVel.lengthSq() > 0.01) {
+      move.addScaledVector(this.knockbackVel, dt);
+      this.knockbackVel.multiplyScalar(Math.max(1 - dt * 6, 0));
+    } else {
+      this.knockbackVel.set(0, 0, 0);
     }
 
     const next = this.mesh.position.clone().add(move);
@@ -666,6 +686,42 @@ export class Player {
   applyEnvironmentDamage(amount: number): void {
     if (this.isDead) return;
     this.hp = Math.max(0, this.hp - amount);
+  }
+
+  /** 緩速指定秒數(頭目寒霜爆) */
+  chill(seconds: number): void {
+    if (this.isDead) return;
+    this.chillT = Math.max(this.chillT, seconds);
+  }
+
+  /** 點燃:持續灼燒(頭目熔核震爆);時間與每秒傷害取較大值疊加 */
+  applyBurn(seconds: number, dps: number): void {
+    if (this.isDead) return;
+    this.burnT = Math.max(this.burnT, seconds);
+    this.burnDps = Math.max(this.burnDps, dps);
+  }
+
+  /**
+   * 推進灼燒計時(由 main 每幀呼叫,鏡像 Enemy.tickBurn)。
+   * @returns 本幀應結算的灼燒傷害(每 0.5 秒跳一次),無則 0
+   */
+  tickBurn(dt: number): number {
+    if (this.burnT <= 0 || this.isDead) return 0;
+    this.burnT -= dt;
+    this.burnTickAccum += dt;
+    if (this.burnTickAccum >= 0.5) {
+      this.burnTickAccum -= 0.5;
+      return Math.round(this.burnDps * 0.5);
+    }
+    return 0;
+  }
+
+  /** 被頭目特殊技能擊退:沿來源反方向給予水平衝量 */
+  shove(fromPos: THREE.Vector3, strength: number): void {
+    if (this.isDead) return;
+    const dir = new THREE.Vector3().subVectors(this.mesh.position, fromPos).setY(0);
+    if (dir.lengthSq() < 1e-4) dir.set(Math.sin(this.facing), 0, Math.cos(this.facing));
+    this.knockbackVel.copy(dir.normalize()).multiplyScalar(strength);
   }
 
   /** 虛空石瞬移:移動到指定座標並給予短暫無敵 */

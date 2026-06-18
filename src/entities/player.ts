@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Input } from "../core/input";
 import { PlayerStats } from "../systems/stats";
 import { toonMaterial, addOutlines } from "../core/toon";
-import { groundHeight, isWalkable } from "../world/terrain";
+import { groundHeight, isWalkable, resolveObstacles } from "../world/terrain";
 
 const GRAVITY = 28;
 const JUMP_SPEED = 11;
@@ -482,6 +482,10 @@ export class Player {
     }
 
     const next = this.mesh.position.clone().add(move);
+    // 場景障礙物(樹/石/房子/碼頭柱/古城石柱):把圓心推出,沿障礙滑行
+    const resolved = resolveObstacles(next.x, next.z);
+    next.x = resolved.x;
+    next.z = resolved.z;
     // 可行走:島嶼涉水範圍/冰面渡水(霜語晶+靈力)/潛水區內
     const canWalk =
       isWalkable(next.x, next.z) ||

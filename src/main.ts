@@ -16,6 +16,8 @@ import {
   seaOf,
   THUNDER_FRUIT_SITE,
   GRAVITY_FRUIT_SITE,
+  OBSTACLES,
+  resolveObstacles,
 } from "./world/terrain";
 import { Boat } from "./entities/boat";
 import { Player, ATTACK_RANGE, ATTACK_ARC_COS, SPIN_RANGE } from "./entities/player";
@@ -1490,6 +1492,8 @@ function main(): void {
         get shrineIds() {
           return [...shrineActiveIds];
         },
+        obstacles: OBSTACLES,
+        resolveObstacles,
       },
     });
   }

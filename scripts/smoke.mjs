@@ -32,6 +32,29 @@ const boot = await page.evaluate(() => ({
 }));
 boot.hasGame ? ok(`遊戲載入,敵人 ${boot.enemies} 隻,玩家 HP ${boot.playerHp}`) : fail("無 __game 掛鉤");
 
+// 0b. 場景障礙物碰撞:樹/石/房子等已註冊碰撞圓,且 resolveObstacles 能把圓心推出
+const obstacleCount = await page.evaluate(() => window.__game.obstacles.length);
+obstacleCount > 100
+  ? ok(`場景障礙物碰撞體 ${obstacleCount} 個(樹/石/房子/碼頭柱/古城石柱)`)
+  : fail(`障礙物碰撞體過少:${obstacleCount}`);
+
+// 0c. 玩家被瞬移到障礙物正中央後,應於數幀內被推出該障礙物外
+const pushed = await page.evaluate(async () => {
+  // 找第一座島(曙光嶼,x≈0,z≈0)上的陸地障礙物,瞬移玩家到其中心
+  const o = window.__game.obstacles.find((o) => Math.hypot(o.x, o.z) < 60);
+  if (!o) return { ok: false, reason: "找不到第一島障礙物" };
+  const p = window.__game.player.mesh.position;
+  const home = { x: p.x, y: p.y, z: p.z };
+  p.set(o.x, 5, o.z);
+  await new Promise((r) => setTimeout(r, 400));
+  const dist = Math.hypot(p.x - o.x, p.z - o.z);
+  p.set(home.x, home.y, home.z); // 還原,避免影響後續測項
+  return { ok: true, dist, r: o.r };
+});
+pushed.ok && pushed.dist >= pushed.r - 0.05
+  ? ok(`玩家被障礙物推出(離心 ${pushed.dist.toFixed(2)}≥半徑 ${pushed.r.toFixed(2)})`)
+  : fail(`玩家未被推出障礙物:${JSON.stringify(pushed)}`);
+
 // 1. 走向史萊姆(W+D 斜走 1 秒,引怪追擊)
 await page.keyboard.down("w");
 await page.keyboard.down("d");

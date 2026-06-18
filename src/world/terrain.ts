@@ -325,10 +325,51 @@ export function isSailable(x: number, z: number): boolean {
   return groundHeight(x, z) < 0.25;
 }
 
+/** 場景障礙物碰撞體(以圓近似:樹幹/石頭/房子/碼頭柱/古城石柱);程序生成時填入 */
+export interface Obstacle {
+  x: number;
+  z: number;
+  r: number;
+}
+export const OBSTACLES: Obstacle[] = [];
+
+/** 實體與障礙物的預設碰撞半徑(約玩家身寬) */
+const ENTITY_RADIUS = 0.45;
+
+/**
+ * 把實體圓心推出所有重疊的障礙物(單次掃描;沿障礙→實體向量推開,
+ * 自然產生貼牆滑行)。障礙物稀疏(全群島約數百個),直接全掃即可。
+ */
+export function resolveObstacles(
+  x: number,
+  z: number,
+  radius = ENTITY_RADIUS,
+): { x: number; z: number } {
+  let px = x;
+  let pz = z;
+  for (const o of OBSTACLES) {
+    const dx = px - o.x;
+    const dz = pz - o.z;
+    const min = o.r + radius;
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= min * min) continue;
+    const d = Math.sqrt(d2);
+    if (d > 1e-4) {
+      const push = (min - d) / d;
+      px += dx * push;
+      pz += dz * push;
+    } else {
+      px += min; // 圓心完全重合:沿任意軸推開
+    }
+  }
+  return { x: px, z: pz };
+}
+
 /**
  * 建立整個群島的地形(每島獨立網格 + 主題配色 + 程序化散布樹石)。
  */
 export function createWorld(): THREE.Group {
+  OBSTACLES.length = 0; // 重建世界時重置障礙物表(程序生成位置隨機)
   const group = new THREE.Group();
   for (const def of ISLANDS) group.add(createIslandMesh(def));
 
@@ -361,6 +402,7 @@ export function createWorld(): THREE.Group {
     pillar.rotation.z = ((i % 5) - 2) * 0.08;
     pillar.castShadow = true;
     group.add(pillar);
+    OBSTACLES.push({ x: pillar.position.x, z: pillar.position.z, r: 1.0 });
   }
 
   group.add(createPortTown());
@@ -396,6 +438,8 @@ function createPortTown(): THREE.Group {
     house.rotation.y = ((spot.x + spot.z) % 5) * 0.18;
     house.position.set(spot.x, groundHeight(spot.x, spot.z), spot.z);
     town.add(house);
+    // 房子 4.2×3.6:以圓近似包住屋身(旋轉不影響圓)
+    OBSTACLES.push({ x: spot.x, z: spot.z, r: 2.3 });
   }
 
   // 木棧碼頭:從南灘伸向海面(船停在碼頭旁)
@@ -414,6 +458,7 @@ function createPortTown(): THREE.Group {
         post.position.set(dockX + side, 0, z);
         post.castShadow = true;
         town.add(post);
+        OBSTACLES.push({ x: dockX + side, z, r: 0.35 });
       }
     }
   }
@@ -473,14 +518,13 @@ function createIslandMesh(def: IslandDef): THREE.Group {
     const radius = Math.sqrt(Math.random()) * (def.r - 4);
     const x = def.x + Math.cos(angle) * radius;
     const z = def.z + Math.sin(angle) * radius;
-    const rock = new THREE.Mesh(
-      new THREE.DodecahedronGeometry(0.7 + Math.random() * 0.9),
-      toonMaterial(0x8a8a8a),
-    );
+    const rockR = 0.7 + Math.random() * 0.9;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockR), toonMaterial(0x8a8a8a));
     rock.position.set(x, groundHeight(x, z) + 0.3, z);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
     rock.castShadow = true;
     group.add(rock);
+    OBSTACLES.push({ x, z, r: rockR * 0.75 });
   }
 
   return group;
@@ -499,5 +543,7 @@ function createTree(x: number, groundY: number, z: number, leafColor: number): T
   tree.add(trunk, leaves);
   tree.scale.setScalar(scale);
   tree.position.set(x, groundY - 0.1, z);
+  // 碰撞只取樹幹(枝葉懸空可從下方走過)
+  OBSTACLES.push({ x, z, r: 0.45 * scale });
   return tree;
 }

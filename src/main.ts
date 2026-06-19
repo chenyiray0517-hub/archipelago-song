@@ -207,7 +207,7 @@ function main(): void {
         rp = new RemotePlayer(id, state);
         remotePlayers.set(id, rp);
         scene.add(rp.mesh);
-        hud.setOnline(net.connected, remotePlayers.size);
+        hud.setOnline(net.connected, remotePlayers.size, net.room);
       } else {
         rp.setState(state);
       }
@@ -217,19 +217,34 @@ function main(): void {
       if (rp) {
         rp.dispose();
         remotePlayers.delete(id);
-        hud.setOnline(net.connected, remotePlayers.size);
+        hud.setOnline(net.connected, remotePlayers.size, net.room);
       }
     },
     onStatus(connected) {
-      hud.setOnline(connected, remotePlayers.size);
+      hud.setOnline(connected, remotePlayers.size, net.room);
+    },
+    // 階段 3a:客戶端套用房主的敵人快照;房主結算客戶端送來的傷害
+    onEnemies(e) {
+      applyEnemySnapshot(e);
+    },
+    onHit(i, dmg) {
+      hostApplyHit(i, dmg);
     },
   });
-  // 多人為 opt-in:網址帶 ?mp 才連線(避免單人玩家無謂連線、連不上時的 console 紅字)。
-  // 階段 2 會改成由「房間連結」?room=xxx 啟用。
-  if (new URLSearchParams(location.search).has("mp")) net.connect();
+  // 多人房間(opt-in,避免單人玩家無謂連線、連不上時的 console 紅字):
+  //   ?room=xxx → 加入房間 xxx(分享連結用,不同房間互不可見)
+  //   ?mp       → 向後相容,等同預設房間 lobby
+  //   無參數    → 純單機,不連線
+  const mpParams = new URLSearchParams(location.search);
+  const roomParam = mpParams.get("room")?.trim();
+  const mpRoom = roomParam ? roomParam : mpParams.has("mp") ? "lobby" : null;
+  if (mpRoom) net.connect(mpRoom);
   // 狀態送出節流:約 20Hz 即足夠,遠端以插值補平
   let netSendT = 0;
   const prevPos = player.mesh.position.clone();
+  // 敵人快照送出節流(房主端,約 12Hz);r2 = 縮短封包數字到小數兩位
+  let netEnemyT = 0;
+  const r2 = (n: number): number => Math.round(n * 100) / 100;
 
   const inventory = new Inventory();
 
@@ -319,6 +334,8 @@ function main(): void {
     new Enemy("solar", 2260, -14),
   ];
   for (const enemy of enemies) scene.add(enemy.mesh);
+  // 多人:陣列索引作為跨端同步的穩定 id(各端以相同順序建立同一批敵人)
+  enemies.forEach((enemy, i) => (enemy.netIndex = i));
   // 各島頭目首殺掉落對應靈紋寶石
   const gemGuardian = enemies[12];
   const windGuardian = enemies.find((e) => e.kind === "windGuardian") as Enemy;
@@ -1482,6 +1499,38 @@ function main(): void {
     }
   }
 
+  // ── 多人階段 3a:房主權威敵人的同步處理 ──────────────────────
+  /** 客戶端套用房主送來的敵人快照(扁平 [x,y,z,yaw,dead,hp]×敵人數);剛死亡者補放死亡特效 */
+  function applyEnemySnapshot(e: number[]): void {
+    if (net.isHost) return; // 房主以本機模擬為準,不套用(理論上也收不到自己的廣播)
+    for (let k = 0; k < enemies.length; k++) {
+      const o = k * 6;
+      if (o + 5 >= e.length) break;
+      const enemy = enemies[k];
+      const justDied = enemy.applyNetSnapshot(e[o], e[o + 1], e[o + 2], e[o + 3], e[o + 4] === 1, e[o + 5]);
+      if (justDied) {
+        const ep = enemy.mesh.position;
+        audio.sfx("enemyDie");
+        fx.burst(ep.clone().setY(ep.y + 1), 0x9be89b, 16);
+      }
+    }
+  }
+
+  /** 房主結算客戶端送來的傷害:權威扣血,死亡走既有掉落流程(3a 掉落暫歸房主世界,歸屬留待 3b) */
+  function hostApplyHit(i: number, dmg: number): void {
+    if (!net.isHost) return;
+    const enemy = enemies[i];
+    if (!enemy || enemy.isDead) return;
+    const died = enemy.takeDamage(dmg); // 房主端 remote=false → 權威扣血
+    const top = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 2.4);
+    floats.spawn(top, `-${Math.round(dmg)}`, "#ffd27a"); // 金色 = 同伴造成的傷害
+    if (died) {
+      audio.sfx("enemyDie");
+      fx.burst(enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1), 0x9be89b, 16);
+      spawnDrops(enemy);
+    }
+  }
+
   if (import.meta.env.DEV) {
     // 煙霧測試掛鉤(僅 dev build),供自動化驗證讀取遊戲狀態
     Object.assign(window, {
@@ -1544,6 +1593,12 @@ function main(): void {
     const elapsed = clock.getElapsedTime();
     // hit-stop 頓幀中世界凍結,鏡頭與粒子照常更新
     const worldDt = fx.frozen ? 0 : dt;
+
+    // 多人階段 3a:連線且非房主時,敵人切成「房主權威傀儡」——本機不跑 FSM,
+    // 受擊只記帳(pendingNetDamage)等下方送房主結算。單機/房主則照常權威模擬。
+    // 在任何戰鬥判定前先設定,確保本幀玩家攻擊走到正確分支。
+    const clientRemote = net.connected && !net.isHost;
+    for (const enemy of enemies) enemy.remote = clientRemote;
 
     // 日夜與天氣(影響光照/天色/海況/航速/配樂)
     const env = sky.update(dt, player.mesh.position, diving);
@@ -2025,6 +2080,11 @@ function main(): void {
     }
 
     for (const enemy of enemies) {
+      // 客戶端:敵人由房主快照驅動,本機只做視覺插值,不跑 FSM/戰鬥/特殊技能/灼燒
+      if (clientRemote) {
+        enemy.updateRemote(worldDt);
+        continue;
+      }
       // 水下敵人在玩家未潛水時休眠(不會攻擊海面上的船)
       const dormant =
         (enemy.kind === "deep" || enemy.kind === "voidGuardian") && !diving;
@@ -2471,6 +2531,27 @@ function main(): void {
       prevPos.copy(p);
       const state: NetState = { x: p.x, y: p.y, z: p.z, facing: player.facing, moving: movedSq > 1e-5 };
       net.sendState(state);
+    }
+
+    // ── 多人階段 3a:房主廣播敵人快照(約 12Hz);客戶端排空待送傷害給房主 ──
+    if (clientRemote) {
+      for (const enemy of enemies) {
+        if (enemy.pendingNetDamage > 0) {
+          net.sendHit(enemy.netIndex, Math.round(enemy.pendingNetDamage));
+          enemy.pendingNetDamage = 0;
+        }
+      }
+    } else if (net.isHost && remotePlayers.size > 0) {
+      netEnemyT += dt;
+      if (netEnemyT >= 0.08) {
+        netEnemyT = 0;
+        const snap: number[] = [];
+        for (const enemy of enemies) {
+          const ep = enemy.mesh.position;
+          snap.push(r2(ep.x), r2(ep.y), r2(ep.z), r2(enemy.mesh.rotation.y), enemy.isDead ? 1 : 0, enemy.hp);
+        }
+        net.sendEnemies(snap);
+      }
     }
 
     floats.update(dt, camera);

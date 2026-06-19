@@ -14,6 +14,25 @@ export interface GameSettings {
 
 const DEFAULTS: GameSettings = { volume: 1, music: true, deathDrop: true };
 
+/** 目前所在房間:?room=xxx,或 ?mp(向後相容 = lobby),否則單機(null) */
+function currentRoom(): string | null {
+  const p = new URLSearchParams(location.search);
+  const r = p.get("room")?.trim();
+  if (r) return r;
+  if (p.has("mp")) return "lobby";
+  return null;
+}
+
+/** 組出可分享的房間邀請連結 */
+function roomLink(room: string): string {
+  return `${location.origin}${location.pathname}?room=${encodeURIComponent(room)}`;
+}
+
+/** 產生一個簡短好分享的隨機房間名 */
+function randomRoom(): string {
+  return Math.random().toString(36).slice(2, 8);
+}
+
 function load(): GameSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -33,6 +52,10 @@ const SETTINGS_CSS = `
 #settings input[type="checkbox"] { width: 18px; height: 18px; }
 #settings .danger { margin-top: 14px; width: 100%; padding: 8px; border: none; border-radius: 8px; background: #b03030; color: #fff; cursor: pointer; font-size: 14px; }
 #settings .muted { opacity: 0.6; font-size: 12px; margin-top: 10px; text-align: center; }
+#settings hr { border: none; border-top: 1px solid rgba(255,255,255,0.12); margin: 12px 0; }
+#settings .mp-btn { width: 100%; padding: 8px; border: none; border-radius: 8px; background: #2f6fb0; color: #fff; cursor: pointer; font-size: 14px; margin-top: 6px; }
+#settings .mp-btn.ghost { background: rgba(255,255,255,0.12); }
+#settings .mp-room { font-weight: 600; color: #7fd0ff; }
 `;
 
 /**
@@ -93,9 +116,12 @@ export class SettingsPanel {
       <div class="row"><span>主音量</span><input id="set-vol" type="range" min="0" max="100" value="${Math.round(this.settings.volume * 100)}" /></div>
       <div class="row"><span>背景音樂</span><input id="set-music" type="checkbox" ${this.settings.music ? "checked" : ""} /></div>
       <div class="row"><span>死亡掉落結晶</span><input id="set-drop" type="checkbox" ${this.settings.deathDrop ? "checked" : ""} /></div>
+      <hr />
+      ${this.multiplayerSection()}
       <button class="danger" id="set-reset">重置存檔(從頭開始)</button>
       <div class="muted">按 ESC 關閉</div>
     `;
+    this.wireMultiplayer();
     this.root.querySelector<HTMLInputElement>("#set-vol")?.addEventListener("input", (e) => {
       this.settings.volume = Number((e.target as HTMLInputElement).value) / 100;
       this.apply();
@@ -114,6 +140,47 @@ export class SettingsPanel {
       if (confirm("確定要刪除存檔、從頭開始嗎?")) {
         localStorage.removeItem("archipelago-save-v1");
         location.reload();
+      }
+    });
+  }
+
+  /** 多人房間區塊:單機時可建立房間,在房間時可複製邀請連結或離開 */
+  private multiplayerSection(): string {
+    const room = currentRoom();
+    if (!room) {
+      return `
+        <div class="row"><span>多人房間</span><span>單機遊玩</span></div>
+        <button class="mp-btn" id="set-mp-create">建立多人房間(產生邀請連結)</button>
+        <div class="muted" id="set-mp-hint">建立後把網址列連結傳給家人朋友,即可進同一座群島</div>
+      `;
+    }
+    const label = room === "lobby" ? "預設房間 lobby" : room;
+    return `
+      <div class="row"><span>多人房間</span><span class="mp-room">${label}</span></div>
+      <button class="mp-btn" id="set-mp-copy">複製邀請連結</button>
+      <button class="mp-btn ghost" id="set-mp-leave">離開房間(回單機)</button>
+      <div class="muted" id="set-mp-hint">把連結傳給家人朋友,開同一條連結就會在同一間</div>
+    `;
+  }
+
+  private wireMultiplayer(): void {
+    this.root.querySelector<HTMLButtonElement>("#set-mp-create")?.addEventListener("click", () => {
+      location.href = roomLink(randomRoom());
+    });
+    this.root.querySelector<HTMLButtonElement>("#set-mp-leave")?.addEventListener("click", () => {
+      location.href = location.pathname; // 去掉查詢字串 = 回單機
+    });
+    this.root.querySelector<HTMLButtonElement>("#set-mp-copy")?.addEventListener("click", async () => {
+      const room = currentRoom();
+      if (!room) return;
+      const link = roomLink(room);
+      const hint = this.root.querySelector<HTMLElement>("#set-mp-hint");
+      try {
+        await navigator.clipboard.writeText(link);
+        if (hint) hint.textContent = "已複製邀請連結!";
+      } catch {
+        // 無剪貼簿權限(如非安全環境):退而求其次,直接把連結秀出來讓玩家手動複製
+        if (hint) hint.textContent = link;
       }
     });
   }

@@ -147,10 +147,15 @@ export class Hud {
     if (el.textContent !== text) el.textContent = text;
   }
 
-  /** 右上角連線狀態:已連線顯示同行人數,未連線顯示單機 */
-  setOnline(connected: boolean, others: number): void {
+  /** 右上角連線狀態:已連線顯示房間(非預設 lobby 才標)與同行人數,未連線留空 */
+  setOnline(connected: boolean, others: number, room?: string | null): void {
     const el = this.byId("hud-net");
-    el.textContent = connected ? `🌐 連線中 · 同行 ${others} 人` : "";
+    if (!connected) {
+      el.textContent = "";
+      return;
+    }
+    const roomTag = room && room !== "lobby" ? ` · 房間 ${room}` : "";
+    el.textContent = `🌐 連線中${roomTag} · 同行 ${others} 人`;
   }
 
   /** 更新右上角任務追蹤列(空陣列隱藏) */

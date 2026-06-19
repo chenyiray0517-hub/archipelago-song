@@ -162,6 +162,19 @@ export class Enemy {
   hp: number;
   state: EnemyState = "patrol";
 
+  // ── 多人「房主權威」傀儡模式(階段 3a)──────────────────────
+  // remote = true 時本機不模擬此敵人,改由房主快照驅動(updateRemote/applyNetSnapshot);
+  // 受擊只記 pendingNetDamage 等 main 送給房主結算,不在本機扣血/宣告死亡。
+  /** 是否為遠端傀儡(由 main 每幀依連線角色設定) */
+  remote = false;
+  /** 在 enemies 陣列中的索引,作為跨端同步的穩定 id(由 main 設定一次) */
+  netIndex = -1;
+  /** 遠端模式下累積的待送傷害(main 每幀排空後送房主) */
+  pendingNetDamage = 0;
+  private netTarget = new THREE.Vector3();
+  private netYaw = 0;
+  private netDead = false;
+
   private readonly config: EnemyConfig;
   private readonly home: THREE.Vector3;
   private waypoint: THREE.Vector3;
@@ -622,6 +635,12 @@ export class Enemy {
    */
   takeDamage(amount: number, fromDir?: THREE.Vector3): boolean {
     if (this.isDead) return false;
+    // 遠端傀儡:只記下傷害(等 main 送房主結算)+ 本機閃白回饋,絕不扣血或宣告死亡
+    if (this.remote) {
+      this.pendingNetDamage += amount;
+      this.flashT = 0.12;
+      return false;
+    }
     this.hp = Math.max(0, this.hp - amount);
     this.flashT = 0.12;
     if (fromDir) this.knockback.copy(fromDir).setY(0).normalize().multiplyScalar(9);
@@ -635,6 +654,57 @@ export class Enemy {
       this.hideRing();
       return true;
     }
+    return false;
+  }
+
+  /** 對外重繪血條(遠端模式套用房主血量後呼叫) */
+  refreshHpBar(): void {
+    this.drawHpBar();
+  }
+
+  /**
+   * 遠端傀儡每幀視覺更新:朝房主快照位置/朝向插值,輕微跳動,受擊閃白衰減。
+   * 不跑 FSM、不結算戰鬥(那些都在房主端)。
+   */
+  updateRemote(dt: number): void {
+    if (!this.mesh.visible) return;
+    const t = 1 - Math.exp(-12 * dt);
+    this.mesh.position.lerp(this.netTarget, t);
+    let d = this.netYaw - this.mesh.rotation.y;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    this.mesh.rotation.y += d * t;
+    this.flashT = Math.max(0, this.flashT - dt);
+    this.hopPhase += dt * 6;
+    this.body.position.y = Math.abs(Math.sin(this.hopPhase)) * 0.12;
+    if (this.flashT > 0) this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xffffff), 0.7);
+    else this.blobMaterial.color.copy(this.baseColor);
+  }
+
+  /**
+   * 套用房主送來的敵人快照(遠端模式)。
+   * @returns 是否「本次剛由存活轉為死亡」(供 main 播放死亡特效/音效)
+   */
+  applyNetSnapshot(x: number, y: number, z: number, yaw: number, dead: boolean, hp: number): boolean {
+    const wasAlive = !this.netDead;
+    this.netDead = dead;
+    this.hp = hp; // 永遠以房主血量為準(含死亡=0,移交房主時 FSM 才接得到正確值)
+    // 粗略對齊 state,讓 isDead 與「移交房主時 FSM 接手」運作正常
+    this.state = dead ? "dead" : "patrol";
+    if (dead) {
+      if (this.mesh.visible) {
+        this.mesh.visible = false;
+        this.hpBar.visible = false;
+      }
+      return wasAlive; // 剛死亡 → 回 true 讓 main 補死亡特效
+    }
+    if (!this.mesh.visible) {
+      this.mesh.visible = true;
+      this.hpBar.visible = true;
+      this.mesh.position.set(x, y, z); // 重生:直接就位不插值
+    }
+    this.netTarget.set(x, y, z);
+    this.netYaw = yaw;
+    this.drawHpBar();
     return false;
   }
 

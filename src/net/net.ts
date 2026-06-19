@@ -1,8 +1,9 @@
-// 群島之歌 — 客戶端連線層(第 1 階段:看得到彼此)
+// 群島之歌 — 客戶端連線層(第 2 階段:房間系統)
 //
 // 設計原則:**連得上就多人,連不上就單機**。
 // 連線失敗、伺服器沒開、半路斷線,一律靜默處理,絕不影響單機遊玩
 // (這也讓沒開伺服器的 smoke 測試照常全綠)。
+// 連線時把房間名(?room=xxx)帶進伺服器 URL,只與同房間的人互通。
 
 /** 一名玩家同步出去的狀態(第 1 階段只同步外觀所需的最小集合) */
 export interface NetState {
@@ -18,10 +19,16 @@ export interface NetState {
 
 /** 伺服器 → 客戶端訊息 */
 type ServerMsg =
-  | { t: "welcome"; id: string; others: { id: string; state: NetState }[] }
+  | { t: "welcome"; id: string; room: string; host: string; others: { id: string; state: NetState }[] }
   | { t: "join"; id: string }
   | { t: "state"; id: string; state: NetState }
-  | { t: "leave"; id: string };
+  | { t: "leave"; id: string }
+  /** 房主指派/移交(階段 3a) */
+  | { t: "host"; id: string }
+  /** 房主廣播的敵人快照:扁平陣列 [x,y,z,yaw,dead,hp]×敵人數(階段 3a) */
+  | { t: "enemies"; id: string; e: number[] }
+  /** 客戶端→房主的傷害請求(階段 3a) */
+  | { t: "hit"; id: string; i: number; dmg: number };
 
 export interface NetCallbacks {
   /** 收到別人的最新狀態(第一次收到即代表該玩家出現) */
@@ -30,14 +37,21 @@ export interface NetCallbacks {
   onLeave(id: string): void;
   /** 連線狀態變化(供 HUD 顯示「已連線/單機」) */
   onStatus?(connected: boolean): void;
+  /** 房主身分變化(連上/移交時觸發;true = 本機是房主)(階段 3a) */
+  onHostChange?(isHost: boolean): void;
+  /** 房主送來的敵人快照(僅客戶端會收到)(階段 3a) */
+  onEnemies?(e: number[]): void;
+  /** 客戶端送來的傷害請求(僅房主需處理)(階段 3a) */
+  onHit?(i: number, dmg: number): void;
 }
 
-/** 伺服器位址:正式環境用建置時注入的 VITE_SERVER_URL,開發走本機 8787 */
-function serverUrl(): string {
+/** 伺服器位址:正式環境用建置時注入的 VITE_SERVER_URL,開發走本機 8787;房間名併入 ?room= */
+function serverUrl(room: string): string {
   const injected = import.meta.env.VITE_SERVER_URL as string | undefined;
-  if (injected) return injected;
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.hostname}:8787`;
+  const base = injected ?? `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.hostname}:8787`;
+  const url = new URL(base);
+  url.searchParams.set("room", room);
+  return url.toString();
 }
 
 export class NetClient {
@@ -45,6 +59,10 @@ export class NetClient {
   private cb: NetCallbacks;
   /** 本機玩家在伺服器上的 id(連線後才有) */
   localId: string | null = null;
+  /** 本機所在(嘗試加入)的房間;connect 時記下,welcome 回來以伺服器為準 */
+  room: string | null = null;
+  /** 目前房主的 id(由伺服器指派/移交);與 localId 相同即本機為房主 */
+  hostId: string | null = null;
 
   constructor(cb: NetCallbacks) {
     this.cb = cb;
@@ -54,11 +72,17 @@ export class NetClient {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
-  /** 嘗試連線。失敗只記 warning,不丟例外、不影響呼叫端。 */
-  connect(): void {
+  /** 本機是否為房主(連線且 hostId === localId) */
+  get isHost(): boolean {
+    return this.connected && this.hostId !== null && this.hostId === this.localId;
+  }
+
+  /** 嘗試連線到指定房間。失敗只記 warning,不丟例外、不影響呼叫端。 */
+  connect(room: string): void {
+    this.room = room;
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl());
+      ws = new WebSocket(serverUrl(room));
     } catch (err) {
       console.warn("[net] 無法建立連線,維持單機:", err);
       return;
@@ -79,7 +103,10 @@ export class NetClient {
       switch (msg.t) {
         case "welcome":
           this.localId = msg.id;
+          this.room = msg.room;
+          this.hostId = msg.host;
           for (const o of msg.others) this.cb.onState(o.id, o.state);
+          this.cb.onHostChange?.(this.isHost);
           break;
         case "state":
           this.cb.onState(msg.id, msg.state);
@@ -90,6 +117,16 @@ export class NetClient {
         case "leave":
           this.cb.onLeave(msg.id);
           break;
+        case "host":
+          this.hostId = msg.id;
+          this.cb.onHostChange?.(this.isHost);
+          break;
+        case "enemies":
+          this.cb.onEnemies?.(msg.e);
+          break;
+        case "hit":
+          this.cb.onHit?.(msg.i, msg.dmg);
+          break;
       }
     });
 
@@ -97,7 +134,9 @@ export class NetClient {
       if (this.ws !== ws) return;
       this.ws = null;
       this.localId = null;
+      this.hostId = null;
       this.cb.onStatus?.(false);
+      this.cb.onHostChange?.(false);
     };
     ws.addEventListener("close", down);
     ws.addEventListener("error", down);
@@ -107,5 +146,17 @@ export class NetClient {
   sendState(state: NetState): void {
     if (!this.connected) return;
     this.ws!.send(JSON.stringify({ t: "state", state }));
+  }
+
+  /** 房主廣播敵人快照(扁平陣列 [x,y,z,yaw,dead,hp]×敵人數)(階段 3a) */
+  sendEnemies(e: number[]): void {
+    if (!this.connected) return;
+    this.ws!.send(JSON.stringify({ t: "enemies", e }));
+  }
+
+  /** 客戶端送傷害請求給房主(階段 3a) */
+  sendHit(i: number, dmg: number): void {
+    if (!this.connected) return;
+    this.ws!.send(JSON.stringify({ t: "hit", i, dmg }));
   }
 }

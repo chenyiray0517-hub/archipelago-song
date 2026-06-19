@@ -1,5 +1,33 @@
 # PROGRESS
 
+## 2026-06-19(多人連線 階段 3a/6:房主權威共享敵人 — 看到並一起打同一批怪)
+
+> 階段 3 拆細:先做 3a「共享敵人」。Rai 決策:**各自成長、怪物共享**(敵人 HP/死亡同步,寶石/結晶/經驗各自入袋,留待 3b 做歸屬)。
+> 模型:**房主權威**——房主模擬全部敵人,客戶端把敵人當「傀儡」只做視覺,攻擊送房主結算。
+
+- **房主選舉 + 移交**(`server/index.mjs`):每房間第一位加入者當房主(`hostByRoom`),welcome 帶 `host`;房主離線即移交同房間下一位並廣播 `{t:"host"}`。新增通用 relay(`RELAY={enemies,hit}`):原樣轉發給同房間其他人並附 sender id(客戶端依房主身分決定是否處理)。
+- **協定**(`src/net/net.ts`):`hostId` + `isHost` getter(`connected && hostId===localId`);回呼 `onHostChange/onEnemies/onHit`;送出 `sendEnemies(扁平陣列)`/`sendHit(i,dmg)`;welcome/host 訊息更新 hostId 並觸發 onHostChange;斷線清空 hostId。
+- **敵人傀儡模式**(`src/entities/enemy.ts`):新增 `remote`/`netIndex`/`pendingNetDamage` 與 `updateRemote()`(朝快照位置/朝向指數插值+輕跳+受擊閃白,不跑 FSM)、`applyNetSnapshot(x,y,z,yaw,dead,hp)`(永遠以房主血量為準;死亡隱藏並回傳「剛死亡」供補特效;重生直接就位)。`takeDamage` 在 `remote` 時**只累積 pendingNetDamage + 閃白,不扣血不宣告死亡**——關鍵的單點改動,讓既有所有命中點(普攻/迴旋斬/衝擊波/漩渦/閃電)自動走「送房主結算」。
+- **接線**(`main.ts`):每幀開頭依 `net.connected && !net.isHost` 設 `clientRemote` 並標記所有敵人 `remote`(在任何戰鬥判定前)。客戶端:敵人走 `updateRemote` 並 `continue`(跳過敵→玩家傷害/特殊技/灼燒),幀末排空 `pendingNetDamage` 送 `sendHit`。房主:約 12Hz 送敵人快照(`r2` 縮短數字;僅在有同行玩家時送);`onHit` 權威結算傷害,死亡走既有 `spawnDrops`。`onEnemies` 套用快照,剛死亡者補死亡音效/粒子。陣列索引=跨端穩定 id(各端同序建立同一批 65 隻敵人)。
+- 測試掛鉤:`__game.net.isHost`、`enemies[i].remote`。
+- **3a 已知限制(留待 3b)**:① 掉落/經驗目前一律在房主世界產生(各自成長之歸屬未做);② 敵人尚不會傷害客戶端(客人只輸出傷害、不受擊);③ 客戶端的控場(冰凍/灼燒/麻痺)與頭目蓄力預警圈不跨端;④ 敵人仍只追房主(最近玩家鎖定需配合 ②)。
+- 驗證:build 綠(tsc strict,38 模組)。**既有 smoke 全綠不受影響**(不連線→`clientRemote=false`,純單機路徑)。`mp-check` **11 項全綠**(新增:房主指派、客戶端敵人為傀儡、客戶端傷害經房主結算生效、血量同步回客戶端、敵人位置同步、房主移交)。截圖目視:房主與史萊姆交戰(HP 92/100)旁有客戶端 avatar `/tmp/mp3a-host.png`、客戶端看到同一批敵人血條 `/tmp/mp3a-client.png`。
+- 後續(階段 3b):**各自成長歸屬**——客戶端落地擊殺由其自己獲得寶石/結晶/任務進度(房主代為產生並指派);敵人傷害客戶端 + 最近玩家鎖定;客戶端控場/頭目預警跨端。
+
+## 2026-06-19(多人連線 階段 2/6:房間系統 — 房間連結讓多人進同一間)
+
+> 階段 2 目標(Rai 路線):房間名/連結讓人進同一座群島,不同房間互不可見;`?mp` 換成 `?room=xxx`,伺服器加房間分組(此前所有連線在同一全域空間)。
+
+- **伺服器房間分組**(`server/index.mjs`):連線時從請求 URL 的 `?room=xxx` 取房間名(`roomOf`,沒帶或空字串丟進預設房間 `lobby`,長度上限 64)。`clients` 每筆記 `room`;`broadcast(room, except, msg)` 只送同房間連線;welcome 的 `others`、join/leave 全部限同房間。仍是純轉發站、不存檔、無防作弊。
+- **客戶端**(`src/net/net.ts`):`connect(room)` 把房間併入伺服器 URL(`serverUrl(room)` 用 `URL` API set `?room=`,正式環境的 `VITE_SERVER_URL` 也照樣附帶,支援 wss)。新增 `room` 欄位(connect 時先記,welcome 回來以伺服器為準);welcome 訊息加 `room`。
+- **房間激活規則**(`main.ts`):`?room=xxx` → 加入房間 xxx(分享連結主機制);`?mp` → 向後相容,等同預設房間 `lobby`;**無參數則純單機不連線**(維持「連不上就單機」+ 避免 console 紅字害 smoke)。
+- **HUD**(`hud.ts` `setOnline(connected, others, room?)`):已連線顯示「🌐 連線中 · 房間 xxx · 同行 N 人」;房間為預設 `lobby` 時省略房間標籤。main 三處呼叫帶入 `net.room`。
+- **設定面板多人區塊**(`settings.ts`,ESC):自成一塊讀 URL 不耦合 NetClient。單機時顯示「單機遊玩」+「建立多人房間(產生隨機房間名導向 `?room=`)」;在房間時顯示房間名 +「複製邀請連結」(`navigator.clipboard`,無權限則退而把連結秀出來)+「離開房間(回單機,導回 `location.pathname`)」。
+- **測試**(`scripts/mp-check.mjs`):改用 `?room=`,加第三分頁 C 進不同房間驗證**房間隔離**;測項升為 5:①三頁皆連線取得相異 id ②房間指派正確(A/B=mptest、C=other)③房間隔離(A/B 互看 1 人、C 看 0 人)④A 移動 B 端同步逼近(誤差 <1)⑤A 離線 B 端移除。
+- 測試掛鉤:沿用 `__game.net`(新增可讀 `net.room`)、`__game.remotePlayers`。
+- 驗證:build 綠(tsc strict,38 模組)。**既有 smoke 全綠不受影響**(不帶 room/mp 故不連線)。`mp-check` **5 項全綠**(含房間隔離)。截圖目視:同房間兩玩家 + HUD 房間標籤 `/tmp/mp-room-hud.png`、在房間的設定面板(複製/離開)`/tmp/mp-settings-room.png`、單機的設定面板(建立房間)`/tmp/mp-settings-solo.png`。
+- 後續(階段 3:共享世界):房主權威算敵人/掉落,讓同房間玩家看到同一批怪、共享戰鬥結果(目前各自單機世界,只同步玩家 avatar)。
+
 ## 2026-06-19(多人連線 階段 1/6:看得到彼此 — 同步玩家位置/朝向/移動)
 
 > 目標路線(Rai 決定):2~4 個家人/朋友共玩、**不做防作弊**、房主權威、最終公開上線。

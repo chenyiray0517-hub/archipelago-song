@@ -27,6 +27,8 @@ import { Pickup } from "./entities/pickup";
 import { Shockwave } from "./entities/shockwave";
 import { Vortex } from "./entities/vortex";
 import { LightningBolt } from "./entities/lightning";
+import { NetClient, type NetState } from "./net/net";
+import { RemotePlayer } from "./net/remotePlayer";
 import {
   GemBag,
   FLAME_MP_COST,
@@ -194,6 +196,40 @@ function main(): void {
   const input = new Input(renderer.domElement);
   const player = new Player();
   scene.add(player.mesh);
+
+  // ── 多人連線(第 1 階段:看得到彼此)──────────────────────────
+  // 連得上就多人、連不上就單機;以下任何網路狀況都不影響單機遊玩。
+  const remotePlayers = new Map<string, RemotePlayer>();
+  const net = new NetClient({
+    onState(id, state) {
+      let rp = remotePlayers.get(id);
+      if (!rp) {
+        rp = new RemotePlayer(id, state);
+        remotePlayers.set(id, rp);
+        scene.add(rp.mesh);
+        hud.setOnline(net.connected, remotePlayers.size);
+      } else {
+        rp.setState(state);
+      }
+    },
+    onLeave(id) {
+      const rp = remotePlayers.get(id);
+      if (rp) {
+        rp.dispose();
+        remotePlayers.delete(id);
+        hud.setOnline(net.connected, remotePlayers.size);
+      }
+    },
+    onStatus(connected) {
+      hud.setOnline(connected, remotePlayers.size);
+    },
+  });
+  // 多人為 opt-in:網址帶 ?mp 才連線(避免單人玩家無謂連線、連不上時的 console 紅字)。
+  // 階段 2 會改成由「房間連結」?room=xxx 啟用。
+  if (new URLSearchParams(location.search).has("mp")) net.connect();
+  // 狀態送出節流:約 20Hz 即足夠,遠端以插值補平
+  let netSendT = 0;
+  const prevPos = player.mesh.position.clone();
 
   const inventory = new Inventory();
 
@@ -1494,6 +1530,10 @@ function main(): void {
         },
         obstacles: OBSTACLES,
         resolveObstacles,
+        net,
+        get remotePlayers() {
+          return remotePlayers;
+        },
       },
     });
   }
@@ -2419,6 +2459,18 @@ function main(): void {
       }
     } else {
       sparkleT = 0;
+    }
+
+    // ── 多人:遠端玩家插值 + 節流送出本機狀態(約 20Hz)──
+    for (const rp of remotePlayers.values()) rp.update(dt);
+    netSendT += dt;
+    if (netSendT >= 0.05) {
+      netSendT = 0;
+      const p = player.mesh.position;
+      const movedSq = (p.x - prevPos.x) ** 2 + (p.z - prevPos.z) ** 2;
+      prevPos.copy(p);
+      const state: NetState = { x: p.x, y: p.y, z: p.z, facing: player.facing, moving: movedSq > 1e-5 };
+      net.sendState(state);
     }
 
     floats.update(dt, camera);

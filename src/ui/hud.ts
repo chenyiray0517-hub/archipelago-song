@@ -72,6 +72,7 @@ export class Hud {
       <div class="talk" id="hud-talk">按 F 對話</div>
       <div class="hint">WASD 移動｜空白鍵 跳躍｜Shift 閃避｜左鍵 攻擊(按住集氣)｜Q 舉盾｜E 火焰斬｜R 藥水<br/>右鍵拖曳 轉視角｜滾輪 縮放｜Tab 背包｜F 對話/上下船｜小船在南灘,可出海前往其他島</div>
       <div class="toast" id="hud-toast"></div>
+      <div id="hud-net" style="position:fixed;top:8px;right:12px;font:600 13px/1.4 system-ui,sans-serif;color:#cfe8ff;text-shadow:0 1px 2px #000;pointer-events:none;"></div>
     `;
     document.body.appendChild(hud);
 
@@ -144,6 +145,12 @@ export class Hud {
   setEnv(text: string): void {
     const el = this.byId("hud-env");
     if (el.textContent !== text) el.textContent = text;
+  }
+
+  /** 右上角連線狀態:已連線顯示同行人數,未連線顯示單機 */
+  setOnline(connected: boolean, others: number): void {
+    const el = this.byId("hud-net");
+    el.textContent = connected ? `🌐 連線中 · 同行 ${others} 人` : "";
   }
 
   /** 更新右上角任務追蹤列(空陣列隱藏) */

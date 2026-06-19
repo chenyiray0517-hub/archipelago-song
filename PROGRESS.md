@@ -1,5 +1,21 @@
 # PROGRESS
 
+## 2026-06-19(多人連線 階段 1/6:看得到彼此 — 同步玩家位置/朝向/移動)
+
+> 目標路線(Rai 決定):2~4 個家人/朋友共玩、**不做防作弊**、房主權威、最終公開上線。
+> 六階段:①看得到彼此(本筆) ②房間系統 ③共享世界(房主權威算敵人/掉落) ④互動細節(攻擊特效/聊天) ⑤連線健壯性(斷線重連/延遲補償) ⑥公開部署。
+
+- **新依賴**:`ws`(伺服器端 WebSocket)。前端不加任何依賴(用瀏覽器原生 `WebSocket`)。
+- **新伺服器**(`server/index.mjs`,`npm run server`,預設埠 8787):極簡「轉發站」——分配 client id、收到某玩家 state 就附 id 廣播給其他人、處理 join/leave。不算遊戲邏輯、不存檔、**無防作弊**(熟人共玩毋需)。壞封包 try/catch 丟棄不崩。
+- **新前端連線層**(`src/net/net.ts`,`NetClient`):核心原則 **「連得上就多人、連不上就單機」**——連線失敗/伺服器沒開/半路斷線一律靜默,絕不丟例外、不影響單機。welcome 設 `localId` 並補進在場玩家;state/leave 走回呼。伺服器位址:正式環境讀建置注入的 `VITE_SERVER_URL`,開發走本機 8787(支援 wss)。
+- **遠端玩家 avatar**(`src/net/remotePlayer.ts`,`RemotePlayer`):簡化人形但守慣例 `toonMaterial`+`addOutlines`+`castShadow`;依 id 雜湊給穩定醒目色(與本機綠袍區隔);位置/朝向用**指數插值**(與幀率無關)平滑封包間隔,moving 時播走路擺腿;`dispose()` 釋放幾何體。完整動作(攻擊/跳/格擋)留待階段 3+。
+- **接線**(`main.ts`):建 `remotePlayers: Map<id, RemotePlayer>`,onState 建立/更新 avatar、onLeave 移除;主迴圈每幀插值遠端玩家 + **節流約 20Hz** 送本機 `{x,y,z,facing,moving}`(moving 由水平位移判定)。HUD 右上加 `setOnline()` 顯示「🌐 連線中 · 同行 N 人」。
+- **多人為 opt-in**:只有網址帶 `?mp` 才 `net.connect()`。原因——瀏覽器對 WebSocket 連線失敗會印**原生 console 紅字(JS 無法抑制)**,若預設連線會害「沒開 server 的單機玩家」smoke 變紅;opt-in 同時是更好的產品設計(單人不無謂連線)。階段 2 會改由房間連結 `?room=xxx` 啟用。
+- 測試掛鉤:`__game.net`、`__game.remotePlayers`。
+- **新測試腳本** `scripts/mp-check.mjs`(`node scripts/mp-check.mjs`,需 server+dev):開兩個分頁,驗證①兩頁皆連線取得 id ②互相看到對方 ③A 移動後 B 端遠端 avatar 位置同步逼近(誤差 <1)④A 離線後 B 端移除其 avatar。多人較難併入既有 smoke,故獨立成此腳本。
+- 驗證:build 綠(tsc strict,38 模組)。**既有 smoke 全綠不受影響**(不帶 `?mp` 故不連線)。`mp-check` **4 項全綠**。截圖目視:B 端看到橘色遠端玩家站在世界中(cel-shading 描邊正確)`/tmp/mp-remote.png`。
+- 後續(階段 2):房間系統——房間名/連結讓多人進同一間;`?mp` 換成 `?room=xxx`;伺服器加房間分組(目前所有連線在同一全域空間)。
+
 ## 2026-06-18(碰撞:樹/石/房子等場景物件加上實體碰撞,不再只是擺設)
 
 - **新系統「場景障礙物碰撞」**(`terrain.ts`):程序生成造景時,把每個樹幹/石頭/房子/碼頭柱/沉沒古城石柱登記成一個碰撞圓(`OBSTACLES: {x,z,r}[]`,全群島共 **541 個**)。以圓近似(房子 4.2×4.6 用半徑 2.3 包住屋身,旋轉不影響;樹只取樹幹半徑 `0.45×scale`,枝葉懸空可從下方走過;石頭取視覺半徑 ×0.75)

@@ -36,7 +36,7 @@ jobs:
       #   沒設就退回 render.yaml 的預設服務名稱對應網址。沒部署伺服器也不影響:線上版會靜默退回單機。
       - name: Build
         env:
-          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'wss://archipelago-song-server.onrender.com' }}
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'wss://archipelago-song.onrender.com' }}
         run: npm run build
 
       - name: Deploy to gh-pages

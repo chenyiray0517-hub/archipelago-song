@@ -31,7 +31,12 @@ jobs:
         run: npm ci
 
       # tsc strict 當 gate:型別錯就讓 build 失敗、不部署
+      # VITE_SERVER_URL:多人連線伺服器的公開 wss:// 位址(Render),build 時注入給客戶端。
+      #   優先用 repo 變數(Settings → Secrets and variables → Actions → Variables),
+      #   沒設就退回 render.yaml 的預設服務名稱對應網址。沒部署伺服器也不影響:線上版會靜默退回單機。
       - name: Build
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'wss://archipelago-song-server.onrender.com' }}
         run: npm run build
 
       - name: Deploy to gh-pages

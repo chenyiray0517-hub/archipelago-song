@@ -21,9 +21,9 @@ export class Chat {
   constructor(private onSend: (text: string) => void) {
     const style = document.createElement("style");
     style.textContent = `
-      #chat { position: fixed; left: 12px; bottom: 92px; width: 340px; z-index: 50;
+      #chat { position: fixed; right: 12px; bottom: 92px; width: 340px; z-index: 50;
         font: 13px/1.4 system-ui, sans-serif; pointer-events: none; }
-      #chat-log { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+      #chat-log { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-bottom: 6px; }
       #chat-log .line { background: rgba(0,0,0,0.42); color: #f4f4f4; padding: 2px 8px;
         border-radius: 8px; width: fit-content; max-width: 100%; word-break: break-word;
         transition: opacity 0.6s; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }

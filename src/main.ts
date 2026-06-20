@@ -1704,8 +1704,9 @@ function main(): void {
       `${env.isNight ? "🌙" : "☀️"}${env.weather === "clear" ? "" : env.weather === "rain" ? " 🌧️" : " ⛈️"}`,
     );
 
-    // 階段 4b:聊天開關。Enter 開啟輸入(限連線時);打字中暫停遊戲鍵盤,避免移動/攻擊。
-    if (!chat.isTyping && net.connected && input.wasPressed("Enter")) chat.startTyping();
+    // 階段 4b:聊天開關。Enter 開啟輸入(單機也可開,連線時廣播、單機僅本機回顯);
+    // 打字中暫停遊戲鍵盤,避免移動/攻擊。
+    if (!chat.isTyping && input.wasPressed("Enter")) chat.startTyping();
     input.suspended = chat.isTyping;
     if (chat.isTyping) input.clearKeys();
 

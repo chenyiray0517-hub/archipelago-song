@@ -1,5 +1,17 @@
 # PROGRESS
 
+## 2026-06-20(多人連線 階段 6/6:公開部署 + 邀請碼加入 — 多人連線六階段收官)
+
+> 讓網路上的家人朋友連得到同一座群島。前端早已上 gh-pages(單機);這階段把多人伺服器的部署設定與「邀請碼加入」UI 補齊。
+
+- **伺服器雲端部署**(`render.yaml` + `server/index.mjs`):`server` 包一層極簡 HTTP(GET `/` 回 200)供 Render 健康檢查,WebSocket 升級掛同埠;`render.yaml` Blueprint(free plan、`npm ci --omit=dev` 只裝 `ws`、`startCommand: node server/index.mjs`、`healthCheckPath: /`)。伺服器用 `process.env.PORT`(Render 注入)、監聽全介面。
+- **前端注入伺服器位址**(`.github/workflows/deploy.yml`):push main → GH Action build 時注入 `VITE_SERVER_URL`(優先 repo 變數,預設 `wss://archipelago-song.onrender.com` = Rai 實際部署的 Render 服務)→ 部署 `dist` 到 gh-pages。`vite.config.ts` `base:"./"` 讓子目錄網址資源相對路徑正確。**驗過**:`VITE_SERVER_URL=wss://… npm run build` → wss 位址確實烤進 bundle、`dist/index.html` 用相對 `./assets/`。
+- **邀請碼加入**(`src/ui/settings.ts`):設定面板多人區塊——單機時「建立房間(產生邀請碼)」或「輸入邀請碼→加入」;在房間時顯示邀請碼、複製碼/連結、離開。邀請碼即房間名,沿用網址驅動(reload 帶 `?room=`);輸入框 `stopPropagation` 不漏進遊戲鍵盤。**驗過**:B 從單機用邀請碼 UI 加入 A 的房間 → 同房、互相看得見。
+- **生產情境**:公開站(gh-pages)無 `?room` 預設單機;經邀請碼/連結帶 `?room` 才連 `VITE_SERVER_URL`。Render free plan 閒置 ~15 分鐘休眠,首次連線觸發喚醒(~30-50s),期間 HUD 顯示「🔄 重新連線中…」,喚醒後階段 5 的重連自動接上。連不上一律靜默退單機。
+- 需手動完成的外部步驟(非程式,留給 Rai):① Render 註冊→New+→Blueprint→連 repo→部署,取得 `wss://` 網址;② 若服務名非預設,設 GitHub repo 變數 `VITE_SERVER_URL`;③ 確認 Pages 來源為 gh-pages 分支(本就如此)。
+- 驗證:build 綠(含 `VITE_SERVER_URL` 注入)、smoke 95 全綠、mp-check 23 全綠;邀請碼 join 流程實連通過。
+- **🎉 多人連線六階段全數完成**:①看得到彼此 ②房間 ③共享世界(房主權威) ④互動細節 ⑤連線健壯性 ⑥公開部署。
+
 ## 2026-06-20(多人連線 階段 5/6:連線健壯性 — 斷線重連 + 插值緩衝 + 房主遷移平滑)
 
 > 階段 5「連線健壯性」三項一次做完;大原則(房主權威、連不上就單機、純轉發站)不變。

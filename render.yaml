@@ -6,10 +6,10 @@
 # 怎麼用:
 #  1. 到 https://render.com 註冊(免費,免信用卡)。
 #  2. New + → Blueprint → 連到這個 GitHub repo,Render 會讀到這個檔案。
-#  3. 部署完成後會得到網址,例如 https://archipelago-song-server.onrender.com
-#     對應的 WebSocket 位址就是 wss://archipelago-song-server.onrender.com
+#  3. 部署完成後會得到網址,例如 https://archipelago-song.onrender.com
+#     對應的 WebSocket 位址就是 wss://archipelago-song.onrender.com
 #  4. 把那個 wss:// 位址設成 GitHub repo 變數 VITE_SERVER_URL(見 .github/workflows/deploy.yml 註解),
-#     若服務名稱就叫 archipelago-song-server 則 deploy.yml 已有相同預設值,可省略。
+#     若服務名稱就叫 archipelago-song(本檔預設)則 deploy.yml 已有相同預設值,可省略。
 #
 # 注意:免費方案閒置約 15 分鐘會休眠,朋友第一個連線會觸發喚醒,需等約 30-50 秒。
 services:

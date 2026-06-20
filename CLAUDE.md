@@ -15,7 +15,11 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # tsc 嚴格檢查 + vite build(兩者都過才算綠)
 npm run smoke    # Playwright 端到端煙霧測試 95 項(需先開 dev server,需本機 Chrome)
+npm run server   # 多人連線伺服器(WebSocket 轉發站,埠 8787;多人/部署才需要)
+node scripts/mp-check.mjs   # 多人連線驗證 23 項(需先開 server + dev server)
 ```
+
+> **多人連線**(階段 3~6,已完成):房主權威共享世界。改多人相關程式後跑 `mp-check`;**改 `server/index.mjs` 後記得重啟 `npm run server`**(Node 不熱更新,常見漏洞)。部署:`render.yaml`(Render 部署伺服器)+ `.github/workflows/deploy.yml`(push main → 自動 build 注入 `VITE_SERVER_URL` → 部署 gh-pages)。
 
 ## 技術棧(定案,別改)
 
@@ -79,7 +83,8 @@ smoke 測試靠它讀狀態與快轉(授予寶石、傳送、強制天氣)。新
 - 模型是程式組裝幾何體(無骨骼動畫);升級路線:glTF 資產 + AnimationMixer。
 - 音樂是 WebAudio 程式編曲;換錄音資產時只動 `audio.ts` 內部(TRACKS/scheduleBar)。
 - 效能:目前全場景常駐(38 隻敵人 + 七島,含第二海港口鎮),要擴更多島嶼時做分區載入;海面網格只有一張,依玩家所在海域移動。
-- 未做:本地化、手把支援、打包上架(建議 itch.io 網頁版先行,Steam 走 Tauri)。
+- 多人連線六階段已完成(共享世界 + 各自成長 + 互動細節 + 斷線重連/插值緩衝 + 公開部署);伺服器是純轉發站、無防作弊(2~4 熟人共玩)。
+- 未做:本地化、手把支援、原生打包上架(網頁版已上 gh-pages;Steam 走 Tauri)。
 - 詳細歷程與每輪驗證紀錄:`PROGRESS.md`(由新到舊);玩家視角功能清單:`README.md`。
 
 ## 給接手的 Claude 的話

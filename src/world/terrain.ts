@@ -9,6 +9,8 @@ interface Flora {
   decor: string[];
 }
 const FLORA_DEFAULT: Flora = { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] };
+/** 這些「綠色島嶼」維持原本的程序化樹石(不用素材包模型,也不鋪裝飾)——Rai 指定 */
+const PROCEDURAL_ISLANDS = new Set(["曙光嶼", "翠風林島", "港口鎮", "靈脈島"]);
 const FLORA: Record<string, Flora> = {
   曙光嶼: { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] },
   翠風林島: { trees: ["palm", "common"], rock: "rock_moss", decor: ["grass", "bush", "plant"] },
@@ -527,7 +529,8 @@ function createIslandMesh(def: IslandDef): THREE.Group {
   // 散布:草地高度帶種樹、放岩石,並鋪地表裝飾(草/花/灌木)。
   // 有載到自然素材模型就用模型依生態擺;載入失敗則回退原本的程序化樹石。
   const flora = FLORA[def.name] ?? FLORA_DEFAULT;
-  const useModels = hasModels();
+  // 綠色島嶼維持原本程序化樹石;其餘島用素材包模型(載入成功時)
+  const useModels = hasModels() && !PROCEDURAL_ISLANDS.has(def.name);
 
   let planted = 0;
   for (let i = 0; i < 300 && planted < def.treeCount; i++) {

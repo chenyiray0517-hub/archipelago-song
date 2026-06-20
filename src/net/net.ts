@@ -40,7 +40,9 @@ type ServerMsg =
   /** 客戶端→房主:對敵人 i 施加控場(冰凍/灼燒/麻痺),由房主權威套用(階段 3b) */
   | { t: "cc"; id: string; i: number; kind: "freeze" | "burn" | "stun"; sec: number; dps: number }
   /** 房間聊天訊息(廣播給同房間;id = 發話者)(階段 4b) */
-  | { t: "chat"; id: string; text: string };
+  | { t: "chat"; id: string; text: string }
+  /** 伺服器心跳(階段 5a):客戶端據此判斷連線是否仍存活 */
+  | { t: "ping" };
 
 export interface NetCallbacks {
   /** 收到別人的最新狀態(第一次收到即代表該玩家出現) */
@@ -63,6 +65,8 @@ export interface NetCallbacks {
   onCc?(i: number, kind: "freeze" | "burn" | "stun", sec: number, dps: number): void;
   /** 收到同房間聊天訊息(id = 發話者,非本機)(階段 4b) */
   onChat?(id: string, text: string): void;
+  /** 重連狀態變化(階段 5a):active=true 表示斷線後正在嘗試重連 */
+  onReconnecting?(active: boolean): void;
 }
 
 /** 伺服器位址:正式環境用建置時注入的 VITE_SERVER_URL,開發走本機 8787;房間名併入 ?room= */
@@ -74,6 +78,13 @@ function serverUrl(room: string): string {
   return url.toString();
 }
 
+/** 重連退避(階段 5a):800ms 起,每次 ×2,上限 8s */
+const RECONNECT_BASE_MS = 800;
+const RECONNECT_MAX_MS = 8000;
+/** 心跳看門狗:每 3s 檢查一次;超過 12s 沒收到任何訊息即視為半死連線,主動斷線重連 */
+const WATCHDOG_INTERVAL_MS = 3000;
+const WATCHDOG_TIMEOUT_MS = 12000;
+
 export class NetClient {
   private ws: WebSocket | null = null;
   private cb: NetCallbacks;
@@ -83,6 +94,17 @@ export class NetClient {
   room: string | null = null;
   /** 目前房主的 id(由伺服器指派/移交);與 localId 相同即本機為房主 */
   hostId: string | null = null;
+
+  // ── 斷線重連(階段 5a)────────────────────────────────────
+  /** 是否「想要」維持連線(connect 後為 true;手動 leave 設 false 即不再重連) */
+  private wantConnect = false;
+  /** 目前是否處於重連中(斷線後到重新連上之間) */
+  reconnecting = false;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 最後收到伺服器訊息的時間(心跳看門狗用) */
+  private lastRecvAt = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(cb: NetCallbacks) {
     this.cb = cb;
@@ -97,23 +119,58 @@ export class NetClient {
     return this.connected && this.hostId !== null && this.hostId === this.localId;
   }
 
-  /** 嘗試連線到指定房間。失敗只記 warning,不丟例外、不影響呼叫端。 */
+  /** 嘗試連線到指定房間(連得上就多人、連不上就單機;斷線會自動重連)。 */
   connect(room: string): void {
     this.room = room;
+    this.wantConnect = true;
+    this.reconnectAttempts = 0;
+    this.openSocket();
+  }
+
+  /** 手動離開房間:停止重連並關閉連線(供「離開房間」用) */
+  leave(): void {
+    this.wantConnect = false;
+    this.reconnecting = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.stopWatchdog();
+    const ws = this.ws;
+    this.ws = null;
+    this.localId = null;
+    this.hostId = null;
+    ws?.close();
+  }
+
+  /** 測試掛鉤:強制斷開目前連線(模擬網路中斷,驗證自動重連) */
+  _debugDrop(): void {
+    this.ws?.close();
+  }
+
+  /** 建立(或重建)WebSocket 連線並掛上所有處理器 */
+  private openSocket(): void {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(serverUrl(room));
+      ws = new WebSocket(serverUrl(this.room ?? "lobby"));
     } catch (err) {
-      console.warn("[net] 無法建立連線,維持單機:", err);
+      console.warn("[net] 無法建立連線,稍後重試:", err);
+      this.scheduleReconnect();
       return;
     }
     this.ws = ws;
 
     ws.addEventListener("open", () => {
+      this.reconnectAttempts = 0;
+      this.lastRecvAt = Date.now();
+      this.startWatchdog();
+      if (this.reconnecting) {
+        this.reconnecting = false;
+        this.cb.onReconnecting?.(false);
+      }
       this.cb.onStatus?.(true);
     });
 
     ws.addEventListener("message", (ev) => {
+      this.lastRecvAt = Date.now();
       let msg: ServerMsg;
       try {
         msg = JSON.parse(ev.data as string) as ServerMsg;
@@ -121,6 +178,8 @@ export class NetClient {
         return;
       }
       switch (msg.t) {
+        case "ping":
+          break; // 心跳:收到即更新 lastRecvAt(上方已做),無需其他動作
         case "welcome":
           this.localId = msg.id;
           this.room = msg.room;
@@ -168,11 +227,46 @@ export class NetClient {
       this.ws = null;
       this.localId = null;
       this.hostId = null;
+      this.stopWatchdog();
       this.cb.onStatus?.(false);
       this.cb.onHostChange?.(false);
+      // 仍想連線(非手動離開)→ 退避重連
+      if (this.wantConnect) this.scheduleReconnect();
     };
     ws.addEventListener("close", down);
     ws.addEventListener("error", down);
+  }
+
+  /** 退避排程下一次重連(指數退避 + 抖動,進入重連狀態) */
+  private scheduleReconnect(): void {
+    if (!this.wantConnect || this.reconnectTimer) return;
+    if (!this.reconnecting) {
+      this.reconnecting = true;
+      this.cb.onReconnecting?.(true);
+    }
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempts, RECONNECT_MAX_MS);
+    this.reconnectAttempts++;
+    const jitter = Math.random() * 0.3 * delay;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.wantConnect) this.openSocket();
+    }, delay + jitter);
+  }
+
+  /** 心跳看門狗:定期檢查是否太久沒收到伺服器訊息,半死連線就主動斷開觸發重連 */
+  private startWatchdog(): void {
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(() => {
+      if (this.connected && Date.now() - this.lastRecvAt > WATCHDOG_TIMEOUT_MS) {
+        // 連線看似還開著但久無訊息(半死)→ 主動關閉,close 事件會走重連
+        this.ws?.close();
+      }
+    }, WATCHDOG_INTERVAL_MS);
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.watchdogTimer = null;
   }
 
   /** 送出本機玩家狀態(未連線時靜默忽略) */

@@ -703,6 +703,25 @@ export class Enemy {
   }
 
   /**
+   * 房主遷移:此敵人由「傀儡」轉為本機權威時的平滑接管(階段 5c)。
+   * 以同步位置為新巡邏路點(免暴衝回 home)、從最後狀態旗標接手控場(時長未知給短暫延續)、
+   * 接管瞬間給攻擊/特殊技短暫冷卻(避免一接手就對新房主爆發)。
+   */
+  becomeAuthoritative(): void {
+    this.remote = false;
+    if (this.isDead) return;
+    switch (this.remoteFlag) {
+      case 3: this.freezeT = Math.max(this.freezeT, 1.5); break;
+      case 4: this.stunT = Math.max(this.stunT, 1.5); break;
+      case 5: this.burnT = Math.max(this.burnT, 1.5); this.burnDps = Math.max(this.burnDps, 4); break;
+    }
+    this.attackCd = Math.max(this.attackCd, 0.8);
+    this.specialCd = Math.max(this.specialCd, 1.5);
+    this.waypoint.copy(this.mesh.position).setY(0);
+    this.state = "patrol";
+  }
+
+  /**
    * 遠端傀儡每幀視覺更新:朝房主快照位置/朝向插值,輕微跳動,受擊閃白衰減。
    * 不跑 FSM、不結算戰鬥(那些都在房主端)。
    */

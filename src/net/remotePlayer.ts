@@ -17,6 +17,25 @@ const ACT_HURT = 8;
 const SWING_DUR = 0.3;
 /** 受擊閃紅鎖定時長 */
 const HURT_DUR = 0.3;
+/** 插值緩衝延遲(階段 5b):渲染落後最新封包約 110ms,在兩筆快照間線性插值 → 抗網路抖動/封包不均 */
+const INTERP_DELAY = 0.11;
+/** 緩衝保留時長(秒);超過即修剪。斷流時 sampleBuffer 以最後快照定格(不外插) */
+const BUFFER_KEEP = 1.0;
+
+/** 一筆帶時間戳的位置快照(插值緩衝用) */
+interface Snap {
+  t: number;
+  x: number;
+  y: number;
+  z: number;
+  facing: number;
+  moving: boolean;
+}
+
+/** 單調時鐘(秒),與封包到達時間戳同一基準 */
+function now(): number {
+  return performance.now() / 1000;
+}
 
 /** 依 id 給每位遠端玩家一個穩定的醒目色(與本機綠袍區隔) */
 const PALETTE = [0x4aa3ff, 0xff8a3c, 0xb86bff, 0xffd23c, 0x3cd0a0, 0xff6b9d];
@@ -35,10 +54,9 @@ export class RemotePlayer {
   private bodyMat: THREE.MeshToonMaterial;
   private readonly baseColor: THREE.Color;
 
-  /** 插值目標(收到封包時更新,每幀往目標逼近) */
-  private targetPos = new THREE.Vector3();
-  private targetFacing = 0;
-  private moving = false;
+  /** 位置插值緩衝(階段 5b):帶時間戳的快照序列,渲染時取「現在 − INTERP_DELAY」插值 */
+  private buffer: Snap[] = [];
+  private moving = false; // 目前渲染時刻的移動旗標(驅動走路擺動)
   private walkPhase = 0;
   private renderYaw = 0;
 
@@ -107,36 +125,66 @@ export class RemotePlayer {
     });
     addOutlines(this.mesh);
 
-    this.targetPos.set(initial.x, initial.y, initial.z);
-    this.targetFacing = initial.facing;
     this.renderYaw = initial.facing;
     this.moving = initial.moving;
     this.act = initial.act ?? 0;
-    this.mesh.position.copy(this.targetPos);
+    this.buffer.push({ t: now(), x: initial.x, y: initial.y, z: initial.z, facing: initial.facing, moving: initial.moving });
+    this.mesh.position.set(initial.x, initial.y, initial.z);
     this.mesh.rotation.y = this.renderYaw;
   }
 
-  /** 收到新狀態:更新插值目標與動作旗標(攻擊用上升沿鎖定一段揮劍動畫) */
+  /**
+   * 從緩衝取 renderT 時刻的內插位置/朝向/移動旗標。
+   * renderT 落在兩筆快照之間 → 線性插值;比最舊還舊 → 取最舊;比最新還新(斷流)→ 定格最新(不外插)。
+   */
+  private sampleBuffer(renderT: number): { x: number; y: number; z: number; facing: number; moving: boolean } {
+    const buf = this.buffer;
+    const last = buf[buf.length - 1];
+    if (buf.length === 1 || renderT >= last.t) return last;
+    if (renderT <= buf[0].t) return buf[0];
+    for (let i = buf.length - 2; i >= 0; i--) {
+      const a = buf[i];
+      if (a.t <= renderT) {
+        const b = buf[i + 1];
+        const span = b.t - a.t;
+        const f = span > 1e-6 ? (renderT - a.t) / span : 0;
+        return {
+          x: a.x + (b.x - a.x) * f,
+          y: a.y + (b.y - a.y) * f,
+          z: a.z + (b.z - a.z) * f,
+          facing: b.facing,
+          moving: b.moving,
+        };
+      }
+    }
+    return buf[0];
+  }
+
+  /** 收到新狀態:推進插值緩衝 + 更新動作旗標(攻擊用上升沿鎖定一段揮劍動畫) */
   setState(s: NetState): void {
-    this.targetPos.set(s.x, s.y, s.z);
-    this.targetFacing = s.facing;
-    this.moving = s.moving;
+    const tnow = now();
+    this.buffer.push({ t: tnow, x: s.x, y: s.y, z: s.z, facing: s.facing, moving: s.moving });
+    // 修剪過舊的快照(至少保留 2 筆供插值)
+    const cutoff = tnow - BUFFER_KEEP;
+    while (this.buffer.length > 2 && this.buffer[0].t < cutoff) this.buffer.shift();
     const next = s.act ?? 0;
-    // 攻擊:封包稀疏,收到「攻擊位元」就鎖定一段完整揮劍(避免只閃一格)
+    // 攻擊/受擊:封包稀疏,收到位元就鎖定一段動畫(避免只閃一格);動作旗標即時不緩衝
     if (next & ACT_ATTACK) this.swingT = SWING_DUR;
     if (next & ACT_HURT) this.hurtT = HURT_DUR;
     this.act = next;
     this.dead = s.dead ?? false;
   }
 
-  /** 每幀:位置/朝向逼近目標,依動作播對應姿勢 */
+  /** 每幀:從插值緩衝取「現在 − INTERP_DELAY」的位置/朝向,依動作播對應姿勢 */
   update(dt: number): void {
-    // 位置插值(指數逼近,與幀率無關)
     const t = 1 - Math.exp(-12 * dt);
-    this.mesh.position.lerp(this.targetPos, t);
+    // ── 插值緩衝(階段 5b):渲染落後最新封包 INTERP_DELAY,在前後兩筆快照間線性插值 ──
+    const sample = this.sampleBuffer(now() - INTERP_DELAY);
+    this.mesh.position.set(sample.x, sample.y, sample.z);
+    this.moving = sample.moving;
 
-    // 朝向插值(處理 ±π 環繞)
-    let delta = this.targetFacing - this.renderYaw;
+    // 朝向插值(處理 ±π 環繞;朝向變化較慢,仍用平滑逼近樣本朝向)
+    let delta = sample.facing - this.renderYaw;
     delta = Math.atan2(Math.sin(delta), Math.cos(delta));
     this.renderYaw += delta * t;
     this.mesh.rotation.y = this.renderYaw;

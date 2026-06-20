@@ -158,6 +158,14 @@ export class Hud {
     el.textContent = `🌐 連線中${roomTag} · 同行 ${others} 人`;
   }
 
+  /** 斷線重連中狀態(階段 5a):顯示橘字提示;結束時由 setOnline 覆寫 */
+  setReconnecting(active: boolean, room?: string | null): void {
+    if (!active) return;
+    const el = this.byId("hud-net");
+    const roomTag = room && room !== "lobby" ? ` · 房間 ${room}` : "";
+    el.textContent = `🔄 重新連線中…${roomTag}`;
+  }
+
   /** 更新右上角任務追蹤列(空陣列隱藏) */
   setQuests(lines: string[]): void {
     this.byId("hud-quests").classList.toggle("show", lines.length > 0);

@@ -8,9 +8,18 @@
 // 啟動:npm run server   (預設埠 8787,可用環境變數 PORT 覆寫)
 
 import { WebSocketServer } from "ws";
+import { createServer } from "http";
 
 const PORT = Number(process.env.PORT) || 8787;
-const wss = new WebSocketServer({ port: PORT });
+
+// 包一層極簡 HTTP 伺服器:雲端平台(Render)會用 GET / 做健康檢查,純 WebSocket
+// 伺服器不回應 HTTP 會被判定不健康。這裡回 200,WebSocket 掛在同一個埠上升級。
+// 本機行為不變(客戶端照樣連 ws://host:PORT),room 仍從升級請求 URL 取得。
+const httpServer = createServer((_req, res) => {
+  res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+  res.end("archipelago-song multiplayer relay: ok");
+});
+const wss = new WebSocketServer({ server: httpServer });
 
 /** @type {Map<import("ws").WebSocket, { id: string, room: string, last: object | null }>} */
 const clients = new Map();
@@ -101,4 +110,14 @@ wss.on("connection", (ws, req) => {
   ws.on("error", drop);
 });
 
-console.log(`[群島之歌] 多人伺服器啟動於 ws://localhost:${PORT}(房間分組,?room=xxx)`);
+// 心跳(階段 5a):每 5 秒對所有連線送一則 ping,讓客戶端看門狗判斷連線是否仍存活
+const PING = JSON.stringify({ t: "ping" });
+setInterval(() => {
+  for (const ws of clients.keys()) {
+    if (ws.readyState === ws.OPEN) ws.send(PING);
+  }
+}, 5000);
+
+httpServer.listen(PORT, () => {
+  console.log(`[群島之歌] 多人伺服器啟動於 ws://localhost:${PORT}(房間分組,?room=xxx)`);
+});

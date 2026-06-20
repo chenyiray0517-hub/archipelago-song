@@ -201,6 +201,7 @@ function main(): void {
   // ── 多人連線(第 1 階段:看得到彼此)──────────────────────────
   // 連得上就多人、連不上就單機;以下任何網路狀況都不影響單機遊玩。
   const remotePlayers = new Map<string, RemotePlayer>();
+  let wasHost = false; // 階段 5c:偵測「客戶端→房主」遷移以平滑接管敵人
   const net = new NetClient({
     onState(id, state) {
       let rp = remotePlayers.get(id);
@@ -222,7 +223,23 @@ function main(): void {
       }
     },
     onStatus(connected) {
+      // 斷線時清掉遠端 avatar(重連後由 welcome 的 others 重建,避免殘留/重複)
+      if (!connected) {
+        for (const rp of remotePlayers.values()) rp.dispose();
+        remotePlayers.clear();
+      }
       hud.setOnline(connected, remotePlayers.size, net.room);
+    },
+    // 階段 5a:斷線重連中,HUD 顯示「重新連線中…」(重連成功由 onStatus 覆寫)
+    onReconnecting(active) {
+      hud.setReconnecting(active, net.room);
+    },
+    // 階段 5c:接任房主時(客戶端→房主),敵人由傀儡平滑轉為本機權威
+    onHostChange(isHost) {
+      if (isHost && !wasHost) {
+        for (const e of enemies) e.becomeAuthoritative();
+      }
+      wasHost = isHost;
     },
     // 階段 3a:客戶端套用房主的敵人快照;房主結算客戶端送來的傷害
     onEnemies(e) {

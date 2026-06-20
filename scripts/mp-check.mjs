@@ -235,14 +235,65 @@ hpA1 < hpA0 && hpB1 < hpB0
   ? ok(`頭目 AoE 多人分別判定:房主 A(${hpA0}→${hpA1})與客戶端 B(${hpB0}→${hpB1})同時受擊`)
   : fail(`AoE 未對雙方分別判定:A ${hpA0}→${hpA1}、B ${hpB0}→${hpB1}`);
 
-// 18. 房主離線 → 移交:A 關閉後,B 應移除 A 的 avatar 並接任房主
+// ── 階段 5b:插值緩衝 ──────────────────────────────────────
+// 18. 把 A 移到無敵人開闊處並等同步;瞬移 +20 後 B 端 avatar 因緩衝延遲不會立刻貼上,隨後平滑到位
+await A.evaluate(() => { const g = window.__game; g.player.hp = g.player.stats.maxHP; g.player.mesh.position.set(120, 5, -40); });
+await B.waitForFunction(
+  (tid) => { const rp = window.__game.remotePlayers.get(tid); return !!rp && Math.hypot(rp.mesh.position.x - 120, rp.mesh.position.z + 40) < 1.5; },
+  ids[0], { timeout: 5000 },
+).catch(() => {});
+const tp = await A.evaluate(() => { const p = window.__game.player.mesh.position; p.x += 20; return { x: p.x, z: p.z }; });
+await A.waitForTimeout(60); // 緩衝延遲(~110ms)內,avatar 仍渲染舊位置
+const mid = await B.evaluate((tid) => { const rp = window.__game.remotePlayers.get(tid); return { x: rp.mesh.position.x, z: rp.mesh.position.z }; }, ids[0]);
+const midGap = Math.hypot(mid.x - tp.x, mid.z - tp.z);
+const conv = await B.waitForFunction(
+  ({ tid, t }) => { const rp = window.__game.remotePlayers.get(tid); return !!rp && Math.hypot(rp.mesh.position.x - t.x, rp.mesh.position.z - t.z) < 1.0; },
+  { tid: ids[0], t: tp }, { timeout: 5000 },
+).then(() => true).catch(() => false);
+midGap > 5 && conv
+  ? ok(`插值緩衝:瞬移後先因緩衝延遲(差 ${midGap.toFixed(1)})、隨後平滑收斂到位`)
+  : fail(`插值緩衝異常:midGap=${midGap.toFixed(1)} conv=${conv}`);
+
+// ── 階段 5a:斷線自動重連 ──────────────────────────────────
+// 19. 強制 B 斷線 → 應自動退避重連回同房間(connected 復原、取得新 id、重見 A)
+const oldId = await B.evaluate(() => window.__game.net.localId);
+await B.evaluate(() => window.__game.net._debugDrop());
+await B.waitForFunction(() => !window.__game.net.connected, null, { timeout: 3000 }).catch(() => {});
+const reconnected = await B.waitForFunction(
+  () => window.__game.net.connected && window.__game.net.localId != null,
+  null, { timeout: 10000 },
+).then(() => true).catch(() => false);
+const newId = await B.evaluate(() => window.__game.net.localId);
+const reRoom = await B.evaluate(() => window.__game.net.room);
+reconnected && newId && newId !== oldId
+  ? ok(`斷線自動重連:B 重新連上(id ${oldId}→${newId})`)
+  : fail(`重連失敗:connected=${reconnected} id ${oldId}→${newId}`);
+reRoom === "mptest"
+  ? ok("重連後回到同一房間 mptest")
+  : fail(`重連後房間錯誤:${reRoom}`);
+const seesAAgain = await B.waitForFunction(
+  () => window.__game.remotePlayers.size >= 1, null, { timeout: 5000 },
+).then(() => true).catch(() => false);
+seesAAgain
+  ? ok("重連後重新見到房主 A 的 avatar")
+  : fail("重連後未重建遠端玩家");
+
+// ── 階段 5c:房主遷移敵人接管平滑化 + 房主移交 ──────────────────
+// 20. A 關閉前先凍結 5 號敵人(B 端傀儡收到冰凍旗標);A 離線→B 接任房主後,
+//     該敵應由 becomeAuthoritative 接手控場(freezeT>0),A 的 avatar 被移除。
+await A.evaluate(() => window.__game.enemies[5].freeze(8)); // 房主權威凍結
+await B.waitForFunction(() => window.__game.enemies[5].remoteStatusFlag === 3, null, { timeout: 3000 }).catch(() => {});
 await A.close();
-await B.waitForTimeout(700);
+await B.waitForFunction(() => window.__game.net.isHost === true, null, { timeout: 5000 }).catch(() => {});
 const afterLeave = await B.evaluate(() => window.__game.remotePlayers.size);
 afterLeave === 0 ? ok("A 離線後 B 端正確移除其 avatar") : fail(`A 離線後仍殘留:${afterLeave}`);
 const bHostNow = await B.evaluate(() => window.__game.net.isHost);
 bHostNow === true ? ok("房主移交成功(A 離線後 B 接任房主)") : fail("房主未移交給 B");
+const carriedFreeze = await B.evaluate(() => window.__game.enemies[5].freezeT);
+carriedFreeze > 0
+  ? ok(`房主遷移平滑接管:接任後 5 號敵控場接手(freezeT=${carriedFreeze.toFixed(1)})`)
+  : fail(`接管後控場遺失:freezeT=${carriedFreeze}`);
 
 await browser.close();
 if (errors.length) { console.error(`\n多人驗證失敗 ${errors.length} 項`); process.exit(1); }
-console.log("\n✅ 多人第 3a/3b/4 階段(共享敵人 + 各自成長歸屬 + 傷害客戶端 + 控場/預警跨端 + 玩家動作跨端 + 聊天 + 死亡重生同步)驗證全綠");
+console.log("\n✅ 多人第 3a/3b/4/5 階段(共享世界 + 成長歸屬 + 互動細節 + 斷線重連 + 插值緩衝 + 房主遷移平滑)驗證全綠");

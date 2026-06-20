@@ -24,7 +24,7 @@ node scripts/mp-check.mjs   # 多人連線驗證 23 項(需先開 server + dev s
 ## 技術棧(定案,別改)
 
 - **HTML5 + TypeScript(strict,禁 any)+ Three.js**。Three.js 只是渲染函式庫,遊戲迴圈/物理/存檔全部自寫——**不要引入 Unity/UE5/Godot/物理引擎**,這是 Rai 的明確決策。
-- **零外部資產**:模型 = 程式組裝幾何體、音效音樂 = WebAudio 程式合成、貼圖 = canvas 即時繪製。優點是零授權、零載入;要升級成真資產(glTF 模型、錄音音樂)時,替換對應模組內部即可,介面已預留。
+- **近乎零外部資產**:角色/敵人模型 = 程式組裝幾何體、音效音樂 = WebAudio 程式合成、貼圖 = canvas 即時繪製。**例外**:場景植被/岩石/裝飾改用 Quaternius CC0 低多邊形 OBJ 模型(`public/models`,`world/sceneryModels.ts` 載入並轉 cel-shading,載入失敗回退程序化樹石)。其餘要升級成真資產(glTF 模型、錄音音樂)時,替換對應模組內部即可,介面已預留。
 - 美術方向:薩爾達 3D 風 cel-shading(色階硬切 + 反向外殼描邊),見 `core/toon.ts`。
 
 ## 架構地圖
@@ -38,7 +38,8 @@ src/
 │   ├── toon.ts          # cel-shading 材質 + 描邊(所有新模型都要用 toonMaterial + addOutlines)
 │   └── fx.ts            # 打擊感:hit-stop 頓幀/鏡頭震動/粒子爆裂
 ├── world/
-│   ├── terrain.ts       # ★ ISLANDS 配置驅動多島地形;groundHeight 同時管視覺與碰撞;第二海(x>1100)靠海寶石往返
+│   ├── terrain.ts       # ★ ISLANDS 配置驅動多島地形;groundHeight 同時管視覺與碰撞;FLORA 依生態散布樹/石/裝飾;第二海(x>1100)靠海寶石往返
+│   ├── sceneryModels.ts # 載入 public/models 的 CC0 自然素材→轉 toon+描邊+正規化高度→pickModel 供 terrain 散布;載入失敗回退
 │   ├── ocean.ts         # CPU 頂點波浪(振幅吃天氣倍率)
 │   └── sky.ts           # 日夜循環(6 分鐘/天)+ 天氣狀態機(晴/雨/風暴)+ 雨絲 + 閃電
 ├── entities/
@@ -64,7 +65,7 @@ scripts/smoke.mjs        # ★ 95 項端到端測試,改任何功能後必跑
 2. **存檔相容**:`save.ts` 的 SaveData 加欄位一律 optional + 讀檔給預設值,不要破壞玩家舊存檔;結構大改才升版本號。
 3. **回饋三件套**:任何新的傷害來源接 `floats.spawn`(跳字)、新的拾取接 `feed.push`(中央提示)、新的動作配 `audio.sfx`(每種動作不同音效)——Rai 明確要求。
 4. **新敵人至少四段動作**(移動/蓄力/攻擊/死亡),新模型必過 `toonMaterial` + `addOutlines` + castShadow。
-5. **加新島** = `terrain.ts` ISLANDS 加一筆 def(可帶 crater 火山口)+ 敵人 + 村長對話分支 + 任務 + 追蹤列,照既有島嶼模式抄。
+5. **加新島** = `terrain.ts` ISLANDS 加一筆 def(可帶 crater 火山口)+ `FLORA` 加該島生態(樹/石/裝飾類別)+ 敵人 + 村長對話分支 + 任務 + 追蹤列,照既有島嶼模式抄。
 6. **地圖不要做小**(島嶼半徑 50 起跳),Rai 嫌過小地圖。
 
 ## 操作對照(改鍵位前先確認 HUD 提示同步更新)

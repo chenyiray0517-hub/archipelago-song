@@ -4,6 +4,7 @@ import { AudioEngine } from "./core/audio";
 import { Fx } from "./core/fx";
 import { createOcean, updateOcean } from "./world/ocean";
 import { Sky } from "./world/sky";
+import { loadSceneryModels } from "./world/sceneryModels";
 import {
   createWorld,
   groundHeight,
@@ -2723,4 +2724,7 @@ function main(): void {
   });
 }
 
-main();
+// 先載入自然素材模型(失敗就回退程序化樹石),載完才建世界開場;絕不因模型卡住開場
+loadSceneryModels()
+  .catch(() => false)
+  .finally(() => main());

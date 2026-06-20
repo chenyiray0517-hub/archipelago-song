@@ -1,5 +1,29 @@
 import * as THREE from "three";
 import { toonMaterial, addOutlines } from "../core/toon";
+import { hasModels, pickModel } from "./sceneryModels";
+
+/** 各島生態:樹種(隨機挑)、岩石種、地表裝飾種(草/花/灌木…,不擋路);未列島用 FLORA_DEFAULT */
+interface Flora {
+  trees: string[];
+  rock: string;
+  decor: string[];
+}
+const FLORA_DEFAULT: Flora = { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] };
+const FLORA: Record<string, Flora> = {
+  曙光嶼: { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] },
+  翠風林島: { trees: ["palm", "common"], rock: "rock_moss", decor: ["grass", "bush", "plant"] },
+  燼岩火山島: { trees: ["dead"], rock: "rock", decor: ["stump"] },
+  霜雪峰島: { trees: ["pine_snow", "common_snow"], rock: "rock_snow", decor: [] },
+  虛空之心: { trees: ["dead"], rock: "rock", decor: [] },
+  界海之門: { trees: ["pine_snow", "birch"], rock: "rock_snow", decor: [] },
+  港口鎮: { trees: ["common", "birch"], rock: "rock", decor: ["grass", "wheat", "flowers"] },
+  熔砂島: { trees: ["cactus", "palm"], rock: "rock", decor: ["grass_short"] },
+  珊瑚礁島: { trees: ["palm"], rock: "rock", decor: ["grass", "bush"] },
+  靈脈島: { trees: ["common", "willow"], rock: "rock_moss", decor: ["grass", "flowers", "plant", "bush"] },
+  迷霧沼島: { trees: ["willow", "dead"], rock: "rock_moss", decor: ["grass", "plant"] },
+  鹽晶島: { trees: ["cactus"], rock: "rock_snow", decor: [] },
+  烈陽礁: { trees: ["palm", "cactus"], rock: "rock", decor: ["grass_short"] },
+};
 
 interface Hill {
   x: number;
@@ -500,7 +524,11 @@ function createIslandMesh(def: IslandDef): THREE.Group {
   terrain.position.set(def.x, 0, def.z);
   group.add(terrain);
 
-  // 程序化散布:草地高度帶種樹,其餘隨機放岩石
+  // 散布:草地高度帶種樹、放岩石,並鋪地表裝飾(草/花/灌木)。
+  // 有載到自然素材模型就用模型依生態擺;載入失敗則回退原本的程序化樹石。
+  const flora = FLORA[def.name] ?? FLORA_DEFAULT;
+  const useModels = hasModels();
+
   let planted = 0;
   for (let i = 0; i < 300 && planted < def.treeCount; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -508,23 +536,63 @@ function createIslandMesh(def: IslandDef): THREE.Group {
     const x = def.x + Math.cos(angle) * radius;
     const z = def.z + Math.sin(angle) * radius;
     const h = groundHeight(x, z);
-    if (h > 1.8 && h < 11) {
+    if (h <= 1.8 || h >= 11) continue;
+    const m = useModels && flora.trees.length ? pickModel(flora.trees[(Math.random() * flora.trees.length) | 0]) : null;
+    if (m) {
+      m.scale.setScalar(0.85 + Math.random() * 0.35);
+      m.rotation.y = Math.random() * Math.PI * 2;
+      m.position.set(x, h - 0.1, z);
+      group.add(m);
+      OBSTACLES.push({ x, z, r: 0.5 }); // 碰撞只取樹幹
+    } else {
       group.add(createTree(x, h, z, def.treeColor));
-      planted++;
     }
+    planted++;
   }
+
   for (let i = 0; i < 14; i++) {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.sqrt(Math.random()) * (def.r - 4);
     const x = def.x + Math.cos(angle) * radius;
     const z = def.z + Math.sin(angle) * radius;
-    const rockR = 0.7 + Math.random() * 0.9;
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockR), toonMaterial(0x8a8a8a));
-    rock.position.set(x, groundHeight(x, z) + 0.3, z);
-    rock.rotation.set(Math.random(), Math.random(), Math.random());
-    rock.castShadow = true;
-    group.add(rock);
-    OBSTACLES.push({ x, z, r: rockR * 0.75 });
+    const gy = groundHeight(x, z);
+    const rm = useModels ? pickModel(flora.rock) : null;
+    if (rm) {
+      const vs = 0.8 + Math.random() * 0.7;
+      rm.scale.setScalar(vs);
+      rm.rotation.y = Math.random() * Math.PI * 2;
+      rm.position.set(x, gy, z);
+      group.add(rm);
+      OBSTACLES.push({ x, z, r: 0.7 * vs });
+    } else {
+      const rockR = 0.7 + Math.random() * 0.9;
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(rockR), toonMaterial(0x8a8a8a));
+      rock.position.set(x, gy + 0.3, z);
+      rock.rotation.set(Math.random(), Math.random(), Math.random());
+      rock.castShadow = true;
+      group.add(rock);
+      OBSTACLES.push({ x, z, r: rockR * 0.75 });
+    }
+  }
+
+  // 地表裝飾(草/花/灌木…):不擋路,只在草地帶鋪;密度依島大小
+  if (useModels && flora.decor.length) {
+    const decorCount = Math.round(def.r * 1.4);
+    for (let i = 0; i < decorCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.sqrt(Math.random()) * (def.r - 3);
+      const x = def.x + Math.cos(angle) * radius;
+      const z = def.z + Math.sin(angle) * radius;
+      const h = groundHeight(x, z);
+      if (h <= 1.5 || h >= 9) continue;
+      const d = pickModel(flora.decor[(Math.random() * flora.decor.length) | 0]);
+      if (d) {
+        d.scale.setScalar(0.8 + Math.random() * 0.6);
+        d.rotation.y = Math.random() * Math.PI * 2;
+        d.position.set(x, h - 0.05, z);
+        group.add(d);
+      }
+    }
   }
 
   return group;

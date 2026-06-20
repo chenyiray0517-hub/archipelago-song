@@ -1,5 +1,16 @@
 # PROGRESS
 
+## 2026-06-20(場景植被換真模型:Quaternius CC0 低多邊形樹/石/裝飾,依生態擺放)
+
+> 把程序化樹石換成低多邊形自然素材包(CC0 公有領域,免署名);依各島生態擺不同樹種、鋪草與裝飾。
+
+- **素材管線**(`world/sceneryModels.ts`,新檔):`public/models` 放 47 個 OBJ+MTL;`loadSceneryModels()` 用 OBJLoader/MTLLoader 載入 → 每 mesh 取 MTL 漫射色(**Kd 是線性色,轉 sRGB** 才呈現素材包鮮亮配色)做 `toonMaterial` + `addOutlines` → 依類別正規化高度、底部對齊 y=0 → 存原型。`pickModel(類別)` 回便宜的 clone(共用幾何/材質)。
+- **依生態散布**(`world/terrain.ts`):新增 `FLORA` 表(島名→樹種/岩種/裝飾種)。曙光嶼=常綠樹+石+草花、翠風林=椰子+苔石、火山=枯樹+樹樁、霜雪峰/界海=雪松+雪石、熔砂/烈陽=仙人掌+椰子、靈脈/迷霧沼=常綠/柳樹+苔石、虛空=枯樹。`createIslandMesh` 改用 `pickModel` 擺樹/石(樹幹進 OBSTACLES),並在草地帶鋪裝飾(草/花/灌木,不擋路)。
+- **開場流程**(`main.ts`):`loadSceneryModels().finally(main)` — 先載模型再建世界;**任一模型失敗只略過、整批失敗則 `hasModels()=false` 回退程序化樹石**,絕不卡住開場(沿用「連不上就單機」精神)。
+- 模型隨 `public/` 進 build → `dist/models`(gh-pages 用相對 `./models/` 載得到);授權檔一併放 `public/models/LICENSE-Quaternius.txt`。
+- 驗證:build 綠(39→41 模組,含 OBJ/MTL loader)。**smoke 95 全綠**(async 載入後 `__game` 正常初始化、碰撞/可行走不受影響)。截圖目視四生態皆正確:曙光嶼鮮綠林、翠風林椰林、霜雪峰雪松、火山枯樹。多人協定未動,不影響連線。
+- 後續可調:裝飾密度/效能(目前全島常駐約上千實例,可改 InstancedMesh 或分區);更多裝飾(木樁/睡蓮/麥田已備模型未全用)。
+
 ## 2026-06-20(多人連線 階段 6/6:公開部署 + 邀請碼加入 — 多人連線六階段收官)
 
 > 讓網路上的家人朋友連得到同一座群島。前端早已上 gh-pages(單機);這階段把多人伺服器的部署設定與「邀請碼加入」UI 補齊。

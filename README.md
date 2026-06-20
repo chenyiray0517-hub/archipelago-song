@@ -87,8 +87,14 @@ src/
 - 模型:房主權威(第一個進房者當房主,離線自動移交);敵人 HP/死亡共享,寶石/結晶/任務各自入袋。詳見 `PROGRESS.md` 多人各階段。
 - **自架伺服器**(可選,要讓網路上的朋友連得到才需要):`server/index.mjs` 是極簡 WebSocket 轉發站,附 `render.yaml`(Render 一鍵 Blueprint 部署)。部署後把 `wss://` 網址設成 GitHub repo 變數 `VITE_SERVER_URL`(見 `.github/workflows/deploy.yml`),前端重新部署即指向它。本機開發直接 `npm run server`(埠 8787)。
 
+## 素材授權
+
+- 場景植被/岩石/裝飾(`public/models`):**Quaternius 低多邊形自然素材包**,授權 **CC0 1.0(公有領域)** — 可商用、免署名(見 `public/models/LICENSE-Quaternius.txt`,感謝 [@Quaternius](https://www.patreon.com/quaternius))。載入時轉成遊戲的 cel-shading;載入失敗會回退程序化樹石。
+- 其餘(角色、敵人、音效、音樂、貼圖)仍為程式生成,零外部相依。
+
 ## 下一步(後續打磨方向)
 
 - [ ] 真錄音音樂/音效資產替換(需授權音檔;AudioEngine 介面已就緒)
 - [ ] 本地化、效能(島嶼串流)、包裝上架(itch.io / Steam via Tauri)
 - [x] 多人連線(六階段:共享世界 + 各自成長 + 互動細節 + 斷線重連 + 公開部署)
+- [x] 場景植被換成 Quaternius 低多邊形樹/石/草(依生態擺放,CC0)

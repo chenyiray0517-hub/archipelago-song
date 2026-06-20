@@ -542,11 +542,13 @@ function createIslandMesh(def: IslandDef): THREE.Group {
     if (h <= 1.8 || h >= 11) continue;
     const m = useModels && flora.trees.length ? pickModel(flora.trees[(Math.random() * flora.trees.length) | 0]) : null;
     if (m) {
-      m.scale.setScalar(0.85 + Math.random() * 0.35);
+      const vs = 0.85 + Math.random() * 0.35;
+      m.scale.setScalar(vs);
       m.rotation.y = Math.random() * Math.PI * 2;
       m.position.set(x, h - 0.1, z);
       group.add(m);
-      OBSTACLES.push({ x, z, r: 0.5 }); // 碰撞只取樹幹
+      // 碰撞涵蓋整棵樹的水平範圍(只要是樹的一部分都擋)
+      OBSTACLES.push({ x, z, r: ((m.userData.radius as number) || 1) * vs });
     } else {
       group.add(createTree(x, h, z, def.treeColor));
     }
@@ -601,20 +603,40 @@ function createIslandMesh(def: IslandDef): THREE.Group {
   return group;
 }
 
+/** 樹冠團塊配置(相對樹幹頂端):做出飽滿有機輪廓而非單顆球 */
+const TREE_BLOBS = [
+  { r: 1.75, y: 3.95, dx: 0, dz: 0, sy: 1.2 },
+  { r: 1.2, y: 4.7, dx: 0.72, dz: -0.42, sy: 1 },
+  { r: 1.15, y: 3.65, dx: -0.78, dz: 0.55, sy: 1 },
+  { r: 1.05, y: 4.35, dx: -0.18, dz: -0.82, sy: 1 },
+];
+/** 樹冠最寬處的水平半徑(供碰撞箱涵蓋整棵樹) */
+const TREE_CANOPY_R = 1.85;
+
 function createTree(x: number, groundY: number, z: number, leafColor: number): THREE.Group {
   const tree = new THREE.Group();
   const scale = 0.8 + Math.random() * 0.6;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 3), toonMaterial(0x7a5230));
-  trunk.position.y = 1.5;
-  const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8, 1), toonMaterial(leafColor));
-  leaves.position.y = 3.9;
-  leaves.scale.y = 1.15;
+  // 樹幹:微錐狀,低多邊形(7 段)
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.42, 3.3, 7), toonMaterial(0x6f4a28));
+  trunk.position.y = 1.6;
   trunk.castShadow = true;
-  leaves.castShadow = true;
-  tree.add(trunk, leaves);
+  tree.add(trunk);
+  // 樹冠:多顆低多邊形團塊錯落 + 每顆微調明度,更有層次
+  const base = new THREE.Color(leafColor);
+  for (const b of TREE_BLOBS) {
+    const col = base.clone().offsetHSL(0, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.1);
+    const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(b.r, 0), toonMaterial(col.getHex()));
+    leaf.position.set(b.dx, b.y, b.dz);
+    leaf.scale.set(1, b.sy, 1);
+    leaf.rotation.set(Math.random() * 0.5, Math.random() * Math.PI, Math.random() * 0.5);
+    leaf.castShadow = true;
+    tree.add(leaf);
+  }
+  addOutlines(tree); // 卡通描邊,與角色/敵人一致
   tree.scale.setScalar(scale);
+  tree.rotation.y = Math.random() * Math.PI * 2;
   tree.position.set(x, groundY - 0.1, z);
-  // 碰撞只取樹幹(枝葉懸空可從下方走過)
-  OBSTACLES.push({ x, z, r: 0.45 * scale });
+  // 碰撞涵蓋整棵樹冠的水平範圍(不再只取樹幹;只要是樹的一部分都擋)
+  OBSTACLES.push({ x, z, r: TREE_CANOPY_R * scale });
   return tree;
 }

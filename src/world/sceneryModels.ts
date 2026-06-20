@@ -83,6 +83,10 @@ function prepare(raw: THREE.Group, targetH: number): THREE.Group {
   raw.position.y = -box.min.y * s;
   const wrapper = new THREE.Group();
   wrapper.add(raw);
+  // 記錄正規化後的水平半徑,供地形把碰撞箱涵蓋整棵樹冠(clone 會帶上 userData)
+  wrapper.updateMatrixWorld(true);
+  const wbox = new THREE.Box3().setFromObject(wrapper);
+  wrapper.userData.radius = Math.max(wbox.max.x - wbox.min.x, wbox.max.z - wbox.min.z) / 2;
   return wrapper;
 }
 

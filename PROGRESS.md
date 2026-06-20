@@ -10,6 +10,7 @@
 - 模型隨 `public/` 進 build → `dist/models`(gh-pages 用相對 `./models/` 載得到);授權檔一併放 `public/models/LICENSE-Quaternius.txt`。
 - 驗證:build 綠(39→41 模組,含 OBJ/MTL loader)。**smoke 95 全綠**(async 載入後 `__game` 正常初始化、碰撞/可行走不受影響)。截圖目視四生態皆正確:曙光嶼鮮綠林、翠風林椰林、霜雪峰雪松、火山枯樹。多人協定未動,不影響連線。
 - **後續微調(Rai 指定)**:綠色島嶼維持原本程序化樹石——`PROCEDURAL_ISLANDS`(曙光嶼、翠風林島、港口鎮、靈脈島)走原本 `createTree`+程序化岩石、不鋪裝飾;其餘特色島(雪/火山/沙漠/珊瑚/沼澤/鹽晶/烈陽/虛空/界海)用素材包模型。
+- **程序化樹優化 + 樹冠碰撞(Rai 指定)**:`createTree` 改成多顆低多邊形團塊錯落(`TREE_BLOBS`)+ 每顆微調明度 + `addOutlines` 卡通描邊,輪廓更飽滿一致。碰撞箱不再只取樹幹:程序化樹用 `TREE_CANOPY_R×scale`、模型樹用其正規化水平半徑(`prepare` 算好存 `userData.radius`),涵蓋整棵樹冠(只要是樹的一部分都擋)。
 - 後續可調:裝飾密度/效能(模型島常駐實例多,可改 InstancedMesh 或分區);更多裝飾(木樁/睡蓮/麥田已備模型未全用)。
 
 ## 2026-06-20(多人連線 階段 6/6:公開部署 + 邀請碼加入 — 多人連線六階段收官)

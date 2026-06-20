@@ -56,6 +56,11 @@ const SETTINGS_CSS = `
 #settings .mp-btn { width: 100%; padding: 8px; border: none; border-radius: 8px; background: #2f6fb0; color: #fff; cursor: pointer; font-size: 14px; margin-top: 6px; }
 #settings .mp-btn.ghost { background: rgba(255,255,255,0.12); }
 #settings .mp-room { font-weight: 600; color: #7fd0ff; }
+#settings .mp-code { font-weight: 600; color: #7fd0ff; letter-spacing: 1px; }
+#settings .mp-or { text-align: center; opacity: 0.5; font-size: 12px; margin: 10px 0 0; }
+#settings .mp-join { display: flex; gap: 6px; margin-top: 6px; }
+#settings .mp-join input { flex: 1; min-width: 0; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: #fff; font-size: 14px; }
+#settings .mp-join .mp-btn { width: auto; margin-top: 0; padding: 8px 16px; }
 `;
 
 /**
@@ -144,31 +149,64 @@ export class SettingsPanel {
     });
   }
 
-  /** 多人房間區塊:單機時可建立房間,在房間時可複製邀請連結或離開 */
+  /** 多人房間區塊:單機時可建立房間或輸入邀請碼加入,在房間時可複製邀請碼/連結或離開 */
   private multiplayerSection(): string {
     const room = currentRoom();
     if (!room) {
       return `
         <div class="row"><span>多人房間</span><span>單機遊玩</span></div>
-        <button class="mp-btn" id="set-mp-create">建立多人房間(產生邀請連結)</button>
-        <div class="muted" id="set-mp-hint">建立後把網址列連結傳給家人朋友,即可進同一座群島</div>
+        <button class="mp-btn" id="set-mp-create">建立多人房間(產生邀請碼)</button>
+        <div class="mp-or">— 或加入朋友的群島 —</div>
+        <div class="mp-join">
+          <input id="set-mp-code" type="text" placeholder="輸入邀請碼" maxlength="64" autocomplete="off" spellcheck="false" />
+          <button class="mp-btn" id="set-mp-join">加入</button>
+        </div>
+        <div class="muted" id="set-mp-hint">跟朋友拿到邀請碼後輸入即可進他的群島</div>
       `;
     }
     const label = room === "lobby" ? "預設房間 lobby" : room;
     return `
       <div class="row"><span>多人房間</span><span class="mp-room">${label}</span></div>
-      <button class="mp-btn" id="set-mp-copy">複製邀請連結</button>
+      <div class="row"><span>邀請碼</span><span class="mp-code">${room}</span></div>
+      <button class="mp-btn" id="set-mp-copy-code">複製邀請碼</button>
+      <button class="mp-btn ghost" id="set-mp-copy">複製邀請連結</button>
       <button class="mp-btn ghost" id="set-mp-leave">離開房間(回單機)</button>
-      <div class="muted" id="set-mp-hint">把連結傳給家人朋友,開同一條連結就會在同一間</div>
+      <div class="muted" id="set-mp-hint">把邀請碼或連結傳給家人朋友,即可進同一座群島</div>
     `;
   }
 
   private wireMultiplayer(): void {
+    // 輸入邀請碼加入:邀請碼即房間名,沿用網址驅動(reload 帶 ?room=)
+    const joinByCode = (raw: string): void => {
+      const code = raw.trim();
+      if (!code) return;
+      location.href = roomLink(code);
+    };
+    const codeInput = this.root.querySelector<HTMLInputElement>("#set-mp-code");
+    // stopPropagation:打字不漏進遊戲鍵盤(與 chat 同樣手法);Enter 直接加入
+    codeInput?.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") joinByCode(codeInput.value);
+    });
+    this.root.querySelector<HTMLButtonElement>("#set-mp-join")?.addEventListener("click", () => {
+      if (codeInput) joinByCode(codeInput.value);
+    });
     this.root.querySelector<HTMLButtonElement>("#set-mp-create")?.addEventListener("click", () => {
       location.href = roomLink(randomRoom());
     });
     this.root.querySelector<HTMLButtonElement>("#set-mp-leave")?.addEventListener("click", () => {
       location.href = location.pathname; // 去掉查詢字串 = 回單機
+    });
+    this.root.querySelector<HTMLButtonElement>("#set-mp-copy-code")?.addEventListener("click", async () => {
+      const room = currentRoom();
+      if (!room) return;
+      const hint = this.root.querySelector<HTMLElement>("#set-mp-hint");
+      try {
+        await navigator.clipboard.writeText(room);
+        if (hint) hint.textContent = "已複製邀請碼!";
+      } catch {
+        if (hint) hint.textContent = `邀請碼:${room}`;
+      }
     });
     this.root.querySelector<HTMLButtonElement>("#set-mp-copy")?.addEventListener("click", async () => {
       const room = currentRoom();

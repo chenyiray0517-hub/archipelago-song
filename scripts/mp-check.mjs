@@ -153,7 +153,89 @@ bossFlag === 1 || bossFlag === 2
   ? ok(`頭目蓄力預警/引爆跨端同步到客戶端(flag=${bossFlag})`)
   : fail(`頭目預警未跨端同步:flag=${bossFlag}`);
 
-// 12. 房主離線 → 移交:A 關閉後,B 應移除 A 的 avatar 並接任房主
+// ── 階段 4a:玩家動作跨端 ──────────────────────────────────
+// 12. A 揮劍 → B 端「遠端 A」應播揮劍動畫(act 攻擊位元跨端)
+await A.evaluate(() => window.__game.player.mesh.position.set(5, 2, -52)); // 回陸地確保可攻擊
+await A.waitForTimeout(200);
+await A.mouse.move(400, 300);
+await A.mouse.down();
+await A.waitForTimeout(60);
+await A.mouse.up();
+const swung = await B.waitForFunction(
+  (tid) => { const rp = window.__game.remotePlayers.get(tid); return !!rp && rp.swinging; },
+  ids[0], { timeout: 3000 },
+).then(() => true).catch(() => false);
+swung
+  ? ok("玩家動作跨端:A 揮劍時 B 端遠端 A 播攻擊動畫")
+  : fail("玩家動作未跨端:B 端遠端 A 未播攻擊");
+
+// 13. A 舉盾 → B 端 act 應帶舉盾位元(2)
+await A.evaluate(() => { window.__game.player.mesh.position.set(5, 2, -52); });
+await A.keyboard.down("KeyQ");
+const blocked = await B.waitForFunction(
+  (tid) => { const rp = window.__game.remotePlayers.get(tid); return !!rp && (rp.actBits & 2) !== 0; },
+  ids[0], { timeout: 3000 },
+).then(() => true).catch(() => false);
+await A.keyboard.up("KeyQ");
+blocked
+  ? ok("玩家動作跨端:A 舉盾旗標同步到 B")
+  : fail("舉盾未跨端:B 端遠端 A 未收到舉盾位元");
+
+// ── 階段 4b:房間聊天 ──────────────────────────────────────
+// 14. A 發話 → B 端聊天框應收到並顯示該訊息
+const chatMsg = "嗨大家_" + (Date.now() % 100000);
+await A.evaluate((m) => window.__game.net.sendChat(m), chatMsg);
+const gotChat = await B.waitForFunction(
+  (m) => document.querySelector("#chat-log")?.textContent?.includes(m) ?? false,
+  chatMsg, { timeout: 3000 },
+).then(() => true).catch(() => false);
+gotChat
+  ? ok("聊天跨端:A 發話 B 端聊天框收到並顯示")
+  : fail("聊天未跨端:B 端聊天框未顯示訊息");
+
+// 15. 聊天打字狀態:startTyping/stopTyping 切換 isTyping(供 main 暫停遊戲鍵盤)
+await B.evaluate(() => window.__game.chat.startTyping());
+const typing = await B.evaluate(() => window.__game.chat.isTyping);
+await B.evaluate(() => window.__game.chat.stopTyping());
+const stopped = await B.evaluate(() => window.__game.chat.isTyping);
+typing && !stopped
+  ? ok("聊天打字狀態正確(開→isTyping=true、關→false)")
+  : fail(`聊天打字狀態異常:typing=${typing} stopped=${stopped}`);
+
+// ── 階段 4c:客戶端死亡/重生同步 ──────────────────────────────
+// 16. B 倒下 → 房主端遠端 B 標記 dead(nearestPlayer 略過,不再鎖定);復活後恢復
+await B.evaluate(() => { window.__game.player.hp = 0; });
+const deadSeen = await A.waitForFunction(
+  (tid) => window.__game.remotePlayers.get(tid)?.dead === true, ids[1], { timeout: 3000 },
+).then(() => true).catch(() => false);
+deadSeen
+  ? ok("死亡同步:B 倒下後房主端標記遠端 B 為 dead(略過鎖定)")
+  : fail("死亡未同步:房主端遠端 B 未標記 dead");
+await B.evaluate(() => { const g = window.__game; g.player.hp = g.player.stats.maxHP; });
+const aliveSeen = await A.waitForFunction(
+  (tid) => window.__game.remotePlayers.get(tid)?.dead === false, ids[1], { timeout: 3000 },
+).then(() => true).catch(() => false);
+aliveSeen
+  ? ok("重生同步:B 復活後房主端遠端 B 恢復存活")
+  : fail("重生未同步:房主端遠端 B 仍為 dead");
+
+// ── 階段 4d:頭目 AoE 多人分別判定 ──────────────────────────
+// 17. A、B 同時站在菁英特殊技範圍內 → 引爆時兩人應各自受擊(非只打最近一位)
+const ep12 = await A.evaluate(() => { const e = window.__game.enemies[12].mesh.position; return { x: e.x, z: e.z }; });
+await A.evaluate((e) => { const g = window.__game; g.player.hp = g.player.stats.maxHP; g.player.mesh.position.set(e.x + 2, 2, e.z); }, ep12);
+await B.evaluate((e) => { const g = window.__game; g.player.hp = g.player.stats.maxHP; g.player.mesh.position.set(e.x - 2, 2, e.z + 2); }, ep12);
+await A.waitForTimeout(400); // 等 B 位置同步到房主
+const hpA0 = await A.evaluate(() => window.__game.player.hp);
+const hpB0 = await B.evaluate(() => window.__game.player.hp);
+await A.evaluate(() => window.__game.enemies[12].forceSpecial());
+await A.waitForTimeout(1300); // 蓄力 0.7s + 引爆 + 同步
+const hpA1 = await A.evaluate(() => window.__game.player.hp);
+const hpB1 = await B.evaluate(() => window.__game.player.hp);
+hpA1 < hpA0 && hpB1 < hpB0
+  ? ok(`頭目 AoE 多人分別判定:房主 A(${hpA0}→${hpA1})與客戶端 B(${hpB0}→${hpB1})同時受擊`)
+  : fail(`AoE 未對雙方分別判定:A ${hpA0}→${hpA1}、B ${hpB0}→${hpB1}`);
+
+// 18. 房主離線 → 移交:A 關閉後,B 應移除 A 的 avatar 並接任房主
 await A.close();
 await B.waitForTimeout(700);
 const afterLeave = await B.evaluate(() => window.__game.remotePlayers.size);
@@ -163,4 +245,4 @@ bHostNow === true ? ok("房主移交成功(A 離線後 B 接任房主)") : fail(
 
 await browser.close();
 if (errors.length) { console.error(`\n多人驗證失敗 ${errors.length} 項`); process.exit(1); }
-console.log("\n✅ 多人第 3a/3b 階段(共享敵人 + 各自成長歸屬 + 敵人傷害客戶端 + 控場/預警跨端)驗證全綠");
+console.log("\n✅ 多人第 3a/3b/4 階段(共享敵人 + 各自成長歸屬 + 傷害客戶端 + 控場/預警跨端 + 玩家動作跨端 + 聊天 + 死亡重生同步)驗證全綠");

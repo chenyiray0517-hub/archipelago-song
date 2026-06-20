@@ -18,9 +18,9 @@ const clients = new Map();
 /** @type {Map<string, string>} */
 const hostByRoom = new Map();
 /** 可原樣轉發給「同房間其他人」的訊息(附上 sender id);其餘一律忽略 */
-// enemies/hit:階段 3a 房主權威同步;kill/pdmg/cc:階段 3b 擊殺歸屬、敵人傷害客戶端、客戶端控場
+// enemies/hit:階段 3a 房主權威同步;kill/pdmg/cc:階段 3b;chat:階段 4b 房間聊天
 // (kill/pdmg 雖原樣廣播給同房間,但帶 by/to 欄位,由客戶端各自比對本機 id 決定是否套用)
-const RELAY = new Set(["enemies", "hit", "kill", "pdmg", "cc"]);
+const RELAY = new Set(["enemies", "hit", "kill", "pdmg", "cc", "chat"]);
 let nextId = 1;
 
 /** 從連線請求 URL 取房間名(?room=xxx);沒帶或空字串丟進預設房間 lobby */

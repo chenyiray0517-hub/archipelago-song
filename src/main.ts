@@ -28,7 +28,7 @@ import { Shockwave } from "./entities/shockwave";
 import { Vortex } from "./entities/vortex";
 import { LightningBolt } from "./entities/lightning";
 import { NetClient, type NetState } from "./net/net";
-import { RemotePlayer } from "./net/remotePlayer";
+import { RemotePlayer, colorFor } from "./net/remotePlayer";
 import {
   GemBag,
   FLAME_MP_COST,
@@ -86,6 +86,7 @@ import { ShopPanel } from "./ui/shop";
 import { ForgePanel } from "./ui/forge";
 import { SettingsPanel } from "./ui/settings";
 import { FloatingTextManager, PickupFeed } from "./ui/floating";
+import { Chat } from "./ui/chat";
 import { DriftChest } from "./entities/chest";
 import { Shrine, SHRINE_DEFS, MAX_ACTIVE_SHRINES } from "./entities/shrine";
 import { isSailable } from "./world/terrain";
@@ -243,6 +244,16 @@ function main(): void {
     onCc(i, kind, sec, dps) {
       hostApplyCc(i, kind, sec, dps);
     },
+    // 階段 4b:收到同房間聊天訊息,以發話者顏色顯示
+    onChat(id, text) {
+      chat.push(nameFor(id), text, colorFor(id));
+    },
+  });
+  // 階段 4b:房間聊天(Enter 開/送、Esc 取消);發話者名以 id 末兩碼簡示
+  const nameFor = (id: string): string => `玩家·${id.slice(-2)}`;
+  const chat = new Chat((text) => {
+    net.sendChat(text);
+    chat.push("你", text, 0x9be36a); // 伺服器不回送自己,故本機自行回顯(綠 = 本機色)
   });
   // 多人房間(opt-in,避免單人玩家無謂連線、連不上時的 console 紅字):
   //   ?room=xxx → 加入房間 xxx(分享連結用,不同房間互不可見)
@@ -1570,6 +1581,7 @@ function main(): void {
     let bestId: string | null = null;
     let bestD = player.isDead ? Infinity : epos.distanceToSquared(player.mesh.position);
     for (const [id, rp] of remotePlayers) {
+      if (rp.dead) continue; // 階段 4c:已倒下的玩家不被鎖定
       const d = epos.distanceToSquared(rp.mesh.position);
       if (d < bestD) {
         bestD = d;
@@ -1655,6 +1667,7 @@ function main(): void {
         obstacles: OBSTACLES,
         resolveObstacles,
         net,
+        chat,
         get remotePlayers() {
           return remotePlayers;
         },
@@ -1690,6 +1703,11 @@ function main(): void {
     hud.setEnv(
       `${env.isNight ? "🌙" : "☀️"}${env.weather === "clear" ? "" : env.weather === "rain" ? " 🌧️" : " ⛈️"}`,
     );
+
+    // 階段 4b:聊天開關。Enter 開啟輸入(限連線時);打字中暫停遊戲鍵盤,避免移動/攻擊。
+    if (!chat.isTyping && net.connected && input.wasPressed("Enter")) chat.startTyping();
+    input.suspended = chat.isTyping;
+    if (chat.isTyping) input.clearKeys();
 
     if (input.wasPressed("Tab")) {
       audio.sfx("ui");
@@ -2208,12 +2226,13 @@ function main(): void {
             "#7be87b",
           );
         }
-        if (ev.hitPlayer) {
-          if (targetRemote !== null) {
-            // 命中遠端玩家:傷害 + 擊退 + 附加狀態(chill/burn)送該客戶端;drain 已在房主端回血
-            const eff = ev.effect === "chill" ? "chill" : ev.effect === "burn" ? "burn" : "";
-            net.sendPlayerDamage(targetRemote, ev.dmg, ep.x, ep.y, ep.z, ev.knock, eff);
-          } else if (!player.isDead) {
+        // 階段 4d:AoE 對範圍內「每位存活玩家」分別判定(本機 + 在場遠端),而非只打最近那位
+        const rSq = ev.radius * ev.radius;
+        // 本機(單機/房主):落在範圍內就受擊
+        if (!player.isDead) {
+          const dx = player.mesh.position.x - ep.x;
+          const dz = player.mesh.position.z - ep.z;
+          if (dx * dx + dz * dz <= rSq) {
             const hit = player.takeDamage(ev.dmg, enemy.mesh.position);
             const head = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
             if (hit.blocked) {
@@ -2230,6 +2249,16 @@ function main(): void {
                 player.applyBurn(4, Math.max(2, Math.round(ev.dmg * 0.15)));
             }
             if (player.isDead) showDeathScreen();
+          }
+        }
+        // 在場遠端(多人):房主對每位存活且落在範圍內的客戶端各送一次 pdmg
+        if (net.isHost) {
+          const eff = ev.effect === "chill" ? "chill" : ev.effect === "burn" ? "burn" : "";
+          for (const [id, rp] of remotePlayers) {
+            if (rp.dead) continue;
+            const dx = rp.mesh.position.x - ep.x;
+            const dz = rp.mesh.position.z - ep.z;
+            if (dx * dx + dz * dz <= rSq) net.sendPlayerDamage(id, ev.dmg, ep.x, ep.y, ep.z, ev.knock, eff);
           }
         }
       }
@@ -2622,7 +2651,13 @@ function main(): void {
       const p = player.mesh.position;
       const movedSq = (p.x - prevPos.x) ** 2 + (p.z - prevPos.z) ** 2;
       prevPos.copy(p);
-      const state: NetState = { x: p.x, y: p.y, z: p.z, facing: player.facing, moving: movedSq > 1e-5 };
+      // 動作位元旗標(階段 4a):讓遠端 avatar 播揮劍/舉盾/騰空/受擊
+      const act =
+        (player.attacking ? 1 : 0) |
+        (player.blocking ? 2 : 0) |
+        (player.airborne ? 4 : 0) |
+        (player.hurtT > 0 ? 8 : 0);
+      const state: NetState = { x: p.x, y: p.y, z: p.z, facing: player.facing, moving: movedSq > 1e-5, act, dead: player.isDead };
       net.sendState(state);
     }
 

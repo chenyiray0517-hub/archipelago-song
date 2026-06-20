@@ -73,6 +73,8 @@ export class Player {
 
   /** 是否正在舉盾防禦(供 HUD 與測試讀取) */
   blocking = false;
+  /** 受擊反應剩餘秒數(takeDamage 設定;供多人遠端 avatar 播受擊動作) */
+  hurtT = 0;
   /** 持有風語石(解鎖二段跳與滑翔),由 main 同步 */
   hasWindGem = false;
   /** 風語石升階等級(lv2 滑翔更慢、lv3 三段跳),由 main 同步 */
@@ -354,6 +356,16 @@ export class Player {
     return this.invulnT > 0;
   }
 
+  /** 是否正在揮劍/迴旋斬(供多人遠端 avatar 播攻擊動作) */
+  get attacking(): boolean {
+    return this.swingT > 0 || this.spinT > 0;
+  }
+
+  /** 是否騰空(跳躍/滑翔;供多人遠端 avatar 播騰空姿勢) */
+  get airborne(): boolean {
+    return !this.grounded;
+  }
+
   /** 集氣進度 0–1(未集氣為 0) */
   get chargeRatio(): number {
     return THREE.MathUtils.clamp(
@@ -398,6 +410,7 @@ export class Player {
     this.lungeT = Math.max(0, this.lungeT - dt);
     this.spinT = Math.max(0, this.spinT - dt);
     this.chillT = Math.max(0, this.chillT - dt);
+    this.hurtT = Math.max(0, this.hurtT - dt);
 
     const speedMul = this.stats.speedMultiplier;
     const move = new THREE.Vector3();
@@ -683,6 +696,7 @@ export class Player {
     const dmg = Math.max(1, raw - this.stats.def);
     this.hp = Math.max(0, this.hp - dmg);
     this.invulnT = 0.5;
+    this.hurtT = 0.3;
     return { taken: dmg, blocked: false };
   }
 

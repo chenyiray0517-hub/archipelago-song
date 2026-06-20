@@ -48,6 +48,8 @@ export interface SpecialEvent {
   dmg: number;
   knock: number;
   effect: SpecialEffect;
+  /** 世界座標下的作用半徑(多人:由 main 對範圍內每位玩家分別判定)(階段 4d) */
+  radius: number;
   /** 玩家是否落在範圍內(否則只播特效) */
   hitPlayer: boolean;
   /** drain 效果回復自身的量(供跳字顯示) */
@@ -450,6 +452,7 @@ export class Enemy {
               dmg,
               knock: sp.knock,
               effect: sp.effect,
+              radius: sp.radius,
               hitPlayer: hit,
               healed,
             };

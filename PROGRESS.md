@@ -1,5 +1,18 @@
 # PROGRESS
 
+## 2026-06-20(多人連線 階段 4/6:互動細節 — 動作跨端 + 聊天 + 死亡重生同步 + AoE 多人判定)
+
+> 階段 4「互動細節」一次做完四項;補掉 3b 限制①(死亡同步)與②(AoE 多人判定)。
+> 大原則不變(房主權威、連不上就單機);新訊息 `chat` 走純轉發,`act`/`dead` 併入既有 `state` 封包不另開協定。
+
+- **4a 玩家動作跨端**(`net.ts`/`player.ts`/`remotePlayer.ts`/`main.ts`):`NetState` 加 `act` 位元旗標(1 攻擊/2 舉盾/4 騰空/8 受擊),`player` 新增 `attacking`/`airborne` getter + `hurtT`(takeDamage 設定)。`RemotePlayer` 升級:加簡易劍與盾,依旗標播**揮劍**(收到攻擊位元就鎖定 `SWING_DUR` 完整一刀,免被稀疏封包截斷)、**舉盾**、**騰空收腿**、**受擊閃紅**。
+- **4b 聊天**(`ui/chat.ts` 新檔 + `input.ts`/`net.ts`/`server`/`main.ts`):房間文字聊天,Enter 開/送、Esc 取消;打字時 `input.suspended=true` + `clearKeys()` 讓鍵盤不觸發遊戲動作。`chat` 訊息純轉發,發話者名以 id 末兩碼簡示、名字用 avatar 顏色(`colorFor` 改 export);伺服器不回送自己→本機送出時自行回顯。
+- **4c 客戶端死亡/重生同步**(`net.ts`/`main.ts`/`remotePlayer.ts`):`NetState` 加 `dead`;房主 `nearestPlayer()` **略過 `rp.dead` 的玩家**(修限制①,敵人不再鎖定/攻擊已倒下的客人);遠端 avatar 死亡躺平轉灰、復活平滑站起。
+- **4d 頭目 AoE 多人分別判定**(`enemy.ts`/`main.ts`):`SpecialEvent` 加 `radius`;頭目特殊技引爆改對**範圍內每位存活玩家分別判定**(本機 + 在場遠端各一次,命中遠端送 pdmg),不再只打最近那位(修限制②)。一般突進普攻仍維持單體(最近鎖定)。
+- 測試掛鉤:`remotePlayers[id].swinging/actBits/dead`、`__game.chat`(`isTyping`/`startTyping`/`stopTyping`)。
+- 驗證:build 綠(tsc strict,39 模組)。**smoke 95 全綠不受影響**(單機未連線→`act/dead` 不送、聊天 Enter 僅連線時啟用、AoE 單機路徑等同舊行為,頭目技命中測試仍 100→83)。`mp-check` **21 項全綠**(新增:揮劍/舉盾跨端、聊天跨端+打字狀態、死亡/重生同步、AoE 雙人各受擊;位置同步測試沿用輪詢穩定)。連跑 3 次全綠。截圖目視:遠端玩家持劍揮砍 `/tmp/mp4a-swing.png`、聊天框收訊+輸入 `/tmp/mp4b-chat.png`、頭目 AoE 雙人受擊 `/tmp/mp4d-aoe.png`。
+- 後續(階段 5:連線健壯性):斷線重連、延遲補償/插值緩衝、房主遷移時的敵人狀態接管平滑化;階段 6:公開部署(wss + 正式 server 託管)。
+
 ## 2026-06-20(多人連線 階段 3b/6:各自成長歸屬 + 敵人傷害客戶端 + 控場/預警跨端)
 
 > 補完 3a 留下的四個已知限制。Rai 路線:**各自成長、怪物共享**——補刀者各拿各的掉落/任務,敵人會打客人並鎖定最近玩家,客人的控場與頭目預警也跨端。

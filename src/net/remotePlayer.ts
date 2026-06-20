@@ -1,16 +1,26 @@
-// 群島之歌 — 遠端玩家 avatar(第 1 階段:看得到彼此)
+// 群島之歌 — 遠端玩家 avatar(階段 4a:動作跨端)
 //
 // 簡化人形(非完整骨架),但仍守慣例:toonMaterial + addOutlines + castShadow。
-// 位置/朝向用插值平滑,避免網路封包間隔造成跳動;moving 時播簡單走路擺動。
-// 之後階段再對齊 player.ts 的完整動作(攻擊/跳/格擋)。
+// 位置/朝向用插值平滑;moving 時播走路擺動。
+// 階段 4a:依 NetState.act 位元旗標播揮劍/舉盾/騰空/受擊動作(加了簡易劍與盾增加辨識度)。
 
 import * as THREE from "three";
 import { toonMaterial, addOutlines } from "../core/toon";
 import type { NetState } from "./net";
 
+/** 動作位元旗標(與 main 送出端一致):1 攻擊 / 2 舉盾 / 4 騰空 / 8 受擊 */
+const ACT_ATTACK = 1;
+const ACT_BLOCK = 2;
+const ACT_AIR = 4;
+const ACT_HURT = 8;
+/** 揮劍動畫鎖定時長:即使只收到一個攻擊封包也播完整一刀 */
+const SWING_DUR = 0.3;
+/** 受擊閃紅鎖定時長 */
+const HURT_DUR = 0.3;
+
 /** 依 id 給每位遠端玩家一個穩定的醒目色(與本機綠袍區隔) */
 const PALETTE = [0x4aa3ff, 0xff8a3c, 0xb86bff, 0xffd23c, 0x3cd0a0, 0xff6b9d];
-function colorFor(id: string): number {
+export function colorFor(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
   return PALETTE[Math.abs(h) % PALETTE.length];
@@ -20,6 +30,10 @@ export class RemotePlayer {
   readonly mesh: THREE.Group;
   private legL: THREE.Group;
   private legR: THREE.Group;
+  private armL: THREE.Group; // 持盾臂(肩為樞紐)
+  private armR: THREE.Group; // 持劍臂(肩為樞紐)
+  private bodyMat: THREE.MeshToonMaterial;
+  private readonly baseColor: THREE.Color;
 
   /** 插值目標(收到封包時更新,每幀往目標逼近) */
   private targetPos = new THREE.Vector3();
@@ -28,12 +42,23 @@ export class RemotePlayer {
   private walkPhase = 0;
   private renderYaw = 0;
 
+  // 動作狀態(由 act 旗標驅動)
+  private act = 0;
+  private swingT = 0; // 揮劍動畫鎖定計時(>0 播揮劍)
+  private hurtT = 0; // 受擊閃紅計時
+  /** 是否已倒下(階段 4c;房主據此略過鎖定) */
+  dead = false;
+  private deathLean = 0; // 倒地姿勢插值 0(站立)→1(躺平)
+
   constructor(id: string, initial: NetState) {
     const color = colorFor(id);
+    this.baseColor = new THREE.Color(color);
     this.mesh = new THREE.Group();
 
     const bodyMat = toonMaterial(color);
+    this.bodyMat = bodyMat;
     const skinMat = toonMaterial(0xf2c79a);
+    const steelMat = toonMaterial(0xc9d2dc);
 
     // 軀幹
     const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.8, 12), bodyMat);
@@ -41,11 +66,28 @@ export class RemotePlayer {
     // 頭
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), skinMat);
     head.position.y = 1.95;
-    // 雙臂
-    const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.5, 4, 8), bodyMat);
-    armL.position.set(0.42, 1.4, 0);
-    const armR = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.5, 4, 8), bodyMat);
-    armR.position.set(-0.42, 1.4, 0);
+
+    // 雙臂(肩為樞紐的 group,手臂網格往下偏移,方便擺動/揮劍)
+    this.armL = new THREE.Group();
+    this.armL.position.set(0.42, 1.62, 0);
+    const armLMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.5, 4, 8), bodyMat);
+    armLMesh.position.y = -0.28;
+    // 盾牌(掛在左臂前方)
+    const shield = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.08), steelMat);
+    shield.position.set(0.04, -0.4, 0.18);
+    this.armL.add(armLMesh, shield);
+
+    this.armR = new THREE.Group();
+    this.armR.position.set(-0.42, 1.62, 0);
+    const armRMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.5, 4, 8), bodyMat);
+    armRMesh.position.y = -0.28;
+    // 劍(掛在右手,刀身往下延伸)
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.7, 0.07), steelMat);
+    blade.position.y = -0.85;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 0.1), toonMaterial(0x8a6a3a));
+    guard.position.y = -0.5;
+    this.armR.add(armRMesh, blade, guard);
+
     // 雙腿(放進可旋轉 group 做走路擺動)
     this.legL = new THREE.Group();
     this.legL.position.set(0.16, 0.9, 0);
@@ -58,7 +100,7 @@ export class RemotePlayer {
     legRMesh.position.y = -0.4;
     this.legR.add(legRMesh);
 
-    this.mesh.add(torso, head, armL, armR, this.legL, this.legR);
+    this.mesh.add(torso, head, this.armL, this.armR, this.legL, this.legR);
 
     this.mesh.traverse((c) => {
       if (c instanceof THREE.Mesh) c.castShadow = true;
@@ -69,18 +111,25 @@ export class RemotePlayer {
     this.targetFacing = initial.facing;
     this.renderYaw = initial.facing;
     this.moving = initial.moving;
+    this.act = initial.act ?? 0;
     this.mesh.position.copy(this.targetPos);
     this.mesh.rotation.y = this.renderYaw;
   }
 
-  /** 收到新狀態:更新插值目標 */
+  /** 收到新狀態:更新插值目標與動作旗標(攻擊用上升沿鎖定一段揮劍動畫) */
   setState(s: NetState): void {
     this.targetPos.set(s.x, s.y, s.z);
     this.targetFacing = s.facing;
     this.moving = s.moving;
+    const next = s.act ?? 0;
+    // 攻擊:封包稀疏,收到「攻擊位元」就鎖定一段完整揮劍(避免只閃一格)
+    if (next & ACT_ATTACK) this.swingT = SWING_DUR;
+    if (next & ACT_HURT) this.hurtT = HURT_DUR;
+    this.act = next;
+    this.dead = s.dead ?? false;
   }
 
-  /** 每幀:位置/朝向逼近目標,走路擺腿 */
+  /** 每幀:位置/朝向逼近目標,依動作播對應姿勢 */
   update(dt: number): void {
     // 位置插值(指數逼近,與幀率無關)
     const t = 1 - Math.exp(-12 * dt);
@@ -92,8 +141,28 @@ export class RemotePlayer {
     this.renderYaw += delta * t;
     this.mesh.rotation.y = this.renderYaw;
 
-    // 走路擺腿
-    if (this.moving) {
+    // 倒地/站起(階段 4c):死亡躺平轉灰、不播動作;復活平滑站起
+    this.deathLean += ((this.dead ? 1 : 0) - this.deathLean) * Math.min(1, t * 1.2);
+    this.mesh.rotation.x = this.deathLean * 1.45;
+    if (this.dead) {
+      this.legL.rotation.x += (0 - this.legL.rotation.x) * t;
+      this.legR.rotation.x += (0 - this.legR.rotation.x) * t;
+      this.armL.rotation.x += (0 - this.armL.rotation.x) * t;
+      this.armR.rotation.x += (0 - this.armR.rotation.x) * t;
+      this.bodyMat.color.lerpColors(this.baseColor, new THREE.Color(0x555a60), 0.6);
+      return;
+    }
+
+    this.swingT = Math.max(0, this.swingT - dt);
+    this.hurtT = Math.max(0, this.hurtT - dt);
+    const airborne = (this.act & ACT_AIR) !== 0;
+    const blocking = (this.act & ACT_BLOCK) !== 0;
+
+    // 腿:騰空收腿,否則走路擺腿/站立收回
+    if (airborne) {
+      this.legL.rotation.x += (0.7 - this.legL.rotation.x) * t;
+      this.legR.rotation.x += (0.5 - this.legR.rotation.x) * t;
+    } else if (this.moving) {
       this.walkPhase += dt * 9;
       const swing = Math.sin(this.walkPhase) * 0.5;
       this.legL.rotation.x = swing;
@@ -102,6 +171,39 @@ export class RemotePlayer {
       this.legL.rotation.x *= 1 - t;
       this.legR.rotation.x *= 1 - t;
     }
+
+    // 右臂(劍):攻擊 > 騰空 > 走路擺動
+    let armRTarget: number;
+    if (this.swingT > 0) {
+      // 由舉高(-2.4)揮到斜前(0.5)
+      const p = 1 - this.swingT / SWING_DUR;
+      armRTarget = -2.4 + p * 2.9;
+    } else if (airborne) {
+      armRTarget = -0.5;
+    } else if (this.moving) {
+      armRTarget = Math.sin(this.walkPhase) * 0.35;
+    } else {
+      armRTarget = 0;
+    }
+    this.armR.rotation.x += (armRTarget - this.armR.rotation.x) * Math.min(1, t * 2.5);
+
+    // 左臂(盾):舉盾抬到胸前,否則隨步擺動
+    const armLTarget = blocking ? -1.4 : this.moving && !airborne ? -Math.sin(this.walkPhase) * 0.35 : airborne ? -0.4 : 0;
+    this.armL.rotation.x += (armLTarget - this.armL.rotation.x) * Math.min(1, t * 2.5);
+
+    // 受擊:軀幹/四肢閃紅
+    if (this.hurtT > 0) this.bodyMat.color.lerpColors(this.baseColor, new THREE.Color(0xff4d4d), 0.6);
+    else this.bodyMat.color.copy(this.baseColor);
+  }
+
+  /** 測試掛鉤:目前收到的動作位元旗標(1 攻擊/2 舉盾/4 騰空/8 受擊) */
+  get actBits(): number {
+    return this.act;
+  }
+
+  /** 測試掛鉤:是否正在播揮劍動畫 */
+  get swinging(): boolean {
+    return this.swingT > 0;
   }
 
   /** 從場景移除並釋放幾何體 */

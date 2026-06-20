@@ -15,6 +15,10 @@ export interface NetState {
   facing: number;
   /** 是否正在移動(決定遠端 avatar 播走路或待機) */
   moving: boolean;
+  /** 動作位元旗標(階段 4a):1 攻擊 / 2 舉盾 / 4 騰空 / 8 受擊(舊封包缺省以 0 處理) */
+  act?: number;
+  /** 是否已倒下(階段 4c):房主據此略過鎖定,遠端 avatar 播倒地/站起 */
+  dead?: boolean;
 }
 
 /** 伺服器 → 客戶端訊息 */
@@ -34,7 +38,9 @@ type ServerMsg =
   /** 房主→指定客戶端:敵人對該玩家造成傷害(突進/頭目技);to 指定承受者(階段 3b) */
   | { t: "pdmg"; id: string; to: string; dmg: number; sx: number; sy: number; sz: number; knock: number; eff: string }
   /** 客戶端→房主:對敵人 i 施加控場(冰凍/灼燒/麻痺),由房主權威套用(階段 3b) */
-  | { t: "cc"; id: string; i: number; kind: "freeze" | "burn" | "stun"; sec: number; dps: number };
+  | { t: "cc"; id: string; i: number; kind: "freeze" | "burn" | "stun"; sec: number; dps: number }
+  /** 房間聊天訊息(廣播給同房間;id = 發話者)(階段 4b) */
+  | { t: "chat"; id: string; text: string };
 
 export interface NetCallbacks {
   /** 收到別人的最新狀態(第一次收到即代表該玩家出現) */
@@ -55,6 +61,8 @@ export interface NetCallbacks {
   onPlayerDamage?(dmg: number, sx: number, sy: number, sz: number, knock: number, eff: string): void;
   /** 客戶端送來的控場請求(僅房主需處理)(階段 3b) */
   onCc?(i: number, kind: "freeze" | "burn" | "stun", sec: number, dps: number): void;
+  /** 收到同房間聊天訊息(id = 發話者,非本機)(階段 4b) */
+  onChat?(id: string, text: string): void;
 }
 
 /** 伺服器位址:正式環境用建置時注入的 VITE_SERVER_URL,開發走本機 8787;房間名併入 ?room= */
@@ -149,6 +157,9 @@ export class NetClient {
         case "cc":
           this.cb.onCc?.(msg.i, msg.kind, msg.sec, msg.dps);
           break;
+        case "chat":
+          this.cb.onChat?.(msg.id, msg.text);
+          break;
       }
     });
 
@@ -198,5 +209,11 @@ export class NetClient {
   sendCc(i: number, kind: "freeze" | "burn" | "stun", sec: number, dps: number): void {
     if (!this.connected) return;
     this.ws!.send(JSON.stringify({ t: "cc", i, kind, sec, dps }));
+  }
+
+  /** 送出聊天訊息給同房間(階段 4b) */
+  sendChat(text: string): void {
+    if (!this.connected) return;
+    this.ws!.send(JSON.stringify({ t: "chat", text }));
   }
 }

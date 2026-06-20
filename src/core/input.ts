@@ -15,9 +15,12 @@ export class Input {
   dy = 0;
   /** 本幀滾輪位移 */
   wheel = 0;
+  /** 暫停鍵盤輸入(聊天打字聚焦時為 true),避免打字觸發遊戲動作 */
+  suspended = false;
 
   constructor(target: HTMLElement) {
     window.addEventListener("keydown", (e) => {
+      if (this.suspended) return; // 聊天打字中:鍵盤交給聊天輸入框,不進遊戲
       if (e.code === "Tab") e.preventDefault();
       if (!this.keys.has(e.code)) this.justPressed.add(e.code);
       this.keys.add(e.code);
@@ -62,6 +65,12 @@ export class Input {
       return true;
     }
     return false;
+  }
+
+  /** 清掉目前按住的所有鍵(聊天打字開始時呼叫,避免殘留的移動鍵) */
+  clearKeys(): void {
+    this.keys.clear();
+    this.justPressed.clear();
   }
 
   /** 清除單幀事件,於遊戲迴圈尾端呼叫 */

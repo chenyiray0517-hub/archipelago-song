@@ -580,8 +580,9 @@ function createIslandMesh(def: IslandDef): THREE.Group {
     }
   }
 
-  // 地表裝飾(草/花/灌木…):不擋路,只在草地帶鋪;密度依島大小
-  if (useModels && flora.decor.length) {
+  // 地表裝飾(草/花/灌木…):不擋路,只在草地帶鋪;密度依島大小。
+  // 與「樹用不用模型」脫鉤——綠色島雖維持程序化樹石,仍鋪裝飾(只看模型是否載到)。
+  if (hasModels() && flora.decor.length) {
     const decorCount = Math.round(def.r * 1.4);
     for (let i = 0; i < decorCount; i++) {
       const angle = Math.random() * Math.PI * 2;

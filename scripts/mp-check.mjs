@@ -42,25 +42,29 @@ counts[0] === 1 && counts[1] === 1 && counts[2] === 0
   : fail(`房間隔離失敗:${JSON.stringify(counts)}`);
 
 // 3. A 移動後,B 畫面中「遠端 A」的位置應跟著逼近(同步生效)
+// A 每 50ms 持續送出位置,B 端 avatar 以指數插值逼近;改用輪詢等它收斂(避免固定時間窗
+// 不足以讓 14 單位跳躍插值到位而誤判)。A 移到該座標後留在原地(此處用瞬移、無敵人推擠)。
 const target = await A.evaluate(() => {
   const p = window.__game.player.mesh.position;
   p.x += 12; p.z -= 8;
   return { x: p.x, z: p.z };
 });
-await A.waitForTimeout(800); // 等封包送達 + B 端插值逼近
+const converged = await B.waitForFunction(
+  ({ tid, t }) => {
+    const rp = window.__game.remotePlayers.get(tid);
+    if (!rp) return false;
+    return Math.hypot(rp.mesh.position.x - t.x, rp.mesh.position.z - t.z) < 1.0;
+  },
+  { tid: ids[0], t: target },
+  { timeout: 5000, polling: 100 },
+).then(() => true).catch(() => false);
 const remote = await B.evaluate((tid) => {
   const rp = window.__game.remotePlayers.get(tid);
-  if (!rp) return null;
-  return { x: rp.mesh.position.x, z: rp.mesh.position.z };
+  return rp ? { x: rp.mesh.position.x, z: rp.mesh.position.z } : null;
 }, ids[0]);
-if (remote) {
-  const d = Math.hypot(remote.x - target.x, remote.z - target.z);
-  d < 1.0
-    ? ok(`位置同步:B 端遠端 A 已逼近真實位置(誤差 ${d.toFixed(2)})`)
-    : fail(`位置同步誤差過大:${d.toFixed(2)}(target ${JSON.stringify(target)} got ${JSON.stringify(remote)})`);
-} else {
-  fail("B 端找不到遠端 A");
-}
+converged
+  ? ok(`位置同步:B 端遠端 A 已逼近真實位置(${JSON.stringify(target)})`)
+  : fail(`位置同步未收斂:target ${JSON.stringify(target)} got ${JSON.stringify(remote)}`);
 
 // ── 階段 3a:房主權威共享敵人 ──────────────────────────────
 // 4. 房主身分:先連線的 A 是房主,B 是客戶端
@@ -99,7 +103,57 @@ Math.hypot(ePosHost.x - ePosClient.x, ePosHost.z - ePosClient.z) < 1.5
   ? ok("敵人位置由房主同步到客戶端")
   : fail(`敵人位置未同步:房主 ${JSON.stringify(ePosHost)} vs 客戶端 ${JSON.stringify(ePosClient)}`);
 
-// 8. 房主離線 → 移交:A 關閉後,B 應移除 A 的 avatar 並接任房主
+// ── 階段 3b:各自成長歸屬 ──────────────────────────────────
+// 8. 客戶端補刀 → 自己得擊殺歸屬:B(客戶端)擊殺 0 號史萊姆,任務擊殺數應記在 B 而非房主 A
+const killsBefore = await Promise.all([A, B].map((p) => p.evaluate(() => window.__game.quests.slimeKills)));
+const pickupsBeforeB = await B.evaluate(() => window.__game.pickups.length);
+await B.evaluate(() => window.__game.enemies[0].takeDamage(999)); // 客戶端記帳 → 送房主結算致死
+await B.waitForTimeout(800); // 等 B 送 hit → 房主結算致死 → 廣播 kill → B 自行結算掉落
+const killsAfter = await Promise.all([A, B].map((p) => p.evaluate(() => window.__game.quests.slimeKills)));
+const pickupsAfterB = await B.evaluate(() => window.__game.pickups.length);
+killsAfter[1] === killsBefore[1] + 1 && killsAfter[0] === killsBefore[0]
+  ? ok(`擊殺歸屬正確(補刀者 B 任務 +1:${killsBefore[1]}→${killsAfter[1]},房主 A 不變:${killsAfter[0]})`)
+  : fail(`擊殺歸屬異常:A ${killsBefore[0]}→${killsAfter[0]}、B ${killsBefore[1]}→${killsAfter[1]}`);
+pickupsAfterB > pickupsBeforeB
+  ? ok(`補刀者 B 在自己世界產出掉落(${pickupsBeforeB}→${pickupsAfterB})`)
+  : fail(`補刀者 B 未產出掉落:${pickupsBeforeB}→${pickupsAfterB}`);
+
+// ── 階段 3b-2:敵人傷害客戶端 + 最近玩家鎖定 ──────────────────
+// 9. 把 B 放到 1 號史萊姆的「房主權威位置」、A 移到遠處 → 敵人應鎖定最近者 B,房主結算後送傷害回 B。
+//    注意:要用房主端的敵人座標(權威),不能用客戶端的傀儡座標(會有同步延遲,導致貼錯位置)。
+const ePosAuth = await A.evaluate(() => { const e = window.__game.enemies[1].mesh.position; return { x: e.x, z: e.z }; });
+await A.evaluate(() => window.__game.player.mesh.position.set(50, 5, 50)); // 房主走遠,確保 B 最近
+await B.evaluate((e) => window.__game.player.mesh.position.set(e.x, 5, e.z), ePosAuth);
+const bHpBefore = await B.evaluate(() => window.__game.player.hp);
+await B.waitForTimeout(5000); // 等房主端敵人 chase→windup→lunge 命中 B(每 ~1.8s 一次)
+const bHpAfter = await B.evaluate(() => window.__game.player.hp);
+bHpAfter < bHpBefore
+  ? ok(`敵人鎖定最近玩家並傷害客戶端(B HP ${bHpBefore}→${bHpAfter})`)
+  : fail(`客戶端未被敵人傷害(最近鎖定/pdmg 失效):B HP ${bHpBefore}→${bHpAfter}`);
+
+// ── 階段 3b-3:客戶端控場 + 頭目預警跨端 ──────────────────────
+// 10. 客戶端對共享敵人施加冰凍 → 房主權威套用,並把「冰凍」旗標經快照同步回客戶端傀儡
+const ccIdx = 5; // 一隻未被前面測試動過的史萊姆
+await B.evaluate((i) => window.__game.enemies[i].freeze(5), ccIdx); // 客戶端只記帳 → 送房主
+await B.waitForTimeout(700); // 等 cc 送房主 → 房主套用 → 旗標隨快照同步回 B
+const hostFreeze = await A.evaluate((i) => window.__game.enemies[i].freezeT, ccIdx);
+const clientCcFlag = await B.evaluate((i) => window.__game.enemies[i].remoteStatusFlag, ccIdx);
+hostFreeze > 0
+  ? ok(`客戶端控場經房主權威套用(房主端 freezeT=${hostFreeze.toFixed(1)})`)
+  : fail(`客戶端控場未送達房主:freezeT=${hostFreeze}`);
+clientCcFlag === 3
+  ? ok(`控場狀態旗標同步回客戶端傀儡(flag=3 冰凍)`)
+  : fail(`控場旗標未同步回客戶端傀儡:flag=${clientCcFlag}`);
+
+// 11. 頭目蓄力預警跨端:房主強制 12 號菁英施放特殊技,客戶端傀儡應收到預警/引爆旗標
+await A.evaluate(() => window.__game.enemies[12].forceSpecial());
+await B.waitForTimeout(300); // 等 telegraph 階段的旗標隨快照同步到 B
+const bossFlag = await B.evaluate(() => window.__game.enemies[12].remoteStatusFlag);
+bossFlag === 1 || bossFlag === 2
+  ? ok(`頭目蓄力預警/引爆跨端同步到客戶端(flag=${bossFlag})`)
+  : fail(`頭目預警未跨端同步:flag=${bossFlag}`);
+
+// 12. 房主離線 → 移交:A 關閉後,B 應移除 A 的 avatar 並接任房主
 await A.close();
 await B.waitForTimeout(700);
 const afterLeave = await B.evaluate(() => window.__game.remotePlayers.size);
@@ -109,4 +163,4 @@ bHostNow === true ? ok("房主移交成功(A 離線後 B 接任房主)") : fail(
 
 await browser.close();
 if (errors.length) { console.error(`\n多人驗證失敗 ${errors.length} 項`); process.exit(1); }
-console.log("\n✅ 多人第 3a 階段(房主權威共享敵人)驗證全綠");
+console.log("\n✅ 多人第 3a/3b 階段(共享敵人 + 各自成長歸屬 + 敵人傷害客戶端 + 控場/預警跨端)驗證全綠");

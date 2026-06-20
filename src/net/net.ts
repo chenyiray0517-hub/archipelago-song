@@ -27,8 +27,14 @@ type ServerMsg =
   | { t: "host"; id: string }
   /** 房主廣播的敵人快照:扁平陣列 [x,y,z,yaw,dead,hp]×敵人數(階段 3a) */
   | { t: "enemies"; id: string; e: number[] }
-  /** 客戶端→房主的傷害請求(階段 3a) */
-  | { t: "hit"; id: string; i: number; dmg: number };
+  /** 客戶端→房主的傷害請求(階段 3a;id = 送出傷害的客戶端) */
+  | { t: "hit"; id: string; i: number; dmg: number }
+  /** 房主→客戶端:敵人 i 被 by 補刀擊殺,該客戶端在自己世界結算掉落(階段 3b) */
+  | { t: "kill"; id: string; i: number; by: string }
+  /** 房主→指定客戶端:敵人對該玩家造成傷害(突進/頭目技);to 指定承受者(階段 3b) */
+  | { t: "pdmg"; id: string; to: string; dmg: number; sx: number; sy: number; sz: number; knock: number; eff: string }
+  /** 客戶端→房主:對敵人 i 施加控場(冰凍/灼燒/麻痺),由房主權威套用(階段 3b) */
+  | { t: "cc"; id: string; i: number; kind: "freeze" | "burn" | "stun"; sec: number; dps: number };
 
 export interface NetCallbacks {
   /** 收到別人的最新狀態(第一次收到即代表該玩家出現) */
@@ -41,8 +47,14 @@ export interface NetCallbacks {
   onHostChange?(isHost: boolean): void;
   /** 房主送來的敵人快照(僅客戶端會收到)(階段 3a) */
   onEnemies?(e: number[]): void;
-  /** 客戶端送來的傷害請求(僅房主需處理)(階段 3a) */
-  onHit?(i: number, dmg: number): void;
+  /** 客戶端送來的傷害請求(僅房主需處理);by = 送出傷害的客戶端 id(階段 3a/3b) */
+  onHit?(i: number, dmg: number, by: string): void;
+  /** 房主宣告擊殺歸屬:敵人 i 由 by 補刀;by===本機則自行結算掉落(階段 3b) */
+  onKill?(i: number, by: string): void;
+  /** 敵人對本機玩家造成傷害(僅被指定的客戶端會收到;net 已過濾 to===本機)(階段 3b) */
+  onPlayerDamage?(dmg: number, sx: number, sy: number, sz: number, knock: number, eff: string): void;
+  /** 客戶端送來的控場請求(僅房主需處理)(階段 3b) */
+  onCc?(i: number, kind: "freeze" | "burn" | "stun", sec: number, dps: number): void;
 }
 
 /** 伺服器位址:正式環境用建置時注入的 VITE_SERVER_URL,開發走本機 8787;房間名併入 ?room= */
@@ -125,7 +137,17 @@ export class NetClient {
           this.cb.onEnemies?.(msg.e);
           break;
         case "hit":
-          this.cb.onHit?.(msg.i, msg.dmg);
+          this.cb.onHit?.(msg.i, msg.dmg, msg.id);
+          break;
+        case "kill":
+          this.cb.onKill?.(msg.i, msg.by);
+          break;
+        case "pdmg":
+          // 只有被指定的承受者才套用(房主廣播,其餘客戶端忽略)
+          if (msg.to === this.localId) this.cb.onPlayerDamage?.(msg.dmg, msg.sx, msg.sy, msg.sz, msg.knock, msg.eff);
+          break;
+        case "cc":
+          this.cb.onCc?.(msg.i, msg.kind, msg.sec, msg.dps);
           break;
       }
     });
@@ -158,5 +180,23 @@ export class NetClient {
   sendHit(i: number, dmg: number): void {
     if (!this.connected) return;
     this.ws!.send(JSON.stringify({ t: "hit", i, dmg }));
+  }
+
+  /** 房主廣播擊殺歸屬給同房間(by = 補刀的客戶端 id)(階段 3b) */
+  sendKill(i: number, by: string): void {
+    if (!this.connected) return;
+    this.ws!.send(JSON.stringify({ t: "kill", i, by }));
+  }
+
+  /** 房主送傷害給指定客戶端(to);sx/sy/sz = 傷害來源座標,knock = 擊退力道,eff = 附加狀態(階段 3b) */
+  sendPlayerDamage(to: string, dmg: number, sx: number, sy: number, sz: number, knock: number, eff: string): void {
+    if (!this.connected) return;
+    this.ws!.send(JSON.stringify({ t: "pdmg", to, dmg, sx, sy, sz, knock, eff }));
+  }
+
+  /** 客戶端送控場請求給房主(冰凍/灼燒/麻痺);sec=秒數,dps=灼燒每秒傷害(其餘為 0)(階段 3b) */
+  sendCc(i: number, kind: "freeze" | "burn" | "stun", sec: number, dps: number): void {
+    if (!this.connected) return;
+    this.ws!.send(JSON.stringify({ t: "cc", i, kind, sec, dps }));
   }
 }

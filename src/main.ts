@@ -227,8 +227,21 @@ function main(): void {
     onEnemies(e) {
       applyEnemySnapshot(e);
     },
-    onHit(i, dmg) {
-      hostApplyHit(i, dmg);
+    onHit(i, dmg, by) {
+      hostApplyHit(i, dmg, by);
+    },
+    // 階段 3b:房主宣告擊殺歸屬;補刀者為本機時,於自己世界結算掉落/任務
+    onKill(i, by) {
+      const enemy = enemies[i];
+      if (by === net.localId && enemy) spawnDrops(enemy);
+    },
+    // 階段 3b:敵人對本機(客戶端)玩家造成傷害,房主結算後送來,於本機套用
+    onPlayerDamage(dmg, sx, sy, sz, knock, eff) {
+      applyRemoteDamage(dmg, sx, sy, sz, knock, eff);
+    },
+    // 階段 3b:客戶端對共享敵人施加的控場,房主權威套用(再經快照同步回所有人)
+    onCc(i, kind, sec, dps) {
+      hostApplyCc(i, kind, sec, dps);
     },
   });
   // 多人房間(opt-in,避免單人玩家無謂連線、連不上時的 console 紅字):
@@ -245,6 +258,8 @@ function main(): void {
   // 敵人快照送出節流(房主端,約 12Hz);r2 = 縮短封包數字到小數兩位
   let netEnemyT = 0;
   const r2 = (n: number): number => Math.round(n * 100) / 100;
+  // 每隻敵人在快照中佔的數字數量:x,y,z,yaw,dead,hp,statusFlag(階段 3b 由 6 增為 7)
+  const SNAP_STRIDE = 7;
 
   const inventory = new Inventory();
 
@@ -1504,10 +1519,10 @@ function main(): void {
   function applyEnemySnapshot(e: number[]): void {
     if (net.isHost) return; // 房主以本機模擬為準,不套用(理論上也收不到自己的廣播)
     for (let k = 0; k < enemies.length; k++) {
-      const o = k * 6;
-      if (o + 5 >= e.length) break;
+      const o = k * SNAP_STRIDE;
+      if (o + SNAP_STRIDE - 1 >= e.length) break;
       const enemy = enemies[k];
-      const justDied = enemy.applyNetSnapshot(e[o], e[o + 1], e[o + 2], e[o + 3], e[o + 4] === 1, e[o + 5]);
+      const justDied = enemy.applyNetSnapshot(e[o], e[o + 1], e[o + 2], e[o + 3], e[o + 4] === 1, e[o + 5], e[o + 6]);
       if (justDied) {
         const ep = enemy.mesh.position;
         audio.sfx("enemyDie");
@@ -1516,8 +1531,11 @@ function main(): void {
     }
   }
 
-  /** 房主結算客戶端送來的傷害:權威扣血,死亡走既有掉落流程(3a 掉落暫歸房主世界,歸屬留待 3b) */
-  function hostApplyHit(i: number, dmg: number): void {
+  /**
+   * 房主結算客戶端送來的傷害:權威扣血;死亡時的掉落歸屬由補刀者自己結算(階段 3b)。
+   * by = 送出傷害的客戶端 id;擊殺成立則廣播 kill 給該客戶端(房主端只放死亡特效、不產掉落)。
+   */
+  function hostApplyHit(i: number, dmg: number, by: string): void {
     if (!net.isHost) return;
     const enemy = enemies[i];
     if (!enemy || enemy.isDead) return;
@@ -1525,10 +1543,67 @@ function main(): void {
     const top = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 2.4);
     floats.spawn(top, `-${Math.round(dmg)}`, "#ffd27a"); // 金色 = 同伴造成的傷害
     if (died) {
+      // 死亡視覺由房主播放並透過快照同步;掉落/任務歸屬補刀的客戶端,不在房主世界產出
       audio.sfx("enemyDie");
       fx.burst(enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1), 0x9be89b, 16);
-      spawnDrops(enemy);
+      net.sendKill(i, by);
     }
+  }
+
+  /** 房主權威套用客戶端送來的控場(冰凍/灼燒/麻痺);效果經敵人快照旗標同步回所有人(階段 3b) */
+  function hostApplyCc(i: number, kind: "freeze" | "burn" | "stun", sec: number, dps: number): void {
+    if (!net.isHost) return;
+    const enemy = enemies[i];
+    if (!enemy || enemy.isDead) return;
+    if (kind === "freeze") enemy.freeze(sec);
+    else if (kind === "burn") enemy.burn(sec, dps);
+    else enemy.stun(sec);
+  }
+
+  /**
+   * 房主端:在某敵人附近找最近的「可鎖定玩家」(本機 + 在場遠端);供敵人鎖定最近者(階段 3b)。
+   * @returns remoteId=null 代表最近者是房主本機;否則為該遠端玩家 id。
+   * (遠端玩家死亡狀態房主無從得知,一律視為存活;客戶端死亡同步留待後續。)
+   */
+  function nearestPlayer(epos: THREE.Vector3): { pos: THREE.Vector3; remoteId: string | null } {
+    let bestPos = player.mesh.position;
+    let bestId: string | null = null;
+    let bestD = player.isDead ? Infinity : epos.distanceToSquared(player.mesh.position);
+    for (const [id, rp] of remotePlayers) {
+      const d = epos.distanceToSquared(rp.mesh.position);
+      if (d < bestD) {
+        bestD = d;
+        bestPos = rp.mesh.position;
+        bestId = id;
+      }
+    }
+    return { pos: bestPos, remoteId: bestId };
+  }
+
+  /**
+   * 客戶端:套用房主送來的「敵人對我的傷害」(突進普攻或頭目技);與單機受擊回饋一致(階段 3b)。
+   * knock>0 追加擊退;eff=chill/burn 追加狀態(與房主端頭目技效果對齊)。
+   */
+  function applyRemoteDamage(dmg: number, sx: number, sy: number, sz: number, knock: number, eff: string): void {
+    if (player.isDead) return;
+    const src = new THREE.Vector3(sx, sy, sz);
+    const hit = player.takeDamage(dmg, src);
+    const head = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
+    if (hit.blocked) {
+      floats.spawn(head, `格擋 -${hit.taken}`, "#cfd8e8");
+      audio.sfx("block");
+      fx.shake(0.12, 0.12);
+      fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.3), 0xcfd8e8, 6, 5);
+    } else if (hit.taken > 0) {
+      floats.spawn(head, `-${hit.taken}`, "#ff5544");
+      audio.sfx("hurt");
+      fx.shake(0.4, 0.3);
+      fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0xff6655, 10);
+      if (knock > 0) player.shove(src, knock);
+      if (eff === "chill") player.chill(3);
+      else if (eff === "burn") player.applyBurn(4, Math.max(2, Math.round(dmg * 0.15)));
+    }
+    if (player.isDead) showDeathScreen();
   }
 
   if (import.meta.env.DEV) {
@@ -2088,24 +2163,36 @@ function main(): void {
       // 水下敵人在玩家未潛水時休眠(不會攻擊海面上的船)
       const dormant =
         (enemy.kind === "deep" || enemy.kind === "voidGuardian") && !diving;
-      const dmg = enemy.update(worldDt, player.mesh.position, player.isDead || dormant);
-      if (dmg > 0 && !player.isDead) {
-        const hit = player.takeDamage(dmg, enemy.mesh.position);
-        const playerHead = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
-        if (hit.blocked) {
-          floats.spawn(playerHead, `格擋 -${hit.taken}`, "#cfd8e8");
-          audio.sfx("block");
-          fx.shake(0.12, 0.12);
-          fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.3), 0xcfd8e8, 6, 5);
-        } else if (hit.taken > 0) {
-          floats.spawn(playerHead, `-${hit.taken}`, "#ff5544");
-          audio.sfx("hurt");
-          fx.shake(0.4, 0.3);
-          fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0xff6655, 10);
+      // 多人:房主端敵人鎖定「最近的可鎖定玩家」(本機或在場遠端);單機/無同伴沿用本機玩家。
+      // targetRemote=null → 鎖定房主本機(走既有本機受擊);否則鎖定該客戶端(傷害送 pdmg)。
+      const tgt = net.isHost && remotePlayers.size > 0 ? nearestPlayer(enemy.mesh.position) : null;
+      const targetPos = tgt ? tgt.pos : player.mesh.position;
+      const targetRemote = tgt ? tgt.remoteId : null;
+      const targetDead = dormant || (targetRemote === null ? player.isDead : false);
+      const dmg = enemy.update(worldDt, targetPos, targetDead);
+      const ep = enemy.mesh.position;
+      if (dmg > 0 && !targetDead) {
+        if (targetRemote !== null) {
+          // 命中遠端玩家:送該客戶端自行套用(普攻突進:無擊退、無附加狀態)
+          net.sendPlayerDamage(targetRemote, dmg, ep.x, ep.y, ep.z, 0, "");
+        } else {
+          const hit = player.takeDamage(dmg, ep);
+          const playerHead = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
+          if (hit.blocked) {
+            floats.spawn(playerHead, `格擋 -${hit.taken}`, "#cfd8e8");
+            audio.sfx("block");
+            fx.shake(0.12, 0.12);
+            fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.3), 0xcfd8e8, 6, 5);
+          } else if (hit.taken > 0) {
+            floats.spawn(playerHead, `-${hit.taken}`, "#ff5544");
+            audio.sfx("hurt");
+            fx.shake(0.4, 0.3);
+            fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0xff6655, 10);
+          }
+          if (player.isDead) showDeathScreen();
         }
-        if (player.isDead) showDeathScreen();
       }
-      // 頭目特殊技能引爆:警示特效 + 範圍命中玩家 + 附加狀態
+      // 頭目特殊技能引爆:警示特效 + 範圍命中玩家 + 附加狀態(視覺一律在房主端播放)
       const ev = enemy.specialEvent;
       if (ev) {
         enemy.specialEvent = null;
@@ -2121,23 +2208,29 @@ function main(): void {
             "#7be87b",
           );
         }
-        if (ev.hitPlayer && !player.isDead) {
-          const hit = player.takeDamage(ev.dmg, enemy.mesh.position);
-          const head = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
-          if (hit.blocked) {
-            floats.spawn(head, `格擋 -${hit.taken}`, "#cfd8e8");
-            audio.sfx("block");
-          } else if (hit.taken > 0) {
-            floats.spawn(head, `-${hit.taken}`, "#ff5544");
-            audio.sfx("hurt");
-            fx.shake(0.5, 0.35);
-            fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), ev.color, 12);
-            player.shove(enemy.mesh.position, ev.knock);
-            if (ev.effect === "chill") player.chill(3);
-            else if (ev.effect === "burn")
-              player.applyBurn(4, Math.max(2, Math.round(ev.dmg * 0.15)));
+        if (ev.hitPlayer) {
+          if (targetRemote !== null) {
+            // 命中遠端玩家:傷害 + 擊退 + 附加狀態(chill/burn)送該客戶端;drain 已在房主端回血
+            const eff = ev.effect === "chill" ? "chill" : ev.effect === "burn" ? "burn" : "";
+            net.sendPlayerDamage(targetRemote, ev.dmg, ep.x, ep.y, ep.z, ev.knock, eff);
+          } else if (!player.isDead) {
+            const hit = player.takeDamage(ev.dmg, enemy.mesh.position);
+            const head = player.mesh.position.clone().setY(player.mesh.position.y + 2.6);
+            if (hit.blocked) {
+              floats.spawn(head, `格擋 -${hit.taken}`, "#cfd8e8");
+              audio.sfx("block");
+            } else if (hit.taken > 0) {
+              floats.spawn(head, `-${hit.taken}`, "#ff5544");
+              audio.sfx("hurt");
+              fx.shake(0.5, 0.35);
+              fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), ev.color, 12);
+              player.shove(enemy.mesh.position, ev.knock);
+              if (ev.effect === "chill") player.chill(3);
+              else if (ev.effect === "burn")
+                player.applyBurn(4, Math.max(2, Math.round(ev.dmg * 0.15)));
+            }
+            if (player.isDead) showDeathScreen();
           }
-          if (player.isDead) showDeathScreen();
         }
       }
       // 灼燒 DoT 結算(溶岩石熔岩噴發點燃;每 0.5 秒跳一次)
@@ -2533,12 +2626,27 @@ function main(): void {
       net.sendState(state);
     }
 
-    // ── 多人階段 3a:房主廣播敵人快照(約 12Hz);客戶端排空待送傷害給房主 ──
+    // ── 多人階段 3a/3b:房主廣播敵人快照(約 12Hz);客戶端排空待送傷害/控場給房主 ──
     if (clientRemote) {
       for (const enemy of enemies) {
+        const i = enemy.netIndex;
         if (enemy.pendingNetDamage > 0) {
-          net.sendHit(enemy.netIndex, Math.round(enemy.pendingNetDamage));
+          net.sendHit(i, Math.round(enemy.pendingNetDamage));
           enemy.pendingNetDamage = 0;
+        }
+        // 控場(冰凍/灼燒/麻痺)送房主權威套用(階段 3b)
+        if (enemy.pendingNetFreeze > 0) {
+          net.sendCc(i, "freeze", enemy.pendingNetFreeze, 0);
+          enemy.pendingNetFreeze = 0;
+        }
+        if (enemy.pendingNetStun > 0) {
+          net.sendCc(i, "stun", enemy.pendingNetStun, 0);
+          enemy.pendingNetStun = 0;
+        }
+        if (enemy.pendingNetBurnSec > 0) {
+          net.sendCc(i, "burn", enemy.pendingNetBurnSec, enemy.pendingNetBurnDps);
+          enemy.pendingNetBurnSec = 0;
+          enemy.pendingNetBurnDps = 0;
         }
       }
     } else if (net.isHost && remotePlayers.size > 0) {
@@ -2548,7 +2656,8 @@ function main(): void {
         const snap: number[] = [];
         for (const enemy of enemies) {
           const ep = enemy.mesh.position;
-          snap.push(r2(ep.x), r2(ep.y), r2(ep.z), r2(enemy.mesh.rotation.y), enemy.isDead ? 1 : 0, enemy.hp);
+          // 每敵 SNAP_STRIDE 個數字:x,y,z,yaw,dead,hp,statusFlag(階段 3b 加入狀態旗標)
+          snap.push(r2(ep.x), r2(ep.y), r2(ep.z), r2(enemy.mesh.rotation.y), enemy.isDead ? 1 : 0, enemy.hp, enemy.statusFlag);
         }
         net.sendEnemies(snap);
       }

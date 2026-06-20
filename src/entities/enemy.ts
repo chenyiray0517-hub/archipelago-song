@@ -171,6 +171,14 @@ export class Enemy {
   netIndex = -1;
   /** 遠端模式下累積的待送傷害(main 每幀排空後送房主) */
   pendingNetDamage = 0;
+  // 遠端模式下累積的待送控場(冰凍/灼燒/麻痺;main 每幀排空後送房主權威套用)(階段 3b)
+  pendingNetFreeze = 0;
+  pendingNetStun = 0;
+  pendingNetBurnSec = 0;
+  pendingNetBurnDps = 0;
+  /** 遠端傀儡狀態旗標(由房主快照驅動):0 無 / 1 蓄力預警 / 2 引爆 / 3 冰凍 / 4 麻痺 / 5 灼燒 */
+  private remoteFlag = 0;
+  private remoteRingT = 0;
   private netTarget = new THREE.Vector3();
   private netYaw = 0;
   private netDead = false;
@@ -532,12 +540,22 @@ export class Enemy {
   /** 冰凍指定秒數(霜語晶冰箭) */
   freeze(seconds: number): void {
     if (this.isDead) return;
+    // 遠端傀儡:只記下控場等 main 送房主權威套用,不在本機改狀態(階段 3b)
+    if (this.remote) {
+      this.pendingNetFreeze = Math.max(this.pendingNetFreeze, seconds);
+      return;
+    }
     this.freezeT = Math.max(this.freezeT, seconds);
   }
 
   /** 點燃:持續灼燒(溶岩石熔岩噴發);時間與每秒傷害取較大值疊加 */
   burn(seconds: number, dps: number): void {
     if (this.isDead) return;
+    if (this.remote) {
+      this.pendingNetBurnSec = Math.max(this.pendingNetBurnSec, seconds);
+      this.pendingNetBurnDps = Math.max(this.pendingNetBurnDps, dps);
+      return;
+    }
     this.burnT = Math.max(this.burnT, seconds);
     this.burnDps = Math.max(this.burnDps, dps);
   }
@@ -545,7 +563,21 @@ export class Enemy {
   /** 麻痺指定秒數(雷光果連鎖閃電) */
   stun(seconds: number): void {
     if (this.isDead) return;
+    if (this.remote) {
+      this.pendingNetStun = Math.max(this.pendingNetStun, seconds);
+      return;
+    }
     this.stunT = Math.max(this.stunT, seconds);
+  }
+
+  /** 房主端:供 main 建構快照時讀取此敵人的狀態旗標(0 無/1 預警/2 引爆/3 冰凍/4 麻痺/5 灼燒) */
+  get statusFlag(): number {
+    if (this.specialPhase === "telegraph") return 1;
+    if (this.specialPhase === "blast") return 2;
+    if (this.freezeT > 0) return 3;
+    if (this.stunT > 0) return 4;
+    if (this.burnT > 0) return 5;
+    return 0;
   }
 
   /** 本島頭目專屬特殊技能名稱(雜魚為 null) */
@@ -662,6 +694,11 @@ export class Enemy {
     this.drawHpBar();
   }
 
+  /** 測試掛鉤:遠端傀儡目前由房主同步到的狀態旗標(0 無/1 預警/2 引爆/3 冰凍/4 麻痺/5 灼燒) */
+  get remoteStatusFlag(): number {
+    return this.remoteFlag;
+  }
+
   /**
    * 遠端傀儡每幀視覺更新:朝房主快照位置/朝向插值,輕微跳動,受擊閃白衰減。
    * 不跑 FSM、不結算戰鬥(那些都在房主端)。
@@ -678,19 +715,50 @@ export class Enemy {
     this.body.position.y = Math.abs(Math.sin(this.hopPhase)) * 0.12;
     if (this.flashT > 0) this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xffffff), 0.7);
     else this.blobMaterial.color.copy(this.baseColor);
+    // 狀態旗標跨端視覺(階段 3b):頭目蓄力預警/引爆圈 + 冰凍/麻痺/灼燒著色
+    this.renderRemoteStatus(dt);
+  }
+
+  /** 遠端傀儡:依房主同步的狀態旗標渲染預警圈與控場著色(僅視覺,不影響模擬) */
+  private renderRemoteStatus(dt: number): void {
+    const f = this.remoteFlag;
+    if (f === 1) {
+      this.ensureRing();
+      this.remoteRingT += dt;
+      this.updateRing(this.remoteRingT, true); // 蓄力:全幅閃爍預警
+    } else if (f === 2) {
+      this.ensureRing();
+      this.remoteRingT += dt;
+      this.updateRing(this.remoteRingT / BLAST_TIME, false); // 引爆:由中心爆開淡出
+    } else {
+      this.hideRing();
+    }
+    if (this.flashT > 0) return; // 受擊白閃優先
+    if (f === 3) this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xbfeaff), 0.75);
+    else if (f === 4) {
+      const flicker = 0.4 + 0.4 * Math.abs(Math.sin(this.hopPhase * 5));
+      this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xfff080), flicker);
+    } else if (f === 5) this.blobMaterial.color.lerp(new THREE.Color(0xff6a2c), 0.5);
   }
 
   /**
    * 套用房主送來的敵人快照(遠端模式)。
    * @returns 是否「本次剛由存活轉為死亡」(供 main 播放死亡特效/音效)
    */
-  applyNetSnapshot(x: number, y: number, z: number, yaw: number, dead: boolean, hp: number): boolean {
+  applyNetSnapshot(x: number, y: number, z: number, yaw: number, dead: boolean, hp: number, flag: number): boolean {
     const wasAlive = !this.netDead;
     this.netDead = dead;
     this.hp = hp; // 永遠以房主血量為準(含死亡=0,移交房主時 FSM 才接得到正確值)
     // 粗略對齊 state,讓 isDead 與「移交房主時 FSM 接手」運作正常
     this.state = dead ? "dead" : "patrol";
+    // 狀態旗標變更時重置預警圈計時(讓蓄力→引爆的圈動畫從頭播)(階段 3b)
+    if (flag !== this.remoteFlag) {
+      this.remoteFlag = flag;
+      this.remoteRingT = 0;
+    }
     if (dead) {
+      this.remoteFlag = 0;
+      this.hideRing();
       if (this.mesh.visible) {
         this.mesh.visible = false;
         this.hpBar.visible = false;

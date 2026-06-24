@@ -48,6 +48,8 @@ export interface SaveData {
   };
   /** 出戰中的靈紋寶石(上限 4;舊檔無此欄位時依持有順序遷移) */
   gemsEquipped?: GemKey[];
+  /** 寶石技能鍵位綁定(索引 0–5 對應數字鍵 1–6;舊檔無此欄位時依出戰順序自動補) */
+  gemSlots?: (GemKey | null)[];
   /** 出戰中的靈樹果實(上限 2;舊檔無此欄位時依持有順序遷移) */
   fruitsEquipped?: FruitKey[];
 }

@@ -5,7 +5,7 @@ import {
   type Inventory,
   type PlayerStats,
 } from "../systems/stats";
-import { MAX_EQUIPPED_GEMS, type GemBag, type GemKey } from "../systems/gems";
+import { MAX_EQUIPPED_GEMS, GEM_SLOT_COUNT, isActiveGem, type GemBag, type GemKey } from "../systems/gems";
 import { MAX_EQUIPPED_FRUITS, type FruitBag, type FruitKey } from "../systems/fruits";
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 
@@ -27,6 +27,9 @@ const BAG_CSS = `
 #bag .gem-slot.eq { border-color: #f0c040; background: rgba(240,192,64,0.14); }
 #bag .gembtn { margin: 4px 0 0; padding: 2px 8px; font-size: 11px; }
 #bag .gembtn.on { background: #c8902c; }
+#bag .keybinds { display: flex; gap: 2px; justify-content: center; margin-top: 4px; }
+#bag .kb { padding: 1px 0; width: 16px; margin: 0; font-size: 10px; line-height: 1.4; background: #3a4760; border-radius: 4px; }
+#bag .kb.on { background: #f0c040; color: #1a1a22; font-weight: 700; }
 `;
 
 const CRYSTAL_LABEL: Record<CrystalSize, string> = {
@@ -92,6 +95,7 @@ export class BagPanel {
   /** 背包開啟時重繪內容(數值變動後呼叫) */
   render(): void {
     if (!this.visible) return;
+    this.gems.ensureSlots(); // 確保出戰主動寶石都有鍵位,鍵位列才顯示正確高亮
     const s = this.stats;
     const crystalRows = (Object.keys(CRYSTAL_LABEL) as CrystalSize[])
       .map((size) => {
@@ -137,8 +141,17 @@ export class BagPanel {
           return `<div class="gem-slot off">${icon}<br/>${name}<br/><span class='muted'>未取得</span></div>`;
         const eq = this.gems.isEquipped(key);
         const disabled = !eq && gemFull;
+        // 出戰中的主動寶石:列出 1–6 鍵位,目前綁定的高亮,點擊即指定/對調
+        let keybinds = "";
+        if (eq && isActiveGem(key)) {
+          const cur = this.gems.slotOf(key);
+          const btns = Array.from({ length: GEM_SLOT_COUNT }, (_, i) =>
+            `<button class="kb ${cur === i ? "on" : ""}" data-bind="${key}" data-slot="${i}">${i + 1}</button>`,
+          ).join("");
+          keybinds = `<div class="keybinds">${btns}</div>`;
+        }
         return `<div class="gem-slot ${eq ? "eq" : ""}">${icon}<br/>${name}<br/>
-          <button class="gembtn ${eq ? "on" : ""}" data-gemtoggle="${key}" ${disabled ? "disabled" : ""}>${eq ? "✅ 出戰" : "裝備"}</button></div>`;
+          <button class="gembtn ${eq ? "on" : ""}" data-gemtoggle="${key}" ${disabled ? "disabled" : ""}>${eq ? "✅ 出戰" : "裝備"}</button>${keybinds}</div>`;
       })
       .join("");
 
@@ -197,7 +210,7 @@ export class BagPanel {
       ${seaGemRows.length > 0 ? `<div class="section"><h3>重要道具</h3>${seaGemRows.join("")}</div>` : ""}
       <div class="section"><h3>裝備</h3>${equipRows || '<div class="muted">尚無裝備,去商人圓圓那裡看看吧</div>'}</div>
       <div class="section"><h3>靈紋寶石盤(出戰 ${this.gems.equipped.length}/${MAX_EQUIPPED_GEMS})</h3>
-        <div class="muted" style="margin-bottom:6px;">點「裝備」選擇出戰寶石,只有出戰中的技能與被動才生效</div>
+        <div class="muted" style="margin-bottom:6px;">點「裝備」選擇出戰寶石(只有出戰中的技能與被動才生效);出戰的主動寶石點下方數字 1–6 指定快捷鍵位</div>
         <div class="gems">${gemGrid}</div></div>
       <div class="section"><h3>靈樹果實(出戰 ${this.fruits.equipped.length}/${MAX_EQUIPPED_FRUITS})</h3><div class="gems">${fruitGrid}</div></div>
       <div class="section alloc"><h3>能力點分配</h3>${allocRows}</div>
@@ -251,6 +264,15 @@ export class BagPanel {
         const key = btn.dataset.gemtoggle as GemKey;
         if (this.gems.isEquipped(key)) this.gems.unequip(key);
         else this.gems.equip(key);
+        this.onLoadoutChange();
+        this.render();
+      });
+    });
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-bind]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.bind as GemKey;
+        const slot = Number(btn.dataset.slot);
+        this.gems.assignSlot(key, slot);
         this.onLoadoutChange();
         this.render();
       });

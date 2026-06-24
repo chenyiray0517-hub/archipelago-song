@@ -30,6 +30,16 @@ export type UpgradableGem = "flame" | "wind" | "earth" | "frost" | "void" | "lav
 export type GemKey = "flame" | "wind" | "earth" | "frost" | "tide" | "void" | "lava" | "aqua" | "life";
 /** 寶石出戰格上限:同時只能裝備這麼多顆,唯有出戰中的寶石技能/被動才生效 */
 export const MAX_EQUIPPED_GEMS = 4;
+
+/** 主動施放(需綁定數字鍵位)的寶石;風語石/潮汐石為被動,不佔鍵位 */
+export const ACTIVE_GEMS: GemKey[] = ["flame", "earth", "frost", "void", "lava", "aqua", "life"];
+/** 是否為主動施放型寶石(可綁定 1–6 鍵位) */
+export function isActiveGem(key: GemKey): boolean {
+  return ACTIVE_GEMS.includes(key);
+}
+/** 寶石技能鍵位數量(數字鍵 1–6) */
+export const GEM_SLOT_COUNT = 6;
+
 /** 寶石標準排序(背包盤顯示、HUD、舊存檔遷移預設裝備皆依此序) */
 export const GEM_ORDER: GemKey[] = [
   "flame",
@@ -146,6 +156,8 @@ export class GemBag {
   levels: Record<UpgradableGem, number> = { flame: 1, wind: 1, earth: 1, frost: 1, void: 1, lava: 1, aqua: 1, life: 1 };
   /** 已出戰(裝備)的寶石,依裝備順序;上限 MAX_EQUIPPED_GEMS。只有出戰中的寶石技能/被動才生效 */
   equipped: GemKey[] = [];
+  /** 技能鍵位:索引 i 對應數字鍵 i+1(1–6),存放綁定該鍵的主動寶石(null=空)。被動寶石不佔鍵位 */
+  slots: (GemKey | null)[] = new Array(GEM_SLOT_COUNT).fill(null);
 
   /** 是否持有指定寶石 */
   ownedOf(key: GemKey): boolean {
@@ -173,15 +185,59 @@ export class GemBag {
     return this.equipped.length < MAX_EQUIPPED_GEMS;
   }
 
-  /** 裝備出戰(需已持有、未裝備且尚有空位);成功回傳 true */
+  /** 裝備出戰(需已持有、未裝備且尚有空位);成功回傳 true。主動寶石自動綁到第一個空鍵位 */
   equip(key: GemKey): boolean {
     if (!this.ownedOf(key) || this.isEquipped(key) || !this.hasFreeSlot()) return false;
     this.equipped.push(key);
+    this.ensureSlots();
     return true;
   }
 
-  /** 卸下出戰 */
+  /** 卸下出戰;同時清掉其鍵位 */
   unequip(key: GemKey): void {
+    const i = this.slotOf(key);
+    if (i >= 0) this.slots[i] = null;
     this.equipped = this.equipped.filter((k) => k !== key);
+  }
+
+  /** 寶石目前綁定的鍵位索引(0–5),未綁定回 -1 */
+  slotOf(key: GemKey): number {
+    return this.slots.indexOf(key);
+  }
+
+  /** 取某鍵位(0–5)綁定的寶石,空則 null */
+  gemAt(slot: number): GemKey | null {
+    return this.slots[slot] ?? null;
+  }
+
+  /**
+   * 把主動寶石綁到指定鍵位 i(0–5)。
+   * - 寶石原本在別的鍵位 → 與該鍵位原占用者對調(swap)。
+   * - 寶石原本未綁定 → 直接占用 i,被頂掉者交由 ensureSlots 重綁到空鍵位。
+   * 成功回傳 true。
+   */
+  assignSlot(key: GemKey, i: number): boolean {
+    if (!isActiveGem(key) || !this.isEquipped(key) || i < 0 || i >= GEM_SLOT_COUNT) return false;
+    const prev = this.slotOf(key);
+    const occupant = this.slots[i];
+    this.slots[i] = key;
+    if (prev >= 0) this.slots[prev] = occupant; // 對調(occupant 可能為 null)
+    this.ensureSlots(); // 把任何被頂掉、仍出戰的主動寶石重新補到空鍵位
+    return true;
+  }
+
+  /** 確保每顆「出戰中的主動寶石」都有鍵位:沒鍵位者補到第一個空鍵位;清掉已非出戰的殘留綁定 */
+  ensureSlots(): void {
+    // 清掉已卸下/非主動寶石的殘留綁定
+    for (let i = 0; i < this.slots.length; i++) {
+      const k = this.slots[i];
+      if (k && (!this.isEquipped(k) || !isActiveGem(k))) this.slots[i] = null;
+    }
+    // 出戰中但未綁定的主動寶石,補到第一個空鍵位
+    for (const k of this.equipped) {
+      if (!isActiveGem(k) || this.slotOf(k) >= 0) continue;
+      const free = this.slots.indexOf(null);
+      if (free >= 0) this.slots[free] = k;
+    }
   }
 }

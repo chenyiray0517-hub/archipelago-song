@@ -25,6 +25,17 @@ await page.goto("http://localhost:5173/", { waitUntil: "networkidle" });
 await page.waitForTimeout(2000);
 await page.screenshot({ path: "/tmp/archipelago-1-initial.png" });
 
+// 寶石技能改用數字鍵 1–6:施放某寶石技能 = 確保其已綁鍵位後,按下對應數字鍵。
+// 未綁定(未出戰)時 slotOf=-1,按下 "0"(無綁定)→ 不施放,用於負向測試。
+async function castGem(key) {
+  const digit = await page.evaluate((k) => {
+    const g = window.__game.gems;
+    g.ensureSlots();
+    return g.slotOf(k) + 1; // 1–6;未綁定回 0
+  }, key);
+  await page.keyboard.press(String(digit));
+}
+
 const boot = await page.evaluate(() => ({
   hasGame: !!window.__game,
   enemies: window.__game?.enemies.length,
@@ -221,7 +232,7 @@ const flameResult = await page.evaluate(() => {
   window.__game.gems.equipped = ["flame"]; // 出戰才生效
   return window.__game.player.mp;
 });
-await page.keyboard.press("e");
+await castGem("flame");
 await page.waitForTimeout(200);
 const afterFlame = await page.evaluate(() => ({
   mp: window.__game.player.mp,
@@ -232,6 +243,21 @@ afterFlame.mp <= flameResult - 9
   : fail(`靈力未扣除:${flameResult} → ${afterFlame.mp}`);
 afterFlame.waves > 0 ? ok("火焰劍氣生成") : fail("火焰劍氣未生成");
 await page.screenshot({ path: "/tmp/archipelago-6-flame.png" });
+
+// 8b. 寶石鍵位可指定:把焰心石綁到第 3 鍵,按 "3" 應施放(驗證非預設鍵位也對應正確)
+const slotCastBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.slots = new Array(6).fill(null);
+  g.gems.assignSlot("flame", 2); // 第 3 鍵
+  g.player.mp = g.player.stats.maxMP;
+  return { mp: g.player.mp, slot: g.gems.slotOf("flame") };
+});
+await page.keyboard.press("3");
+await page.waitForTimeout(180);
+const slotCastAfter = await page.evaluate(() => window.__game.player.mp);
+slotCastBefore.slot === 2 && slotCastAfter <= slotCastBefore.mp - 9
+  ? ok(`寶石鍵位指定生效(焰心石綁第 3 鍵,按 3 → 靈力 ${Math.round(slotCastBefore.mp)} → ${Math.round(slotCastAfter)})`)
+  : fail(`數字鍵位施放異常:${JSON.stringify({ slotCastBefore, slotCastAfter })}`);
 
 // 9. NPC 對話:存檔含位置會干擾,直接把玩家移回漁村旁再走向村長
 await page.evaluate(() => {
@@ -427,7 +453,7 @@ const mpBeforeQuake = await page.evaluate(() => {
   return p.mp;
 });
 await page.waitForTimeout(300);
-await page.keyboard.press("c");
+await castGem("earth");
 await page.waitForTimeout(200);
 const mpAfterQuake = await page.evaluate(() => window.__game.player.mp);
 mpAfterQuake <= mpBeforeQuake - 14
@@ -486,7 +512,7 @@ const mpBeforeIce = await page.evaluate(() => {
   return p.mp;
 });
 await page.waitForTimeout(300);
-await page.keyboard.press("v");
+await castGem("frost");
 await page.waitForTimeout(200);
 const afterIce = await page.evaluate(() => ({
   mp: window.__game.player.mp,
@@ -563,7 +589,7 @@ const blinkBefore = await page.evaluate(() => {
   p.mp = p.stats.maxMP;
   return { x: p.mesh.position.x, z: p.mesh.position.z, mp: p.mp };
 });
-await page.keyboard.press("x");
+await castGem("void");
 await page.waitForTimeout(200);
 const blinkAfter = await page.evaluate(() => {
   const p = window.__game.player;
@@ -1031,7 +1057,7 @@ const lavaMpBefore = await page.evaluate(() => {
   g.player.mp = g.player.stats.maxMP;
   return g.player.mp;
 });
-await page.keyboard.press("g");
+await castGem("lava");
 await page.waitForTimeout(200);
 const afterLava = await page.evaluate(() => {
   const waves = window.__game.shockwaves;
@@ -1118,7 +1144,7 @@ const aquaBefore = await page.evaluate(() => {
   reefs.forEach((e, i) => e.mesh.position.set(1790 + (i - 1) * 2, 14, -108));
   return { mp: g.player.mp, hp: reefs.map((r) => r.hp) };
 });
-await page.keyboard.press("b");
+await castGem("aqua");
 await page.waitForTimeout(150);
 const aquaAfter = await page.evaluate(() => {
   const g = window.__game;
@@ -1152,7 +1178,7 @@ const lifeBefore = await page.evaluate(() => {
   spore.mesh.position.set(2120, 18, -176); // 玩家前方(+z)約 4
   return { mp: g.player.mp, hp: g.player.hp, sphp: spore.hp };
 });
-await page.keyboard.press("h");
+await castGem("life");
 await page.waitForTimeout(250);
 const lifeAfter = await page.evaluate(() => {
   const g = window.__game;
@@ -1380,20 +1406,40 @@ capTest.count === 4 && capTest.fifthRejected
   ? ok("靈紋寶石出戰上限 4 生效(第 5 顆裝備被拒)")
   : fail(`出戰上限異常:${JSON.stringify(capTest)}`);
 
-// 未出戰的寶石技能不生效:卸下焰心石後按 E 不應消耗靈力
+// 未出戰的寶石技能不生效:焰心石未出戰 → 無綁定鍵位 → 施放鍵不消耗靈力
 const offBefore = await page.evaluate(() => {
   const g = window.__game;
   g.gems.equipped = ["earth", "frost", "void", "lava"]; // 不含 flame
+  g.gems.ensureSlots();
   g.player.mp = g.player.stats.maxMP;
   g.player.mesh.position.set(0, 1, 0);
-  return g.player.mp;
+  return { mp: g.player.mp, flameSlot: g.gems.slotOf("flame") };
 });
-await page.keyboard.press("e");
+await castGem("flame"); // 未出戰 → slotOf=-1 → 按 "0" 不施放
 await page.waitForTimeout(120);
 const offAfter = await page.evaluate(() => window.__game.player.mp);
-offAfter >= offBefore - 1
-  ? ok("未出戰寶石技能失效(按 E 未消耗靈力)")
-  : fail(`未出戰寶石仍生效:靈力 ${offBefore} → ${offAfter}`);
+offBefore.flameSlot === -1 && offAfter >= offBefore.mp - 1
+  ? ok("未出戰寶石無鍵位、技能失效(施放未消耗靈力)")
+  : fail(`未出戰寶石仍生效:${JSON.stringify(offBefore)} → ${offAfter}`);
+
+// 45m. 寶石鍵位:出戰主動寶石可指定/對調 1–6 鍵位,且按該數字鍵即施放
+const bindTest = await page.evaluate(() => {
+  const g = window.__game.gems;
+  g.equipped = ["flame", "earth"];
+  g.slots = new Array(6).fill(null);
+  g.ensureSlots(); // flame→0, earth→1(出戰順序)
+  const initial = { flame: g.slotOf("flame"), earth: g.slotOf("earth") };
+  g.assignSlot("flame", 4); // 焰心石移到第 5 鍵
+  const moved = g.slotOf("flame");
+  g.assignSlot("earth", 4); // 指到已被 flame 占用的鍵 → 對調
+  return { initial, moved, afterSwapEarth: g.slotOf("earth"), afterSwapFlame: g.slotOf("flame") };
+});
+bindTest.initial.flame === 0 &&
+bindTest.moved === 4 &&
+bindTest.afterSwapEarth === 4 &&
+bindTest.afterSwapFlame === 1
+  ? ok("寶石鍵位可指定與對調(flame→5、earth 指同鍵與 flame 對調)")
+  : fail(`鍵位指定/對調異常:${JSON.stringify(bindTest)}`);
 
 // 46. 使用第一海寶石 → 回到第一海曙光嶼,船回泊點
 await page.keyboard.press("Tab");
@@ -1604,12 +1650,17 @@ await page.screenshot({ path: "/tmp/archipelago-33-boss-special.png" });
 
 // 10. 存檔:手動觸發存檔後重新整理,等級與寶石持有應保留
 const beforeReload = await page.evaluate(() => {
-  window.__game.doSave();
   const g = window.__game;
+  // 設一個有辨識度的鍵位綁定(焰心石→第 5 鍵)再存檔,驗證重整後保留
+  g.gems.flameOwned = true;
+  if (!g.gems.isEquipped("flame")) g.gems.equip("flame");
+  g.gems.assignSlot("flame", 4);
+  g.doSave();
   return {
     level: g.player.stats.level,
     flame: g.gems.flameOwned,
     gemsEquipped: [...g.gems.equipped],
+    flameSlot: g.gems.slotOf("flame"),
     fruitsEquipped: [...g.fruits.equipped],
   };
 });
@@ -1636,6 +1687,7 @@ const afterReload = await page.evaluate(() => ({
   life: window.__game.gems.lifeOwned,
   lifeQuest: window.__game.quests.get("life"),
   gemsEquipped: [...window.__game.gems.equipped],
+  flameSlot: window.__game.gems.slotOf("flame"),
   fruitsEquipped: [...window.__game.fruits.equipped],
 }));
 afterReload.level === beforeReload.level
@@ -1674,6 +1726,9 @@ JSON.stringify(afterReload.gemsEquipped) === JSON.stringify(beforeReload.gemsEqu
 JSON.stringify(afterReload.fruitsEquipped) === JSON.stringify(beforeReload.fruitsEquipped)
   ? ok(`重新整理後出戰配置保留(寶石 ${afterReload.gemsEquipped.join("/")}, 果實 ${afterReload.fruitsEquipped.join("/")})`)
   : fail(`出戰配置未保留:before=${JSON.stringify({ g: beforeReload.gemsEquipped, f: beforeReload.fruitsEquipped })} after=${JSON.stringify({ g: afterReload.gemsEquipped, f: afterReload.fruitsEquipped })}`);
+afterReload.flameSlot === beforeReload.flameSlot && afterReload.flameSlot === 4
+  ? ok(`重新整理後寶石鍵位綁定保留(焰心石綁第 ${afterReload.flameSlot + 1} 鍵)`)
+  : fail(`寶石鍵位未保留:before=${beforeReload.flameSlot} after=${afterReload.flameSlot}`);
 
 // 進入島嶼顯示島名 + 群島地圖(按 M)
 // 先移到外海清空「目前所在島」,再傳送上翠風林島,應跳出島名大字

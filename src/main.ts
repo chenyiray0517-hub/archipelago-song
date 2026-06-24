@@ -58,6 +58,8 @@ import {
   lifeLeech,
   MAX_EQUIPPED_GEMS,
   GEM_ORDER,
+  GEM_SLOT_COUNT,
+  isActiveGem,
   type GemKey,
 } from "./systems/gems";
 import {
@@ -562,7 +564,7 @@ function main(): void {
         return [
           "虛空石!古城的守護者也被你制伏了……",
           "謝禮:500 貝拉幣和三顆大型經驗結晶。",
-          "按 X 可以短距離瞬移,連虛空的力量都為你所用了。",
+          "用技能鍵(數字 1–6)就能短距離瞬移,連虛空的力量都為你所用了。",
         ];
       }
       if (qd === "active")
@@ -615,7 +617,7 @@ function main(): void {
         return [
           "霜語晶!雪怪也敗在你劍下了!",
           "謝禮:400 貝拉幣和兩顆大型經驗結晶。",
-          "按 V 射出冰箭凍結敵人;有霜語晶還能直接走在海面上(會消耗靈力)!",
+          "用技能鍵(數字 1–6)射出冰箭凍結敵人;有霜語晶還能直接走在海面上(會消耗靈力)!",
         ];
       }
       if (qf === "active")
@@ -644,7 +646,7 @@ function main(): void {
         return [
           "地殼石!連大地守護者都不是你的對手!",
           "謝禮:300 貝拉幣和兩顆大型經驗結晶。",
-          "按 C 可以放出地震波,震飛身邊所有敵人!",
+          "用技能鍵(數字 1–6)放出地震波,震飛身邊所有敵人!",
         ];
       }
       if (qe === "active")
@@ -701,7 +703,7 @@ function main(): void {
         return [
           "這、這就是焰心石!你辦到了!",
           "說好的謝禮:100 貝拉幣和一顆中型經驗結晶。",
-          "按 E 就能施放火焰斬,去試試吧!",
+          "裝備焰心石後,用技能列的數字鍵(1–6)就能施放火焰斬,去試試吧!",
         ];
       }
       if (q === null) {
@@ -913,7 +915,7 @@ function main(): void {
         return [
           "碧波石!你真的制伏了珊瑚守護者……",
           "謝禮:700 貝拉幣和兩顆大型經驗結晶。",
-          "按 B 就能震盪出碧波,凍結周身所有敵人——危急時的救命符。",
+          "用技能鍵(數字 1–6)震盪出碧波,凍結周身所有敵人——危急時的救命符。",
         ];
       }
       if (qa === "active")
@@ -1334,6 +1336,7 @@ function main(): void {
       levels: { ...fruits.levels },
     },
     gemsEquipped: [...gems.equipped],
+    gemSlots: [...gems.slots],
     fruitsEquipped: [...fruits.equipped],
   });
   const doSave = (): void => saveGame(collectSave());
@@ -1367,6 +1370,12 @@ function main(): void {
     gems.equipped = (saved.gemsEquipped ?? GEM_ORDER)
       .filter((k) => gems.ownedOf(k))
       .slice(0, MAX_EQUIPPED_GEMS);
+    // 鍵位綁定:沿用存檔(只留仍出戰的主動寶石),空缺由 ensureSlots 依出戰順序自動補(舊檔亦然)
+    gems.slots = Array.from({ length: GEM_SLOT_COUNT }, (_, i) => {
+      const k = saved.gemSlots?.[i] ?? null;
+      return k && gems.isEquipped(k) && isActiveGem(k) ? k : null;
+    });
+    gems.ensureSlots();
     fruits.equipped = (saved.fruitsEquipped ?? FRUIT_ORDER)
       .filter((k) => fruits.ownedOf(k))
       .slice(0, MAX_EQUIPPED_FRUITS);
@@ -1920,9 +1929,17 @@ function main(): void {
         }
       }
 
-      // 焰心石:E 施放火焰斬(消耗靈力的火焰劍氣,射程較短)
+      // 寶石技能改用數字鍵 1–6:每顆出戰主動寶石綁一個鍵位(背包可調),這裡每幀補齊綁定,
+      // 再用 gemCast 判定「該寶石所綁鍵位本幀是否按下」。被動寶石(風語石/潮汐石)不在此列。
+      gems.ensureSlots();
+      const gemCast = (key: GemKey): boolean => {
+        const i = gems.slotOf(key);
+        return i >= 0 && input.wasPressed(`Digit${i + 1}`);
+      };
+
+      // 焰心石:火焰斬(消耗靈力的火焰劍氣,射程較短)
       if (
-        input.wasPressed("KeyE") &&
+        gemCast("flame") &&
         gems.isEquipped("flame") &&
         !player.blocking &&
         player.mp >= FLAME_MP_COST
@@ -1952,9 +1969,9 @@ function main(): void {
         fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0x7be87b, 8, 4);
       }
 
-      // 地殼石:C 施放地震波(360° 範圍重擊 + 大擊退)
+      // 地殼石:地震波(360° 範圍重擊 + 大擊退)
       if (
-        input.wasPressed("KeyC") &&
+        gemCast("earth") &&
         gems.isEquipped("earth") &&
         !player.blocking &&
         player.mp >= QUAKE_MP_COST
@@ -1974,9 +1991,9 @@ function main(): void {
         }
       }
 
-      // 霜語晶:V 射出冰箭(凍結敵人)
+      // 霜語晶:射出冰箭(凍結敵人)
       if (
-        input.wasPressed("KeyV") &&
+        gemCast("frost") &&
         gems.isEquipped("frost") &&
         !player.blocking &&
         player.mp >= ICE_MP_COST
@@ -1993,8 +2010,8 @@ function main(): void {
         shockwaves.push(iceBolt);
       }
 
-      // 虛空石:X 短距離瞬移(朝面向位移,失敗時逐步縮短距離)
-      if (input.wasPressed("KeyX") && gems.isEquipped("void") && player.mp >= BLINK_MP_COST) {
+      // 虛空石:短距離瞬移(朝面向位移,失敗時逐步縮短距離)
+      if (gemCast("void") && gems.isEquipped("void") && player.mp >= BLINK_MP_COST) {
         const dirX = Math.sin(player.facing);
         const dirZ = Math.cos(player.facing);
         const origin = player.mesh.position.clone();
@@ -2016,9 +2033,9 @@ function main(): void {
         }
       }
 
-      // 溶岩石:G 熔岩噴發(向前噴出岩漿衝擊波,命中附加灼燒 DoT)
+      // 溶岩石:熔岩噴發(向前噴出岩漿衝擊波,命中附加灼燒 DoT)
       if (
-        input.wasPressed("KeyG") &&
+        gemCast("lava") &&
         gems.isEquipped("lava") &&
         !player.blocking &&
         player.mp >= LAVA_MP_COST
@@ -2039,9 +2056,9 @@ function main(): void {
         fx.burst(front, 0xff4a1c, 16, 7);
       }
 
-      // 碧波石:B 碧波震盪(自身周圍範圍傷害 + 凍結所有命中的敵人)
+      // 碧波石:碧波震盪(自身周圍範圍傷害 + 凍結所有命中的敵人)
       if (
-        input.wasPressed("KeyB") &&
+        gemCast("aqua") &&
         gems.isEquipped("aqua") &&
         !player.blocking &&
         player.mp >= AQUA_MP_COST
@@ -2063,9 +2080,9 @@ function main(): void {
         }
       }
 
-      // 翠生石:H 生命汲取(向前噴出衝擊波,命中回復自身生命)
+      // 翠生石:生命汲取(向前噴出衝擊波,命中回復自身生命)
       if (
-        input.wasPressed("KeyH") &&
+        gemCast("life") &&
         gems.isEquipped("life") &&
         !player.blocking &&
         player.mp >= LIFE_MP_COST

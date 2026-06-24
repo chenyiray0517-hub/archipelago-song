@@ -76,7 +76,7 @@ export class Hud {
       </div>
       <div class="quests" id="hud-quests"><div class="title">任務</div><div id="hud-quest-list"></div></div>
       <div class="talk" id="hud-talk">按 F 對話</div>
-      <div class="hint">WASD 移動｜空白鍵 跳躍｜Shift 閃避｜左鍵 攻擊(按住集氣)｜Q 舉盾｜E 火焰斬｜R 藥水<br/>右鍵拖曳 轉視角｜滾輪 縮放｜Tab 背包｜M 地圖｜F 對話/上下船｜Enter 聊天｜小船在南灘,可出海前往其他島</div>
+      <div class="hint">WASD 移動｜空白鍵 跳躍｜Shift 閃避｜左鍵 攻擊(按住集氣)｜Q 舉盾｜1–6 寶石技能(背包設定鍵位)｜R 藥水<br/>右鍵拖曳 轉視角｜滾輪 縮放｜Tab 背包｜M 地圖｜F 對話/上下船｜Enter 聊天｜小船在南灘,可出海前往其他島</div>
       <div class="island-title" id="hud-island"></div>
       <div class="toast" id="hud-toast"></div>
       <div id="hud-net" style="position:fixed;top:8px;right:12px;font:600 13px/1.4 system-ui,sans-serif;color:#cfe8ff;text-shadow:0 1px 2px #000;pointer-events:none;"></div>
@@ -115,18 +115,29 @@ export class Hud {
     this.byId("hud-potion").textContent = String(inventory.potions);
   }
 
-  /** 更新寶石技能列(只顯示「出戰中」的寶石,未出戰即不生效也不列出) */
+  /** 更新寶石技能列:主動寶石依綁定的數字鍵 1–6 排列顯示,被動寶石另列(只列出戰中的) */
   setGems(gems: GemBag): void {
+    const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥"];
+    // 主動寶石技能說明(鍵位由 gems.slots 決定,顯示對應數字)
+    const ACTIVE: Record<string, string> = {
+      flame: "🔥 火焰斬(10 靈力)",
+      earth: "🪨 地震波(15 靈力)",
+      frost: "❄️ 冰箭(12 靈力)／海上可行走",
+      void: "🌀 瞬移(8 靈力)",
+      lava: "🌋 熔岩噴發(14 靈力,灼燒)",
+      aqua: "💧 碧波震盪(16 靈力,凍結)",
+      life: "🌿 生命汲取(14 靈力,吸血)",
+    };
     const parts: string[] = [];
-    if (gems.isEquipped("flame")) parts.push("🔥 焰心石｜E 火焰斬(10 靈力)");
-    if (gems.isEquipped("wind")) parts.push("🌪️ 風語石｜二段跳/按住空白鍵滑翔");
-    if (gems.isEquipped("earth")) parts.push("🪨 地殼石｜C 地震波(15 靈力)");
-    if (gems.isEquipped("frost")) parts.push("❄️ 霜語晶｜V 冰箭(12 靈力)/海上行走耗靈力");
+    // 主動:依鍵位 1–6 順序列出,前綴對應數字鍵
+    for (let i = 0; i < gems.slots.length; i++) {
+      const k = gems.slots[i];
+      const label = k ? ACTIVE[k] : undefined;
+      if (label) parts.push(`${CIRCLED[i] ?? `[${i + 1}]`} ${label}`);
+    }
+    // 被動:不佔鍵位
+    if (gems.isEquipped("wind")) parts.push("🌪️ 風語石｜二段跳/按住空白鍵滑翔(被動)");
     if (gems.isEquipped("tide")) parts.push("🌊 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)");
-    if (gems.isEquipped("void")) parts.push("🌀 虛空石｜X 瞬移(8 靈力)");
-    if (gems.isEquipped("lava")) parts.push("🌋 溶岩石｜G 熔岩噴發(14 靈力,灼燒)");
-    if (gems.isEquipped("aqua")) parts.push("💧 碧波石｜B 碧波震盪(16 靈力,凍結周圍)");
-    if (gems.isEquipped("life")) parts.push("🌿 翠生石｜H 生命汲取(14 靈力,吸血)");
     const el = this.byId("hud-gem");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");

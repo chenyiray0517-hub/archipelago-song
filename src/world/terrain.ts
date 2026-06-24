@@ -611,8 +611,8 @@ const TREE_BLOBS = [
   { r: 1.15, y: 3.65, dx: -0.78, dz: 0.55, sy: 1 },
   { r: 1.05, y: 4.35, dx: -0.18, dz: -0.82, sy: 1 },
 ];
-/** 樹冠最寬處的水平半徑(供碰撞箱涵蓋整棵樹) */
-const TREE_CANOPY_R = 1.85;
+/** 樹的碰撞半徑(×scale):涵蓋樹幹 + 樹冠主體,踩進去會被擋;不取最外緣枝葉尖以免變成過大的隱形牆 */
+const TREE_COLLIDE_R = 1.05;
 
 function createTree(x: number, groundY: number, z: number, leafColor: number): THREE.Group {
   const tree = new THREE.Group();
@@ -638,6 +638,6 @@ function createTree(x: number, groundY: number, z: number, leafColor: number): T
   tree.rotation.y = Math.random() * Math.PI * 2;
   tree.position.set(x, groundY - 0.1, z);
   // 碰撞涵蓋整棵樹冠的水平範圍(不再只取樹幹;只要是樹的一部分都擋)
-  OBSTACLES.push({ x, z, r: TREE_CANOPY_R * scale });
+  OBSTACLES.push({ x, z, r: TREE_COLLIDE_R * scale });
   return tree;
 }

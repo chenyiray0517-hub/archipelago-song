@@ -5,6 +5,7 @@ import { Fx } from "./core/fx";
 import { createOcean, updateOcean } from "./world/ocean";
 import { Sky } from "./world/sky";
 import { loadSceneryModels } from "./world/sceneryModels";
+import { loadEnemyModels } from "./world/enemyModels";
 import {
   createWorld,
   groundHeight,
@@ -2724,7 +2725,8 @@ function main(): void {
   });
 }
 
-// 先載入自然素材模型(失敗就回退程序化樹石),載完才建世界開場;絕不因模型卡住開場
-loadSceneryModels()
-  .catch(() => false)
+// 先載入自然素材 + 怪物模型(任一失敗都各自回退程序化樹石/果凍),載完才建世界開場;
+// 絕不因模型卡住開場
+Promise.all([loadSceneryModels().catch(() => false), loadEnemyModels().catch(() => false)])
+  .catch(() => {})
   .finally(() => main());

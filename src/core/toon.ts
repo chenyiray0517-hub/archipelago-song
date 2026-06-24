@@ -23,6 +23,8 @@ export function toonMaterial(
     vertexColors?: boolean;
     emissive?: number;
     emissiveIntensity?: number;
+    /** 貼圖(glTF 怪物用內嵌圖集);掛上後色階仍套用,做出貼圖 + cel-shading */
+    map?: THREE.Texture;
   } = {},
 ): THREE.MeshToonMaterial {
   const material = new THREE.MeshToonMaterial({
@@ -31,6 +33,7 @@ export function toonMaterial(
     transparent: options.transparent ?? false,
     opacity: options.opacity ?? 1,
     vertexColors: options.vertexColors ?? false,
+    map: options.map ?? null,
   });
   if (options.emissive !== undefined) {
     material.emissive.setHex(options.emissive);
@@ -58,6 +61,39 @@ export function addOutlines(group: THREE.Object3D, thickness = 1.06): void {
     outline.position.copy(mesh.position);
     outline.rotation.copy(mesh.rotation);
     outline.scale.copy(mesh.scale).multiplyScalar(thickness);
+    outline.raycast = () => undefined;
+    mesh.parent?.add(outline);
+  }
+}
+
+/**
+ * 為帶骨骼的 SkinnedMesh 加描邊。
+ * 不能用 addOutlines 的「放大複製體」做法——那會卡在 bind pose 不跟動畫變形。
+ * 改為共用同一副骨架的 SkinnedMesh 外殼,在頂點著色器裡沿法線外擴(skinning 前),
+ * 讓外殼跟著動畫一起被骨架變形。thickness 為模型本地空間下的法線位移量。
+ */
+export function addSkinnedOutlines(root: THREE.Object3D, thickness = 0.03): void {
+  const targets: THREE.SkinnedMesh[] = [];
+  root.traverse((child) => {
+    if (child instanceof THREE.SkinnedMesh) targets.push(child);
+  });
+  for (const mesh of targets) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0x1c2333, side: THREE.BackSide });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.outlineThickness = { value: thickness };
+      shader.vertexShader =
+        "uniform float outlineThickness;\n" +
+        shader.vertexShader.replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\n  transformed += normalize(objectNormal) * outlineThickness;",
+        );
+    };
+    const outline = new THREE.SkinnedMesh(mesh.geometry, mat);
+    outline.bind(mesh.skeleton, mesh.bindMatrix);
+    outline.position.copy(mesh.position);
+    outline.quaternion.copy(mesh.quaternion);
+    outline.scale.copy(mesh.scale);
+    outline.castShadow = false;
     outline.raycast = () => undefined;
     mesh.parent?.add(outline);
   }

@@ -1,5 +1,31 @@
 # PROGRESS
 
+## 2026-06-24(敵人換模 — 鋪滿全 20 種:每種敵人各一隻 Quaternius CC0 怪物)
+
+> 接續 06-22 的垂直切片,把剩下 18 種敵人也對應到帶骨骼動畫的 glTF 怪物。
+> 管線無需新增,06-22 的模型分支本就通用——這輪只是「複製模型檔 + 兩個對應表續加 + 修一個飛行類動畫候選」。
+
+- **素材**:Quaternius「Ultimate Monsters Pack」(CC0),三類風格 Big/Blob/Flying(`drive-download-…/{Big,Blob,Flying}/glTF`)。各自包(幾何 + 圖集 base64 內嵌),複製 18 個 `.gltf` 進 `public/models/monsters/`(共 20 個,檔名皆唯一)。
+- **依島嶼主題對應**(`enemy.ts` `KIND_MODEL` + `enemyModels.ts` `MODELS`):
+  曙光嶼 slime=GreenBlob、elite=GreenSpikyBlob|翠風林 vine=Mushnub、windGuardian=Hywirl(風漩)|火山 ember=Goleling、earthGuardian=Goleling_Evolved(進化石巨)|霜雪峰 frost=Glub、frostGuardian=Yeti|沉沒古城/虛空 deep=Fish、voidGuardian=Ghost、voidLord=BlueDemon|熔砂 sand=Cactoro、magmaGuardian=Demon|珊瑚礁 reef=Squidle、coralGuardian=Glub_Evolved|靈脈 spore=Mushnub_Evolved、lifeGuardian=MushroomKing(蘑菇王)|迷霧沼 marsh=Frog|鹽晶 brine=PinkBlob|烈陽礁 solar=Birb。守護者/魔王靠 `config.scale`(1.9~3.6)放大,`targetH` 給基準身高。
+- **三類動畫命名不同**(`ANIM_CANDIDATES`):Blob=`Idle/Walk/Bite_Front/HitRecieve`、Big=`Idle/Walk|Run/Punch|Weapon/HitReact`、**Flying=`Flying_Idle/Fast_Flying/Headbutt|Punch/HitReact`**。原候選 idle 只有 `Idle` → **飛行類(Hywirl/Goleling/Glub/Ghost/Squidle/Glub_Evolved/Goleling_Evolved)待機動畫會解析失敗**,故 idle 候選補 `Flying_Idle`、move 候選把 `Fast_Flying` 提前。其餘動作既有候選已涵蓋。
+- 驗證:**build 綠**(tsc strict,47 模組)、**smoke 137 全綠**(save/reload 海寶石那項偶發 timing flaky,重跑即綠,與本次改動無關)、**模型覆蓋診斷**:場上 20 種 kind 全數進模型分支(每隻含 SkinnedMesh、0 回退果凍、0 console error,Big/Blob/Flying 三類皆確認載入)、開場截圖目視描邊正常無破圖。
+- **後續**:可選加受擊 hit 動畫接 FSM、攻擊動畫對齊 windup/lunge 時序、效能(模型敵人 ~60 隻常駐,可考慮 InstancedSkinnedMesh 或分區);飛行類(Ghost/Hywirl/Squidle 等)目前正規化貼地站立,要懸浮可加 y 偏移。
+
+## 2026-06-22(敵人換骨骼動畫模型 — 垂直切片:Quaternius CC0 怪物包,先通 slime+frostGuardian)
+
+> 把程序化果凍 blob 敵人升級成帶骨骼動畫的 glTF 怪物(文件「已知限制」的升級路線 glTF + AnimationMixer)。
+> 先做**垂直切片**跑通整條管線(載入→cel-shading→骨架描邊→動畫→FSM 對應→build/smoke),其餘 18 種仍走原 blob;確認效果後再鋪全 20 種。
+
+- **素材**:Quaternius「Ultimate Monsters Pack」(CC0)。glTF 為**自包**(幾何 + 圖集貼圖皆 base64 內嵌,三風格圖集 md5 相同),只需複製 `.gltf` 進 `public/models/monsters/`(GreenBlob、Yeti)+ 授權檔,不必搬 PNG。
+- **載入管線**(`world/enemyModels.ts`,新檔,仿 sceneryModels):`GLTFLoader` 載原型 → `toToon`(保留內嵌圖集當 `map` + 套色階做 cel-shading)→ `addSkinnedOutlines` → 正規化高度(底部 y=0、水平置中)。`pickEnemyModel(key)` 用 **SkeletonUtils.clone**(skinned mesh 需重綁骨架,一般 clone 不行)回傳模型 + 共用 clips。載入失敗回退 null → 敵人走程序化果凍。
+- **骨架描邊**(`core/toon.ts` 新增 `addSkinnedOutlines`):一般 `addOutlines` 的「放大複製體」會卡 bind pose 不跟動畫變形;改為**共用同骨架的 SkinnedMesh 外殼**,`onBeforeCompile` 在 skinning 前沿法線外擴(`transformed += normalize(objectNormal) * thickness`),外殼隨動畫變形。`toonMaterial` 加 `map` 選項。
+- **FSM 接動畫**(`entities/enemy.ts`):`KIND_MODEL`(slime→GreenBlob、frostGuardian→Yeti)有對應且載入成功 → 模型分支(`AnimationMixer` + 依 `ANIM_CANDIDATES` 解析 idle/move/attack/hit/death clip),否則回退原 blob。FSM 對應:patrol/chase→move、windup→idle、lunge/special blast→attack(一次性)、recover→idle、dying→death(留 `MODEL_DYING_TIME`=1.1s 播完再縮小消失)。**blob 專屬視覺技巧(壓扁/彈跳/爆裂)全用 `useModel` 守衛**;冰凍/麻痺/灼燒/閃白改成對材質陣列 `setTint`(模型 clone 出獨立材質避免共用串色)。冰凍/麻痺時不推進 mixer = 定格。
+- **接線**(`main.ts`):`Promise.all([loadSceneryModels(), loadEnemyModels()]).finally(main)` — 兩批模型各自回退、皆不卡開場。
+- 驗證:**build 綠**(tsc strict)、**smoke 95 全綠**(載入後 `__game` 正常、戰鬥/死亡/重生不受影響)、截圖目視:12 隻 slime = GreenBlob、霜雪峰 frostGuardian = Yeti,皆有描邊與待機/移動動畫(診斷:該兩種 `mixer` 非 null、其餘 18 種仍 blob)。
+- 順手:`terrain.ts` 完成 Rai 既有未完成的改名 `TREE_CANOPY_R`→`TREE_COLLIDE_R`(1.85→1.05,縮小樹碰撞半徑避免過大隱形牆),原本只改宣告未改使用處導致 build 紅。
+- **後續**:鋪其餘 18 種敵人的 `KIND_MODEL` 對應(依島嶼主題挑怪物);可選加受擊 hit 動畫、攻擊動畫對齊 windup/lunge 時序、`_Evolved` 進化版給頭目、效能(模型敵人 38 隻常駐,可考慮 InstancedSkinnedMesh 或分區)。
+
 ## 2026-06-20(場景植被換真模型:Quaternius CC0 低多邊形樹/石/裝飾,依生態擺放)
 
 > 把程序化樹石換成低多邊形自然素材包(CC0 公有領域,免署名);依各島生態擺不同樹種、鋪草與裝飾。

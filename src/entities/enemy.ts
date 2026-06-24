@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { toonMaterial, addOutlines } from "../core/toon";
 import { groundHeight } from "../world/terrain";
+import { pickEnemyModel } from "../world/enemyModels";
 import type { SfxName } from "../core/audio";
 
 export type EnemyKind =
@@ -110,6 +111,8 @@ const LUNGE_SPEED = 14;
 const LUNGE_HIT_RANGE = 1.7;
 const RECOVER_TIME = 0.8;
 const DYING_TIME = 0.3;
+/** 模型模式死亡:多留時間播完 Death 動畫再消失(果凍模式仍用 DYING_TIME 的爆裂) */
+const MODEL_DYING_TIME = 1.1;
 
 interface EnemyConfig {
   hp: number;
@@ -154,8 +157,60 @@ const CONFIGS: Record<EnemyKind, EnemyConfig> = {
 };
 
 /**
- * 果凍怪(Chuchu 風格):跳躍移動,蓄力 → 突進攻擊,受擊擊退,死亡爆裂。
+ * 敵人種類 → 怪物模型鍵(對應 enemyModels.MODELS)。
+ * 列入者用帶骨骼動畫的 glTF 模型;未列或載入失敗者回退程序化果凍 blob。
+ * 全 20 種各對應一隻 Quaternius CC0 怪物,依島嶼主題挑選(Big/Blob/Flying 三類混用)。
+ */
+const KIND_MODEL: Partial<Record<EnemyKind, string>> = {
+  // 曙光嶼
+  slime: "GreenBlob",
+  elite: "GreenSpikyBlob",
+  // 翠風林
+  vine: "Mushnub",
+  windGuardian: "Hywirl",
+  // 燼岩火山
+  ember: "Goleling",
+  earthGuardian: "Goleling_Evolved",
+  // 霜雪峰
+  frost: "Glub",
+  frostGuardian: "Yeti",
+  // 沉沒古城 / 虛空
+  deep: "Fish",
+  voidGuardian: "Ghost",
+  voidLord: "BlueDemon",
+  // 第二海·熔砂島
+  sand: "Cactoro",
+  magmaGuardian: "Demon",
+  // 第二海·珊瑚礁
+  reef: "Squidle",
+  coralGuardian: "Glub_Evolved",
+  // 第二海·靈脈島
+  spore: "Mushnub_Evolved",
+  lifeGuardian: "MushroomKing",
+  // 第二海·迷霧沼 / 鹽晶 / 烈陽礁
+  marsh: "Frog",
+  brine: "PinkBlob",
+  solar: "Birb",
+};
+
+/**
+ * FSM 邏輯動作 → 模型 clip 候選名(取第一個存在的);不同怪物 clip 命名不同故用候選序。
+ * 三類命名:Blob=Idle/Walk/Bite_Front/HitRecieve、Big=Idle/Walk|Run/Punch|Weapon/HitReact、
+ * Flying=Flying_Idle/Fast_Flying/Headbutt|Punch/HitReact。idle 須含 Flying_Idle 否則飛行怪沒待機動畫。
+ */
+const ANIM_CANDIDATES: Record<string, string[]> = {
+  idle: ["Idle", "Flying_Idle"],
+  move: ["Walk", "Run", "Fast_Flying", "Flying"],
+  attack: ["Bite_Front", "Punch", "Headbutt", "Weapon", "Attack"],
+  hit: ["HitRecieve", "HitReact"],
+  death: ["Death"],
+};
+
+/**
+ * 果凍怪(Chuchu 風格)或骨骼動畫怪物:跳躍/行走移動,蓄力 → 突進攻擊,受擊擊退,死亡。
  * 狀態機:patrol/chase/windup/lunge/recover/dying/dead。
+ * 視覺有兩種:① 程式組裝果凍 blob(原始,壓扁/彈跳/爆裂全靠 body 變形);
+ * ② glTF 怪物模型(KIND_MODEL 有對應且載入成功),改用 AnimationMixer 播動畫。
  */
 export class Enemy {
   readonly mesh: THREE.Group;
@@ -210,8 +265,20 @@ export class Enemy {
   private knockback = new THREE.Vector3();
   private readonly baseColor: THREE.Color;
   private readonly body: THREE.Group;
-  private readonly blob: THREE.Mesh;
-  private readonly blobMaterial: THREE.MeshToonMaterial;
+  /** 果凍模式專用(模型模式為 undefined) */
+  private readonly blob?: THREE.Mesh;
+  private readonly blobMaterial?: THREE.MeshToonMaterial;
+  // ── 模型模式(useModel=true 時啟用 glTF + 骨骼動畫)──────────────
+  /** 是否使用 glTF 模型(否則程序化果凍 blob) */
+  private readonly useModel: boolean;
+  private mixer: THREE.AnimationMixer | null = null;
+  private readonly actions = new Map<string, THREE.AnimationAction>();
+  private currentAction: THREE.AnimationAction | null = null;
+  /** 受擊/控場著色目標材質(果凍:blob 本體;模型:所有 toon 材質,各自 clone 過避免共用) */
+  private readonly tintMats: THREE.MeshToonMaterial[] = [];
+  private readonly tintBase: THREE.Color[] = [];
+  /** 死亡狀態持續時間(模型留時間播 Death,果凍走短爆裂) */
+  private readonly dyingTime: number;
   private readonly hpBar: THREE.Sprite;
   private readonly hpCanvas: HTMLCanvasElement;
   private readonly hpTexture: THREE.CanvasTexture;
@@ -237,83 +304,113 @@ export class Enemy {
     this.body = new THREE.Group();
     this.mesh.add(this.body);
 
-    // 頭目級(菁英/守護者/魔王)外觀更兇:長角 + 怒眉 + 大嘴
-    const boss = this.config.scale >= 1.8;
-    const accent = new THREE.Color(this.config.color).offsetHSL(0, 0.1, -0.28).getHex();
+    // 嘗試取怪物模型;取到走模型分支,否則回退程序化果凍 blob
+    const modelKey = KIND_MODEL[kind];
+    const proto = modelKey ? pickEnemyModel(modelKey) : null;
+    this.useModel = proto !== null;
+    this.dyingTime = this.useModel ? MODEL_DYING_TIME : DYING_TIME;
 
-    // 果凍身體:圓滾水滴狀,半透明
-    this.blobMaterial = toonMaterial(this.config.color, { transparent: true, opacity: 0.86 });
-    this.blob = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 14), this.blobMaterial);
-    this.blob.scale.set(1, 0.85, 1);
-    this.blob.position.y = 0.62;
-    const crown = new THREE.Mesh(
-      new THREE.ConeGeometry(0.26, boss ? 0.6 : 0.45, 10),
-      toonMaterial(this.config.color, { transparent: true, opacity: 0.86 }),
-    );
-    crown.position.y = boss ? 1.42 : 1.35;
-    crown.rotation.z = 0.12;
-    this.body.add(this.blob, crown);
-
-    // 頭目長角:頭頂兩側往外上方翹
-    if (boss) {
-      const hornMat = toonMaterial(accent);
-      for (const side of [-1, 1]) {
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 8), hornMat);
-        horn.position.set(0.42 * side, 1.18, -0.05);
-        horn.rotation.z = side * -0.7;
-        this.body.add(horn);
+    if (proto) {
+      // ── 模型分支:加入場景、建 mixer 與動作、為每材質 clone 一份著色目標 ──
+      this.body.add(proto.scene);
+      // SkeletonUtils.clone 會共用材質,而本機要逐隻變色(閃白/冰凍),故 clone 出獨立材質
+      proto.scene.traverse((c) => {
+        if (c instanceof THREE.Mesh && c.material instanceof THREE.MeshToonMaterial) {
+          const m = c.material.clone();
+          c.material = m;
+          this.tintMats.push(m);
+          this.tintBase.push(m.color.clone());
+        }
+      });
+      this.mixer = new THREE.AnimationMixer(proto.scene);
+      for (const [logical, cands] of Object.entries(ANIM_CANDIDATES)) {
+        const clip = proto.clips.find((c) => cands.includes(c.name));
+        if (clip) this.actions.set(logical, this.mixer.clipAction(clip));
       }
+      this.play("idle");
+    } else {
+      // ── 果凍分支(原始程序化外觀)──────────────────────────────
+      // 頭目級(菁英/守護者/魔王)外觀更兇:長角 + 怒眉 + 大嘴
+      const boss = this.config.scale >= 1.8;
+      const accent = new THREE.Color(this.config.color).offsetHSL(0, 0.1, -0.28).getHex();
+
+      // 果凍身體:圓滾水滴狀,半透明
+      this.blobMaterial = toonMaterial(this.config.color, { transparent: true, opacity: 0.86 });
+      this.blob = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 14), this.blobMaterial);
+      this.blob.scale.set(1, 0.85, 1);
+      this.blob.position.y = 0.62;
+      const crown = new THREE.Mesh(
+        new THREE.ConeGeometry(0.26, boss ? 0.6 : 0.45, 10),
+        toonMaterial(this.config.color, { transparent: true, opacity: 0.86 }),
+      );
+      crown.position.y = boss ? 1.42 : 1.35;
+      crown.rotation.z = 0.12;
+      this.body.add(this.blob, crown);
+
+      // 頭目長角:頭頂兩側往外上方翹
+      if (boss) {
+        const hornMat = toonMaterial(accent);
+        for (const side of [-1, 1]) {
+          const horn = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 8), hornMat);
+          horn.position.set(0.42 * side, 1.18, -0.05);
+          horn.rotation.z = side * -0.7;
+          this.body.add(horn);
+        }
+      }
+
+      // 卡通大眼 + 眉毛
+      const eyeWhiteMat = toonMaterial(0xffffff);
+      const pupilMat = toonMaterial(0x202030);
+      const browMat = toonMaterial(accent);
+      const eyeR = boss ? 0.2 : 0.17;
+      for (const side of [-1, 1]) {
+        const white = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 12, 10), eyeWhiteMat);
+        white.position.set(0.3 * side, 0.82, 0.6);
+        white.scale.set(0.85, 1.05, 0.7);
+        const pupil = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.5, 8, 6), pupilMat);
+        pupil.position.set(0.3 * side + 0.02 * side, 0.8, 0.74);
+        // 眉:頭目向內下壓成怒容,雜魚平緩
+        const brow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.07), browMat);
+        brow.position.set(0.3 * side, 1.04, 0.62);
+        brow.rotation.z = side * (boss ? 0.5 : 0.15);
+        this.body.add(white, pupil, brow);
+      }
+
+      // 嘴:頭目咧開大口(深色),雜魚一抹小嘴
+      const mouth = new THREE.Mesh(
+        new THREE.SphereGeometry(boss ? 0.22 : 0.12, 12, 8),
+        toonMaterial(0x301820),
+      );
+      mouth.position.set(0, boss ? 0.5 : 0.54, 0.66);
+      mouth.scale.set(1.3, boss ? 0.8 : 0.45, 0.5);
+      this.body.add(mouth);
+
+      addOutlines(this.body);
+      this.body.traverse((child) => {
+        if (child instanceof THREE.Mesh) child.castShadow = true;
+      });
+
+      // 描邊之後再加:不參與卡通輪廓的內核與高光,做出果凍通透感
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.42, 12, 10),
+        toonMaterial(accent, { transparent: true, opacity: 0.55 }),
+      );
+      core.position.y = 0.58;
+      core.raycast = () => undefined;
+      this.body.add(core);
+
+      const sheen = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 10, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
+      );
+      sheen.position.set(-0.28, 0.95, 0.42);
+      sheen.scale.set(1.2, 0.7, 0.6);
+      sheen.raycast = () => undefined;
+      this.body.add(sheen);
+
+      this.tintMats.push(this.blobMaterial);
+      this.tintBase.push(this.baseColor.clone());
     }
-
-    // 卡通大眼 + 眉毛
-    const eyeWhiteMat = toonMaterial(0xffffff);
-    const pupilMat = toonMaterial(0x202030);
-    const browMat = toonMaterial(accent);
-    const eyeR = boss ? 0.2 : 0.17;
-    for (const side of [-1, 1]) {
-      const white = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 12, 10), eyeWhiteMat);
-      white.position.set(0.3 * side, 0.82, 0.6);
-      white.scale.set(0.85, 1.05, 0.7);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(eyeR * 0.5, 8, 6), pupilMat);
-      pupil.position.set(0.3 * side + 0.02 * side, 0.8, 0.74);
-      // 眉:頭目向內下壓成怒容,雜魚平緩
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.07), browMat);
-      brow.position.set(0.3 * side, 1.04, 0.62);
-      brow.rotation.z = side * (boss ? 0.5 : 0.15);
-      this.body.add(white, pupil, brow);
-    }
-
-    // 嘴:頭目咧開大口(深色),雜魚一抹小嘴
-    const mouth = new THREE.Mesh(
-      new THREE.SphereGeometry(boss ? 0.22 : 0.12, 12, 8),
-      toonMaterial(0x301820),
-    );
-    mouth.position.set(0, boss ? 0.5 : 0.54, 0.66);
-    mouth.scale.set(1.3, boss ? 0.8 : 0.45, 0.5);
-    this.body.add(mouth);
-
-    addOutlines(this.body);
-    this.body.traverse((child) => {
-      if (child instanceof THREE.Mesh) child.castShadow = true;
-    });
-
-    // 描邊之後再加:不參與卡通輪廓的內核與高光,做出果凍通透感
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(0.42, 12, 10),
-      toonMaterial(accent, { transparent: true, opacity: 0.55 }),
-    );
-    core.position.y = 0.58;
-    core.raycast = () => undefined;
-    this.body.add(core);
-
-    const sheen = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
-    );
-    sheen.position.set(-0.28, 0.95, 0.42);
-    sheen.scale.set(1.2, 0.7, 0.6);
-    sheen.raycast = () => undefined;
-    this.body.add(sheen);
 
     this.hpCanvas = document.createElement("canvas");
     this.hpCanvas.width = 96;
@@ -335,6 +432,40 @@ export class Enemy {
     return this.state === "dying" || this.state === "dead";
   }
 
+  // ── 模型模式輔助(useModel=false 時皆為無作用)──────────────────
+
+  /** 推進骨骼動畫(冰凍/麻痺時不呼叫 = 定格) */
+  private stepMixer(dt: number): void {
+    this.mixer?.update(dt);
+  }
+
+  /**
+   * 切換動畫動作。loop=true 的循環動作若已在播則略過(避免每幀重置);
+   * loop=false 為一次性(攻擊/死亡),播完停在末幀。找不到對應動作則退而播 idle。
+   */
+  private play(name: string, loop = true, fade = 0.18): void {
+    if (!this.mixer) return;
+    const action = this.actions.get(name) ?? this.actions.get("idle");
+    if (!action) return;
+    if (loop && action === this.currentAction) return;
+    action.reset();
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+    action.clampWhenFinished = !loop;
+    action.enabled = true;
+    action.fadeIn(fade);
+    action.play();
+    if (this.currentAction && this.currentAction !== action) this.currentAction.fadeOut(fade);
+    this.currentAction = action;
+  }
+
+  /** 對所有著色材質套色(果凍 = blob 本體;模型 = 全 toon 材質)。color 為 null 時還原本色 */
+  private setTint(color: THREE.Color | null, amount = 1): void {
+    for (let i = 0; i < this.tintMats.length; i++) {
+      if (color) this.tintMats[i].color.lerpColors(this.tintBase[i], color, amount);
+      else this.tintMats[i].color.copy(this.tintBase[i]);
+    }
+  }
+
   /**
    * 每幀更新 AI 與動畫。
    * @returns 本幀突進命中玩家則回傳傷害值,否則 0
@@ -347,14 +478,21 @@ export class Enemy {
     }
     if (this.state === "dying") {
       this.stateT -= dt;
-      // 爆裂:先膨脹再縮小消失
-      const p = 1 - Math.max(this.stateT, 0) / DYING_TIME;
-      const s = p < 0.4 ? 1 + p * 0.9 : Math.max(1.36 * (1 - (p - 0.4) / 0.6), 0.01);
-      this.body.scale.setScalar(s);
+      const p = 1 - Math.max(this.stateT, 0) / this.dyingTime;
+      if (this.useModel) {
+        // 模型:播 Death 動畫,末段(後 25%)縮小淡出
+        this.stepMixer(dt);
+        if (p > 0.75) this.body.scale.setScalar(Math.max(1 - (p - 0.75) / 0.25, 0.01));
+      } else {
+        // 果凍:先膨脹再縮小爆裂
+        const s = p < 0.4 ? 1 + p * 0.9 : Math.max(1.36 * (1 - (p - 0.4) / 0.6), 0.01);
+        this.body.scale.setScalar(s);
+      }
       if (this.stateT <= 0) {
         this.state = "dead";
         this.respawnT = RESPAWN_SECONDS;
         this.mesh.visible = false;
+        this.body.scale.setScalar(1);
       }
       return 0;
     }
@@ -363,10 +501,10 @@ export class Enemy {
     this.specialCd = Math.max(0, this.specialCd - dt);
     this.flashT = Math.max(0, this.flashT - dt);
 
-    // 冰凍:定格不動,只更新顏色
+    // 冰凍:定格不動(mixer 不前進),只更新顏色
     if (this.freezeT > 0) {
       this.freezeT -= dt;
-      this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xbfeaff), 0.75);
+      this.setTint(new THREE.Color(0xbfeaff), 0.75);
       return 0;
     }
 
@@ -374,9 +512,12 @@ export class Enemy {
     if (this.stunT > 0) {
       this.stunT -= dt;
       const flicker = 0.4 + 0.4 * Math.abs(Math.sin(this.stunT * 30));
-      this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xfff080), flicker);
+      this.setTint(new THREE.Color(0xfff080), flicker);
       return 0;
     }
+
+    // 非凍結/麻痺:推進骨骼動畫(各 state 下方再決定播哪個 clip)
+    this.stepMixer(dt);
 
     const pos = this.mesh.position;
     const distToPlayer = pos.distanceTo(playerPos);
@@ -392,22 +533,27 @@ export class Enemy {
     switch (this.state) {
       case "windup": {
         this.stateT -= dt;
-        // 壓扁蓄力 + 抖動
-        this.body.scale.y = 0.6 + Math.sin(this.stateT * 60) * 0.04;
-        this.body.scale.x = this.body.scale.z = 1.25;
+        if (this.useModel) {
+          this.play("idle");
+        } else {
+          // 壓扁蓄力 + 抖動
+          this.body.scale.y = 0.6 + Math.sin(this.stateT * 60) * 0.04;
+          this.body.scale.x = this.body.scale.z = 1.25;
+        }
         if (this.stateT <= 0) {
           this.lungeDir.subVectors(playerPos, pos).setY(0).normalize();
           this.lungeHitDone = false;
           this.state = "lunge";
           this.stateT = LUNGE_TIME;
+          if (this.useModel) this.play("attack", false);
         }
         break;
       }
       case "lunge": {
         this.stateT -= dt;
         pos.addScaledVector(this.lungeDir, LUNGE_SPEED * dt);
-        // 朝突進方向拉長
-        this.body.scale.set(0.8, 0.7, 1.35);
+        // 朝突進方向拉長(果凍);模型保持攻擊動畫
+        if (!this.useModel) this.body.scale.set(0.8, 0.7, 1.35);
         this.mesh.rotation.y = Math.atan2(this.lungeDir.x, this.lungeDir.z);
         if (!this.lungeHitDone && !playerDead && distToPlayer < LUNGE_HIT_RANGE) {
           this.lungeHitDone = true;
@@ -421,7 +567,8 @@ export class Enemy {
       }
       case "recover": {
         this.stateT -= dt;
-        this.body.scale.setScalar(1);
+        if (this.useModel) this.play("idle");
+        else this.body.scale.setScalar(1);
         if (this.stateT <= 0) this.state = "chase";
         break;
       }
@@ -429,9 +576,9 @@ export class Enemy {
         const sp = this.special!;
         this.stateT -= dt;
         if (this.specialPhase === "telegraph") {
-          // 蓄力:鼓脹顫抖 + 地面警示圈閃爍
+          // 蓄力:鼓脹顫抖(果凍)+ 地面警示圈閃爍
           const prog = 1 - Math.max(this.stateT, 0) / sp.telegraph;
-          this.body.scale.setScalar(1 + prog * 0.25);
+          if (!this.useModel) this.body.scale.setScalar(1 + prog * 0.25);
           this.updateRing(prog, true);
           if (this.stateT <= 0) {
             // 引爆:範圍內命中玩家,drain 效果順帶回復自身
@@ -459,7 +606,8 @@ export class Enemy {
             this.specialPhase = "blast";
             this.specialRingT = 0;
             this.stateT = BLAST_TIME;
-            this.body.scale.setScalar(1);
+            if (this.useModel) this.play("attack", false);
+            else this.body.scale.setScalar(1);
           }
         } else {
           // 擴散:警示圈由中心爆開、淡出
@@ -507,33 +655,39 @@ export class Enemy {
         const dir = new THREE.Vector3().subVectors(target, pos);
         dir.y = 0;
         const speed = this.state === "chase" ? this.config.speed : this.config.speed * 0.5;
-        if (dir.lengthSq() > 0.01) {
+        const moving = dir.lengthSq() > 0.01;
+        if (moving) {
           dir.normalize();
           pos.addScaledVector(dir, speed * dt);
           this.mesh.rotation.y = Math.atan2(dir.x, dir.z);
         }
 
-        // 跳躍式移動:彈跳 + 擠壓伸展
-        this.hopPhase += dt * (this.state === "chase" ? 9 : 5);
-        const bounce = Math.abs(Math.sin(this.hopPhase));
-        this.body.position.y = bounce * 0.35;
-        this.body.scale.y = 0.8 + bounce * 0.3;
-        this.body.scale.x = this.body.scale.z = 1.1 - bounce * 0.15;
+        if (this.useModel) {
+          // 模型:走/待機切換(巡邏抵達路點時近乎靜止 → idle)
+          this.play(moving ? "move" : "idle");
+        } else {
+          // 果凍:跳躍式移動 — 彈跳 + 擠壓伸展
+          this.hopPhase += dt * (this.state === "chase" ? 9 : 5);
+          const bounce = Math.abs(Math.sin(this.hopPhase));
+          this.body.position.y = bounce * 0.35;
+          this.body.scale.y = 0.8 + bounce * 0.3;
+          this.body.scale.x = this.body.scale.z = 1.1 - bounce * 0.15;
+        }
         break;
       }
     }
 
     // 受擊閃白 / 蓄力轉紅
     if (this.flashT > 0) {
-      this.blobMaterial.color.setHex(0xffffff);
+      this.setTint(new THREE.Color(0xffffff), 1);
     } else if (this.state === "windup") {
-      this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xff5544), 0.55);
+      this.setTint(new THREE.Color(0xff5544), 0.55);
     } else {
-      this.blobMaterial.color.copy(this.baseColor);
+      this.setTint(null);
     }
     // 灼燒中泛橘紅(疊在前面的基礎色上)
     if (this.burnT > 0 && this.flashT <= 0) {
-      this.blobMaterial.color.lerp(new THREE.Color(0xff6a2c), 0.5);
+      for (const m of this.tintMats) m.color.lerp(new THREE.Color(0xff6a2c), 0.5);
     }
 
     pos.y = groundHeight(pos.x, pos.z);
@@ -682,11 +836,12 @@ export class Enemy {
     this.drawHpBar();
     if (this.hp <= 0) {
       this.state = "dying";
-      this.stateT = DYING_TIME;
+      this.stateT = this.dyingTime;
       this.hpBar.visible = false;
       this.specialPhase = "";
       this.specialEvent = null;
       this.hideRing();
+      if (this.useModel) this.play("death", false);
       return true;
     }
     return false;
@@ -733,10 +888,16 @@ export class Enemy {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.mesh.rotation.y += d * t;
     this.flashT = Math.max(0, this.flashT - dt);
-    this.hopPhase += dt * 6;
-    this.body.position.y = Math.abs(Math.sin(this.hopPhase)) * 0.12;
-    if (this.flashT > 0) this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xffffff), 0.7);
-    else this.blobMaterial.color.copy(this.baseColor);
+    if (this.useModel) {
+      // 模型傀儡:推進動畫並播移動(冰凍/麻痺旗標下方會定格著色,但動畫仍續播以求簡單)
+      this.stepMixer(dt);
+      this.play("move");
+    } else {
+      this.hopPhase += dt * 6;
+      this.body.position.y = Math.abs(Math.sin(this.hopPhase)) * 0.12;
+    }
+    if (this.flashT > 0) this.setTint(new THREE.Color(0xffffff), 0.7);
+    else this.setTint(null);
     // 狀態旗標跨端視覺(階段 3b):頭目蓄力預警/引爆圈 + 冰凍/麻痺/灼燒著色
     this.renderRemoteStatus(dt);
   }
@@ -755,12 +916,12 @@ export class Enemy {
     } else {
       this.hideRing();
     }
-    if (this.flashT > 0) return; // 受擊白閃優先
-    if (f === 3) this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xbfeaff), 0.75);
+    if (this.flashT > 0) return; // 受擊白閃優先(updateRemote 已套基礎色)
+    if (f === 3) this.setTint(new THREE.Color(0xbfeaff), 0.75);
     else if (f === 4) {
       const flicker = 0.4 + 0.4 * Math.abs(Math.sin(this.hopPhase * 5));
-      this.blobMaterial.color.lerpColors(this.baseColor, new THREE.Color(0xfff080), flicker);
-    } else if (f === 5) this.blobMaterial.color.lerp(new THREE.Color(0xff6a2c), 0.5);
+      this.setTint(new THREE.Color(0xfff080), flicker);
+    } else if (f === 5) for (const m of this.tintMats) m.color.lerp(new THREE.Color(0xff6a2c), 0.5);
   }
 
   /**
@@ -817,6 +978,12 @@ export class Enemy {
     this.knockback.set(0, 0, 0);
     this.mesh.position.set(this.home.x, groundHeight(this.home.x, this.home.z), this.home.z);
     this.drawHpBar();
+    // 模型:重置動畫回 idle、還原本色
+    if (this.useModel) {
+      this.currentAction = null;
+      this.play("idle", true, 0);
+    }
+    this.setTint(null);
   }
 
   private pickWaypoint(): void {

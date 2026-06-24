@@ -34,7 +34,7 @@ interface Hill {
   h: number;
 }
 
-interface IslandDef {
+export interface IslandDef {
   name: string;
   x: number;
   z: number;
@@ -64,6 +64,15 @@ export const SEA_BORDER_X = 1100;
 /** 判定座標屬於第一海(1)或第二海(2) */
 export function seaOf(x: number): 1 | 2 {
   return x > SEA_BORDER_X ? 2 : 1;
+}
+
+/** 傳回座標所在的島嶼(在其半徑 r 內);不在任何島上(航行於外海)回 null。
+ *  島嶼彼此相隔的海域遠大於半徑差,不會重疊;取第一個命中即可。 */
+export function islandAt(x: number, z: number): IslandDef | null {
+  for (const isl of ISLANDS) {
+    if (Math.hypot(x - isl.x, z - isl.z) < isl.r) return isl;
+  }
+  return null;
 }
 
 /** 群島配置:曙光嶼(新手村)+ 翠風林島(叢林,風語石) */

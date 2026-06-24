@@ -17,6 +17,10 @@ const HUD_CSS = `
 #hud .hint { position: absolute; bottom: 14px; left: 14px; font-size: 12px; background: rgba(10,26,42,0.6); padding: 8px 12px; border-radius: 8px; line-height: 1.7; }
 #hud .toast { position: absolute; top: 18%; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: 700; text-shadow: 0 2px 6px rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s; }
 #hud .toast.show { opacity: 1; }
+#hud .island-title { position: absolute; top: 24%; left: 50%; transform: translateX(-50%) translateY(-10px); text-align: center; opacity: 0; transition: opacity 0.55s ease, transform 0.55s ease; text-shadow: 0 2px 12px rgba(0,0,0,0.75); }
+#hud .island-title.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#hud .island-title .name { font-size: 40px; font-weight: 800; letter-spacing: 6px; }
+#hud .island-title .sub { font-size: 14px; opacity: 0.85; margin-top: 6px; letter-spacing: 3px; }
 #hud .gem-row { font-size: 13px; margin-top: 6px; display: none; color: #ffb08a; }
 #hud .gem-row.show { display: block; }
 #hud .fruit-row { font-size: 13px; margin-top: 4px; display: none; color: #cfa8ff; }
@@ -46,8 +50,10 @@ export class Hud {
   private coinText: HTMLElement;
   private crystalText: HTMLElement;
   private toast: HTMLElement;
+  private islandTitle: HTMLElement;
   private deathOverlay: HTMLElement;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  private islandTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private onRespawn: (choice: string) => void) {
     const style = document.createElement("style");
@@ -70,7 +76,8 @@ export class Hud {
       </div>
       <div class="quests" id="hud-quests"><div class="title">任務</div><div id="hud-quest-list"></div></div>
       <div class="talk" id="hud-talk">按 F 對話</div>
-      <div class="hint">WASD 移動｜空白鍵 跳躍｜Shift 閃避｜左鍵 攻擊(按住集氣)｜Q 舉盾｜E 火焰斬｜R 藥水<br/>右鍵拖曳 轉視角｜滾輪 縮放｜Tab 背包｜F 對話/上下船｜Enter 聊天｜小船在南灘,可出海前往其他島</div>
+      <div class="hint">WASD 移動｜空白鍵 跳躍｜Shift 閃避｜左鍵 攻擊(按住集氣)｜Q 舉盾｜E 火焰斬｜R 藥水<br/>右鍵拖曳 轉視角｜滾輪 縮放｜Tab 背包｜M 地圖｜F 對話/上下船｜Enter 聊天｜小船在南灘,可出海前往其他島</div>
+      <div class="island-title" id="hud-island"></div>
       <div class="toast" id="hud-toast"></div>
       <div id="hud-net" style="position:fixed;top:8px;right:12px;font:600 13px/1.4 system-ui,sans-serif;color:#cfe8ff;text-shadow:0 1px 2px #000;pointer-events:none;"></div>
     `;
@@ -89,6 +96,7 @@ export class Hud {
     this.coinText = this.byId("hud-coin");
     this.crystalText = this.byId("hud-crystal");
     this.toast = this.byId("hud-toast");
+    this.islandTitle = this.byId("hud-island");
   }
 
   /** 每幀同步顯示數值 */
@@ -172,6 +180,15 @@ export class Hud {
     this.byId("hud-quest-list").innerHTML = lines
       .map((line) => `<div>${line}</div>`)
       .join("");
+  }
+
+  /** 進入島嶼時的大字標題(島名 + 副標,如所屬海域),數秒後淡出 */
+  showIslandTitle(name: string, subtitle = ""): void {
+    this.islandTitle.innerHTML =
+      `<div class="name">${name}</div>` + (subtitle ? `<div class="sub">${subtitle}</div>` : "");
+    this.islandTitle.classList.add("show");
+    if (this.islandTimer) clearTimeout(this.islandTimer);
+    this.islandTimer = setTimeout(() => this.islandTitle.classList.remove("show"), 3200);
   }
 
   /** 顯示短暫提示訊息 */

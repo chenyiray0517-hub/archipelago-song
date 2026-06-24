@@ -1675,6 +1675,51 @@ JSON.stringify(afterReload.fruitsEquipped) === JSON.stringify(beforeReload.fruit
   ? ok(`重新整理後出戰配置保留(寶石 ${afterReload.gemsEquipped.join("/")}, 果實 ${afterReload.fruitsEquipped.join("/")})`)
   : fail(`出戰配置未保留:before=${JSON.stringify({ g: beforeReload.gemsEquipped, f: beforeReload.fruitsEquipped })} after=${JSON.stringify({ g: afterReload.gemsEquipped, f: afterReload.fruitsEquipped })}`);
 
+// 進入島嶼顯示島名 + 群島地圖(按 M)
+// 先移到外海清空「目前所在島」,再傳送上翠風林島,應跳出島名大字
+await page.evaluate(() => window.__game.player.mesh.position.set(500, 1, 500));
+await page.waitForTimeout(160);
+await page.evaluate(() => window.__game.player.mesh.position.set(150, 20, 110));
+await page.waitForTimeout(260);
+const islandTitle = await page.evaluate(() => {
+  const el = document.getElementById("hud-island");
+  return { show: el?.classList.contains("show") ?? false, text: el?.textContent ?? "" };
+});
+islandTitle.show && islandTitle.text.includes("翠風林島")
+  ? ok(`進入島嶼顯示島名大字(${islandTitle.text.replace(/\s+/g, " ").trim()})`)
+  : fail(`島名未顯示:${JSON.stringify(islandTitle)}`);
+
+// 按 M 開地圖,應顯示且圖例列出當前海域(第一海)島嶼
+await page.keyboard.press("m");
+await page.waitForTimeout(180);
+const mapOpen = await page.evaluate(() => {
+  const el = document.getElementById("map");
+  return {
+    isOpen: window.__game.map?.isOpen ?? false,
+    show: el?.classList.contains("show") ?? false,
+    legend: document.getElementById("map-legend")?.textContent ?? "",
+  };
+});
+mapOpen.isOpen && mapOpen.show && mapOpen.legend.includes("翠風林島") && mapOpen.legend.includes("曙光嶼")
+  ? ok("按 M 開啟群島地圖(圖例列出第一海島嶼)")
+  : fail(`地圖未正確開啟:${JSON.stringify(mapOpen)}`);
+
+// 地圖只列當前海域:第一海地圖不應含第二海島嶼
+!mapOpen.legend.includes("熔砂島") && !mapOpen.legend.includes("珊瑚礁島")
+  ? ok("地圖僅列玩家所在海域(第一海)島嶼,不混入第二海")
+  : fail(`地圖混入第二海島嶼:${mapOpen.legend}`);
+
+// 再按 M 關閉
+await page.keyboard.press("m");
+await page.waitForTimeout(120);
+const mapClosed = await page.evaluate(() => ({
+  isOpen: window.__game.map?.isOpen ?? true,
+  show: document.getElementById("map")?.classList.contains("show") ?? true,
+}));
+!mapClosed.isOpen && !mapClosed.show
+  ? ok("再按 M 關閉地圖")
+  : fail(`地圖未關閉:${JSON.stringify(mapClosed)}`);
+
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");
 process.exit(errors.length > 0 ? 1 : 0);

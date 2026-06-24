@@ -16,6 +16,7 @@ import {
   SUNKEN_CITY,
   SECOND_SEA,
   seaOf,
+  islandAt,
   THUNDER_FRUIT_SITE,
   GRAVITY_FRUIT_SITE,
   OBSTACLES,
@@ -82,6 +83,7 @@ import { QuestLog, JELLY_TARGET, HUNTS, type HuntId } from "./systems/quests";
 import { loadGame, saveGame, type SaveData } from "./systems/save";
 import { Inventory, type CrystalSize } from "./systems/stats";
 import { Hud } from "./ui/hud";
+import { MapOverlay } from "./ui/map";
 import { BagPanel } from "./ui/bag";
 import { DialogBox } from "./ui/dialog";
 import { ShopPanel } from "./ui/shop";
@@ -1138,6 +1140,10 @@ function main(): void {
     hud.setDead(false);
   });
 
+  // 群島地圖(按 M 開關)+ 進入島嶼時顯示島名所需的「目前所在島」追蹤
+  const map = new MapOverlay();
+  let shownIslandName: string | null = null;
+
   /** 顯示死亡畫面(海灘 + 當前海域已啟用的重生點供選擇) */
   const showDeathScreen = (): void => {
     const options: { id: string; label: string }[] = [];
@@ -1687,6 +1693,7 @@ function main(): void {
         resolveObstacles,
         net,
         chat,
+        map,
         get remotePlayers() {
           return remotePlayers;
         },
@@ -1736,6 +1743,23 @@ function main(): void {
     if (input.wasPressed("Escape")) {
       audio.sfx("ui");
       settings.toggle();
+    }
+    if (input.wasPressed("KeyM")) {
+      audio.sfx("ui");
+      map.toggle();
+    }
+
+    // 進入新島嶼時顯示島名大字(離島回外海後再進同島會再次顯示);地圖開啟時即時重繪
+    {
+      const isl = islandAt(player.mesh.position.x, player.mesh.position.z);
+      const islName = isl?.name ?? null;
+      if (islName !== shownIslandName) {
+        shownIslandName = islName;
+        if (islName) {
+          hud.showIslandTitle(islName, seaOf(player.mesh.position.x) === 2 ? "第二海" : "第一海");
+        }
+      }
+      map.render(player.mesh.position.x, player.mesh.position.z);
     }
 
     // NPC:待機動畫 + 對話範圍偵測;F 開啟/推進對話

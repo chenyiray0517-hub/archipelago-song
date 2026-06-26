@@ -516,12 +516,12 @@ await castGem("frost");
 await page.waitForTimeout(200);
 const afterIce = await page.evaluate(() => ({
   mp: window.__game.player.mp,
-  waves: window.__game.shockwaves.length,
+  arrows: window.__game.iceArrows.length,
 }));
 afterIce.mp <= mpBeforeIce - 11
   ? ok(`冰箭消耗靈力(${Math.round(mpBeforeIce)} → ${Math.round(afterIce.mp)})`)
   : fail(`冰箭靈力未扣:${mpBeforeIce} → ${afterIce.mp}`);
-afterIce.waves > 0 ? ok("冰箭生成") : fail("冰箭未生成");
+afterIce.arrows > 0 ? ok("寒冰箭矢生成") : fail("寒冰箭矢未生成");
 
 // 23. 冰面渡水:走出涉水範圍踏上海面 → 靈力持續消耗;靈力歸零 → 碎裂沖回岸邊
 await page.evaluate(() => {
@@ -1164,7 +1164,7 @@ aquaAfter.frozen >= 2 && aquaHurt >= 2
   : fail(`碧波震盪異常:frozen=${aquaAfter.frozen} hurt=${aquaHurt}`);
 await page.screenshot({ path: "/tmp/archipelago-33-aqua.png" });
 
-// 45i. 翠生石生命汲取:授予寶石 → 壓低生命、前方放一隻孢子果凍 → H 施放 → 衝擊波吸血(leech)+ 生命回復
+// 45i. 翠生石生命汲取:授予寶石 → 壓低生命、前方放一隻孢子果凍 → H 施放 → 吸血光束即時傷害 + 生命回復
 const lifeBefore = await page.evaluate(() => {
   const g = window.__game;
   g.gems.lifeOwned = true;
@@ -1182,20 +1182,19 @@ await castGem("life");
 await page.waitForTimeout(250);
 const lifeAfter = await page.evaluate(() => {
   const g = window.__game;
-  const waves = g.shockwaves;
   const spore = g.enemies.find((e) => e.kind === "spore");
   return {
     mp: g.player.mp,
     hp: g.player.hp,
-    leech: waves.length > 0 && waves[waves.length - 1].leech > 0,
+    beam: g.gemFx.length > 0,
     sphp: spore.hp,
   };
 });
 lifeAfter.mp <= lifeBefore.mp - 13
   ? ok(`生命汲取消耗靈力(${Math.round(lifeBefore.mp)} → ${Math.round(lifeAfter.mp)})`)
   : fail(`靈力未扣除:${lifeBefore.mp} → ${lifeAfter.mp}`);
-lifeAfter.leech && lifeAfter.sphp < lifeBefore.sphp && lifeAfter.hp > lifeBefore.hp
-  ? ok(`生命汲取命中孢子果凍並回血(HP ${lifeBefore.hp} → ${lifeAfter.hp})`)
+lifeAfter.beam && lifeAfter.sphp < lifeBefore.sphp && lifeAfter.hp > lifeBefore.hp
+  ? ok(`生命汲取光束命中孢子果凍並回血(HP ${lifeBefore.hp} → ${lifeAfter.hp})`)
   : fail(`生命汲取異常:${JSON.stringify({ lifeBefore, lifeAfter })}`);
 await page.screenshot({ path: "/tmp/archipelago-34-life.png" });
 

@@ -30,7 +30,8 @@ import { Pickup } from "./entities/pickup";
 import { Shockwave } from "./entities/shockwave";
 import { Vortex } from "./entities/vortex";
 import { LightningBolt } from "./entities/lightning";
-import { GroundBurst, VoidRift, type TransientFx } from "./entities/gemFx";
+import { IceArrow } from "./entities/iceArrow";
+import { GroundBurst, VoidRift, LifeBeam, type TransientFx } from "./entities/gemFx";
 import { NetClient, type NetState } from "./net/net";
 import { RemotePlayer, colorFor } from "./net/remotePlayer";
 import {
@@ -399,9 +400,10 @@ function main(): void {
 
   let pickups: Pickup[] = [];
   let shockwaves: Shockwave[] = [];
+  let iceArrows: IceArrow[] = [];
   let vortexes: Vortex[] = [];
   let bolts: LightningBolt[] = [];
-  /** 純視覺技能特效(地震波/碧波擴散爆發、瞬移虛空裂隙):每幀更新、淡出移除 */
+  /** 純視覺技能特效(地震波/碧波擴散爆發、瞬移虛空裂隙、生命汲取光束):每幀更新、淡出移除 */
   let gemFx: TransientFx[] = [];
   /** 雷光果只在風暴天氣顯現:存著當前場上的果實引用,風暴離去未撿則收回 */
   let thunderFruit: Pickup | null = null;
@@ -1669,6 +1671,9 @@ function main(): void {
         get shockwaves() {
           return shockwaves;
         },
+        get iceArrows() {
+          return iceArrows;
+        },
         get vortexes() {
           return vortexes;
         },
@@ -2014,14 +2019,14 @@ function main(): void {
       ) {
         player.mp -= ICE_MP_COST;
         audio.sfx("ice");
-        const iceBolt = new Shockwave(
+        const arrow = new IceArrow(
           player.mesh.position,
           player.facing,
           iceDamage(player.stats.attrs.spirit, gems.levels.frost),
-          { color: 0x9adcff, lifetime: 0.7, speed: 26, freezes: true },
+          freezeDuration(gems.levels.frost),
         );
-        scene.add(iceBolt.mesh);
-        shockwaves.push(iceBolt);
+        scene.add(arrow.mesh);
+        iceArrows.push(arrow);
       }
 
       // 虛空石:短距離瞬移(朝面向位移,失敗時逐步縮短距離)
@@ -2119,14 +2124,37 @@ function main(): void {
       ) {
         player.mp -= LIFE_MP_COST;
         audio.sfx("life");
-        const lifeWave = new Shockwave(
-          player.mesh.position,
-          player.facing,
-          lifeDamage(player.stats.attrs.spirit, gems.levels.life),
-          { color: 0x5ae85a, lifetime: 0.7, speed: 22, leech: lifeLeech(gems.levels.life) },
-        );
-        scene.add(lifeWave.mesh);
-        shockwaves.push(lifeWave);
+        // 即時吸血光束:沿面向一條線,範圍內敵人立即結算傷害並回血(吸取)
+        const lifeDmg = lifeDamage(player.stats.attrs.spirit, gems.levels.life);
+        const leech = lifeLeech(gems.levels.life);
+        const beamRange = 15;
+        const beamWidth = 2.2;
+        const beamDir = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing));
+        const beamOrigin = player.mesh.position.clone();
+        for (const enemy of enemies) {
+          if (enemy.isDead) continue;
+          const to = new THREE.Vector3().subVectors(enemy.mesh.position, beamOrigin);
+          to.y = 0;
+          const along = to.dot(beamDir);
+          if (along < 0 || along > beamRange) continue;
+          const lateral = to.clone().addScaledVector(beamDir, -along).length();
+          if (lateral > beamWidth) continue;
+          hitEnemy(enemy, lifeDmg, to);
+          if (player.hp < player.stats.maxHP) {
+            const heal = Math.max(1, Math.round(lifeDmg * leech));
+            player.hp = Math.min(player.stats.maxHP, player.hp + heal);
+            floats.spawn(
+              player.mesh.position.clone().setY(player.mesh.position.y + 2.6),
+              `+${heal}`,
+              "#7be87b",
+            );
+          }
+        }
+        const beamFrom = beamOrigin.clone().setY(beamOrigin.y + 1.4).addScaledVector(beamDir, 0.4);
+        const beamTo = beamOrigin.clone().setY(beamOrigin.y + 1.4).addScaledVector(beamDir, beamRange);
+        const lifeBeam = new LifeBeam(beamFrom, beamTo);
+        scene.add(lifeBeam.object);
+        gemFx.push(lifeBeam);
       }
 
       // 雷光果:Z 連鎖閃電(索敵最近敵人,向鄰近敵人跳躍,傷害遞減 + 麻痺)
@@ -2443,6 +2471,28 @@ function main(): void {
       if (wave.expired) {
         scene.remove(wave.mesh);
         wave.dispose();
+        return false;
+      }
+      return true;
+    });
+
+    // 寒冰箭矢:飛行 + 路徑命中結算(命中傷害 + 凍結)
+    iceArrows = iceArrows.filter((arrow) => {
+      const hits = arrow.update(worldDt, enemies);
+      for (const enemy of hits) {
+        const toEnemy = new THREE.Vector3().subVectors(enemy.mesh.position, player.mesh.position);
+        toEnemy.y = 0;
+        const died = enemy.takeDamage(arrow.damage, toEnemy);
+        if (!died) enemy.freeze(arrow.freezeSec);
+        const hitPos = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 1);
+        floats.spawn(hitPos.clone().setY(hitPos.y + 1.2), String(arrow.damage), "#9adcff");
+        fx.burst(hitPos, died ? 0x9be89b : 0x9adcff, died ? 16 : 8);
+        audio.sfx(died ? "enemyDie" : "hit");
+        if (died) spawnDrops(enemy);
+      }
+      if (arrow.expired) {
+        scene.remove(arrow.mesh);
+        arrow.dispose();
         return false;
       }
       return true;

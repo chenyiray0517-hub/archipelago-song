@@ -162,6 +162,100 @@ export class GroundBurst implements TransientFx {
 }
 
 /**
+ * 生命汲取光束:翠生石射出一條連接玩家與前方的綠色光束,
+ * 由外裹輝光柱 + 銳利核心柱 + 一串沿光束「回流向玩家」的生命光點組成,短暫後淡出。
+ * 傷害與回血在 main 即時結算,這裡只負責畫。
+ */
+export class LifeBeam implements TransientFx {
+  readonly object: THREE.Group;
+  private life: number;
+  private readonly lifetime = 0.34;
+  private readonly length: number;
+  private flow = 0;
+  private readonly motes: THREE.Mesh[] = [];
+  private readonly materials: THREE.Material[] = [];
+  private readonly geometries: THREE.BufferGeometry[] = [];
+  private readonly glowMat: THREE.MeshBasicMaterial;
+  private readonly coreMat: THREE.MeshBasicMaterial;
+  private readonly moteMat: THREE.MeshBasicMaterial;
+
+  constructor(from: THREE.Vector3, to: THREE.Vector3) {
+    this.life = this.lifetime;
+    this.object = new THREE.Group();
+    this.object.position.copy(from);
+    const dir = new THREE.Vector3().subVectors(to, from);
+    this.length = dir.length();
+    // 子物件沿本地 +Z(由 from 指向 to),group 旋轉對齊世界方向
+    this.object.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 0, 1),
+      dir.clone().normalize(),
+    );
+
+    const addMat = (color: number, opacity: number): THREE.MeshBasicMaterial => {
+      const m = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      this.materials.push(m);
+      return m;
+    };
+
+    // 外輝光柱 + 核心柱(CylinderGeometry 預設沿 Y → 轉成沿 Z,中心移到光束中點)
+    const mkBeam = (radius: number, mat: THREE.MeshBasicMaterial): void => {
+      const geo = new THREE.CylinderGeometry(radius, radius, this.length, 10, 1, true);
+      this.geometries.push(geo);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.z = this.length / 2;
+      this.object.add(mesh);
+    };
+    this.glowMat = addMat(0x4ae86a, 0.4);
+    this.coreMat = addMat(0xc8ffd0, 0.95);
+    mkBeam(0.34, this.glowMat);
+    mkBeam(0.12, this.coreMat);
+
+    // 生命光點:沿光束「回流」向玩家(from),強化吸取手感
+    this.moteMat = addMat(0xa8ffb8, 0.95);
+    const moteGeo = new THREE.OctahedronGeometry(0.16, 0);
+    this.geometries.push(moteGeo);
+    for (let i = 0; i < 6; i++) {
+      const mesh = new THREE.Mesh(moteGeo, this.moteMat);
+      this.motes.push(mesh);
+      this.object.add(mesh);
+    }
+  }
+
+  get expired(): boolean {
+    return this.life <= 0;
+  }
+
+  update(dt: number): void {
+    this.life -= dt;
+    this.flow += dt;
+    const fade = Math.max(this.life, 0) / this.lifetime;
+    this.glowMat.opacity = 0.4 * fade;
+    this.coreMat.opacity = 0.95 * fade;
+    this.moteMat.opacity = 0.95 * fade;
+    // 光點沿 +Z(to)往 from(0)回流:frac 隨時間遞減並循環
+    for (let i = 0; i < this.motes.length; i++) {
+      const frac = (1 - ((this.flow * 2.2 + i / this.motes.length) % 1));
+      this.motes[i].position.z = frac * this.length;
+      this.motes[i].rotation.x += dt * 8;
+      this.motes[i].rotation.y += dt * 6;
+    }
+  }
+
+  dispose(): void {
+    for (const g of this.geometries) g.dispose();
+    for (const m of this.materials) m.dispose();
+  }
+}
+
+/**
  * 虛空裂隙:瞬移起點(implode 塌縮)與終點(explode 爆開)各開一道紫色傳送門,
  * 由直立光環 + 內核 + 向心/離心碎片組成,短暫高光後消失。
  */

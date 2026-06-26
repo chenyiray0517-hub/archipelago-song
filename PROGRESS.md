@@ -1,5 +1,17 @@
 # PROGRESS
 
+## 2026-06-26(七顆主動寶石技能特效全面升級:多層劍氣 / 地面爆發 / 虛空裂隙)
+
+> 接續連鎖閃電+引力漩渦,把七顆主動寶石技能的視覺也全面升級。沿用同一套多層 additive 輝光風格,每顆更有辨識度。全為純視覺:傷害/凍結/灼燒/吸血/瞬移判定與 `shockwaves` 陣列行為皆不變。
+
+- **共用 `Shockwave` 多層化**(`entities/shockwave.ts`,影響 flame 火焰斬 / frost 冰箭 / lava 熔岩噴發 / life 生命汲取):單層 torus 新月 → `THREE.Group` 疊三層 additive 新月(外圈元素色輝光暈粗弧 + 元素色本體 + 元素色提亮 65% 的銳利白芯細弧)+ 兩尖端 icosahedron 閃花(隨機明滅縮放)。group 承載世界座標/朝向,子弧只在本地疊層,`scale` 同步驅動視覺與命中半徑(HIT_RADIUS×scale.x 不變)。
+- **新增 `entities/gemFx.ts`**:定義純視覺瞬時特效介面 `TransientFx`(object/expired/update/dispose),主迴圈單一 `gemFx[]` 管理。
+  - **`GroundBurst`**(earth 地震波 / aqua 碧波震盪):中心向外 ease-out 擴散的雙環(錯開起跑做連續推進)+ 地面閃光圓盤(前 30% 壽命快收)+ 上拋碎屑(拋物線下墜+旋轉+淡出)。earth=褐色四面體飛石、aqua=青色八面體水珠,半徑吃技能 range。
+  - **`VoidRift`**(void 瞬移):起點 implode 塌縮、終點 explode 爆開,各一道直立紫色傳送門(光環門框 + 暗紫虛空核圓盤 + 10 顆向心/離心盤旋碎片),門面朝行進方向。
+- **接線**(`main.ts`):earth/aqua 施放時生成對應 `GroundBurst`、void 瞬移成功時於起終點生成 `VoidRift`;新增 `gemFx[]` 更新/dispose 迴圈(置於 vortex 之後)、`__game.gemFx` 測試掛鉤。
+- 驗證:**build 綠**(tsc strict,49 模組)、**smoke 全綠**(火焰斬/冰箭/地震波/碧波/瞬移等項皆過,功能無回歸)、截圖目視:火焰斬多層發光新月、碧波青白雙環擴散、瞬移玩家身上虛空門環、地震波地面爆發。
+- **後續**:可加 frost 冰箭拖尾冰晶、lava 岩漿滴落、life 吸血綠葉飄回玩家;earth 地裂縫貼花。
+
 ## 2026-06-26(連鎖閃電 + 引力漩渦特效升級:多層輝光電弧 / 漏斗渦流)
 
 > 兩顆靈樹果實技能(Z 連鎖閃電、T 引力漩渦)的視覺從單層折線/單環+核心升級成有體積、有渦流讀感的特效。純特效改動——傷害/麻痺/聚怪/掉落結算仍全在 `main` 走既有流程,建構子簽名不變。

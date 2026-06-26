@@ -30,6 +30,7 @@ import { Pickup } from "./entities/pickup";
 import { Shockwave } from "./entities/shockwave";
 import { Vortex } from "./entities/vortex";
 import { LightningBolt } from "./entities/lightning";
+import { GroundBurst, VoidRift, type TransientFx } from "./entities/gemFx";
 import { NetClient, type NetState } from "./net/net";
 import { RemotePlayer, colorFor } from "./net/remotePlayer";
 import {
@@ -400,6 +401,8 @@ function main(): void {
   let shockwaves: Shockwave[] = [];
   let vortexes: Vortex[] = [];
   let bolts: LightningBolt[] = [];
+  /** 純視覺技能特效(地震波/碧波擴散爆發、瞬移虛空裂隙):每幀更新、淡出移除 */
+  let gemFx: TransientFx[] = [];
   /** 雷光果只在風暴天氣顯現:存著當前場上的果實引用,風暴離去未撿則收回 */
   let thunderFruit: Pickup | null = null;
   /** 引力果在擊敗虛空魔王後生成一次(避免重複) */
@@ -1672,6 +1675,9 @@ function main(): void {
         get bolts() {
           return bolts;
         },
+        get gemFx() {
+          return gemFx;
+        },
         gems,
         fruits,
         npcs,
@@ -1982,6 +1988,14 @@ function main(): void {
         fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 0.5), 0xc88a3c, 22, 9);
         const dmg = quakeDamage(player.stats.attrs.spirit, gems.levels.earth);
         const range = quakeRange(gems.levels.earth);
+        const quakeBurst = new GroundBurst(player.mesh.position.x, player.mesh.position.z, {
+          ringColor: 0xd8973c,
+          shardColor: 0xc8803c,
+          radius: range,
+          shardKind: "rock",
+        });
+        scene.add(quakeBurst.object);
+        gemFx.push(quakeBurst);
         for (const enemy of enemies) {
           if (enemy.isDead) continue;
           const toEnemy = new THREE.Vector3().subVectors(enemy.mesh.position, player.mesh.position);
@@ -2026,8 +2040,15 @@ function main(): void {
             player.mp -= BLINK_MP_COST;
             audio.sfx("blink");
             fx.burst(origin.clone().setY(origin.y + 1), 0x8a4ae8, 10, 5);
+            const riftIn = new VoidRift(origin.x, origin.y + 1.2, origin.z, player.facing, "implode");
+            scene.add(riftIn.object);
+            gemFx.push(riftIn);
             player.blinkTo(tx, tz);
-            fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1), 0x8a4ae8, 10, 5);
+            const dest = player.mesh.position;
+            fx.burst(dest.clone().setY(dest.y + 1), 0x8a4ae8, 10, 5);
+            const riftOut = new VoidRift(dest.x, dest.y + 1.2, dest.z, player.facing, "explode");
+            scene.add(riftOut.object);
+            gemFx.push(riftOut);
             break;
           }
         }
@@ -2069,6 +2090,15 @@ function main(): void {
         fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 0.6), 0x3ad8d8, 24, 8);
         const dmg = aquaDamage(player.stats.attrs.spirit, gems.levels.aqua);
         const range = aquaRange(gems.levels.aqua);
+        const aquaBurst = new GroundBurst(player.mesh.position.x, player.mesh.position.z, {
+          ringColor: 0x4ad8e8,
+          shardColor: 0x9af0ff,
+          radius: range,
+          shardKind: "drop",
+          shardCount: 18,
+        });
+        scene.add(aquaBurst.object);
+        gemFx.push(aquaBurst);
         const freezeSec = aquaFreeze(gems.levels.aqua);
         for (const enemy of enemies) {
           if (enemy.isDead) continue;
@@ -2434,6 +2464,17 @@ function main(): void {
       if (vortex.expired) {
         scene.remove(vortex.mesh);
         vortex.dispose();
+        return false;
+      }
+      return true;
+    });
+
+    // 寶石技能視覺特效(地震波/碧波爆發、瞬移裂隙):純視覺,淡出後移除
+    gemFx = gemFx.filter((fxx) => {
+      fxx.update(worldDt);
+      if (fxx.expired) {
+        scene.remove(fxx.object);
+        fxx.dispose();
         return false;
       }
       return true;

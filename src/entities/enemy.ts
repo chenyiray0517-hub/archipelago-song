@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { toonMaterial, addOutlines } from "../core/toon";
-import { groundHeight } from "../world/terrain";
+import { groundHeight, seaOf } from "../world/terrain";
 import { pickEnemyModel } from "../world/enemyModels";
 import type { SfxName } from "../core/audio";
 
@@ -122,6 +122,13 @@ interface EnemyConfig {
   color: number;
 }
 
+/**
+ * 第二海(x ≥ SEA_BORDER_X)敵人強度倍率:血量與傷害大幅提升,
+ * 拉開第一海/第二海難度梯度(Rai 指定)。依生成座標 seaOf(x) 判定。
+ */
+const SECOND_SEA_HP_MUL = 2.5;
+const SECOND_SEA_DMG_MUL = 2;
+
 const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   slime: { hp: 30, dmg: 8, speed: 3.4, scale: 1, color: 0x52c878 },
   elite: { hp: 120, dmg: 16, speed: 2.8, scale: 1.9, color: 0xe8884a },
@@ -217,6 +224,10 @@ export class Enemy {
   readonly kind: EnemyKind;
 
   hp: number;
+  /** 最大血量(= config.hp × 區域倍率;血條分母、drain 回血上限皆用此) */
+  readonly maxHp: number;
+  /** 實際傷害(= config.dmg × 區域倍率;普攻與特殊技基礎傷害皆用此) */
+  readonly dmg: number;
   state: EnemyState = "patrol";
 
   // ── 多人「房主權威」傀儡模式(階段 3a)──────────────────────
@@ -292,7 +303,11 @@ export class Enemy {
   constructor(kind: EnemyKind, x: number, z: number) {
     this.kind = kind;
     this.config = CONFIGS[kind];
-    this.hp = this.config.hp;
+    // 第二海敵人大幅強化:依生成座標套區域倍率
+    const sea2 = seaOf(x) === 2;
+    this.maxHp = Math.round(this.config.hp * (sea2 ? SECOND_SEA_HP_MUL : 1));
+    this.dmg = Math.round(this.config.dmg * (sea2 ? SECOND_SEA_DMG_MUL : 1));
+    this.hp = this.maxHp;
     this.home = new THREE.Vector3(x, 0, z);
     this.waypoint = this.home.clone();
     this.baseColor = new THREE.Color(this.config.color);
@@ -557,7 +572,7 @@ export class Enemy {
         this.mesh.rotation.y = Math.atan2(this.lungeDir.x, this.lungeDir.z);
         if (!this.lungeHitDone && !playerDead && distToPlayer < LUNGE_HIT_RANGE) {
           this.lungeHitDone = true;
-          dealt = this.config.dmg;
+          dealt = this.dmg;
         }
         if (this.stateT <= 0) {
           this.state = "recover";
@@ -583,10 +598,10 @@ export class Enemy {
           if (this.stateT <= 0) {
             // 引爆:範圍內命中玩家,drain 效果順帶回復自身
             const hit = !playerDead && distToPlayer <= sp.radius;
-            const dmg = Math.round(this.config.dmg * sp.dmgMul);
+            const dmg = Math.round(this.dmg * sp.dmgMul);
             let healed = 0;
             if (hit && sp.effect === "drain") {
-              healed = Math.min(this.config.hp - this.hp, Math.round(dmg * DRAIN_HEAL_MUL));
+              healed = Math.min(this.maxHp - this.hp, Math.round(dmg * DRAIN_HEAL_MUL));
               if (healed > 0) {
                 this.hp += healed;
                 this.drawHpBar();
@@ -960,7 +975,7 @@ export class Enemy {
   }
 
   private revive(): void {
-    this.hp = this.config.hp;
+    this.hp = this.maxHp;
     this.state = "patrol";
     this.freezeT = 0;
     this.burnT = 0;
@@ -1003,15 +1018,15 @@ export class Enemy {
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     ctx.fillRect(0, 0, 96, 18);
     ctx.fillStyle = "#e74c3c";
-    ctx.fillRect(1, 1, 94 * (this.hp / this.config.hp), 16);
+    ctx.fillRect(1, 1, 94 * (this.hp / this.maxHp), 16);
     ctx.font = "bold 12px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(0,0,0,0.8)";
-    ctx.strokeText(`${this.hp}/${this.config.hp}`, 48, 10);
+    ctx.strokeText(`${this.hp}/${this.maxHp}`, 48, 10);
     ctx.fillStyle = "#fff";
-    ctx.fillText(`${this.hp}/${this.config.hp}`, 48, 10);
+    ctx.fillText(`${this.hp}/${this.maxHp}`, 48, 10);
     this.hpTexture.needsUpdate = true;
   }
 }

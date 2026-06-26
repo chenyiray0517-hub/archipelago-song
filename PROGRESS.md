@@ -1,5 +1,15 @@
 # PROGRESS
 
+## 2026-06-26(第二海敵人大幅強化:血量 ×2.5、傷害 ×2)
+
+> 拉開第一海/第二海難度梯度(Rai 指定):第二海(x ≥ SEA_BORDER_X=1100)所有敵人血量與傷害大幅提升,第一海維持不變。
+
+- **依生成座標套區域倍率**(`entities/enemy.ts`):建構子 `seaOf(x)===2` 即套 `SECOND_SEA_HP_MUL=2.5` / `SECOND_SEA_DMG_MUL=2`。新增實例欄位 `maxHp`(= config.hp × 倍率)與 `dmg`(= config.dmg × 倍率),取代原本直接讀 `config.hp`/`config.dmg` 之處:初始血/重生血、血條分母與顯示、普攻傷害(lunge)、特殊技基礎傷害(× sp.dmgMul)、drain 回血上限。
+- **影響範圍**:第二海九種敵人 = 熔砂島(sand/magmaGuardian)、珊瑚礁島(reef/coralGuardian)、靈脈島(spore/lifeGuardian)、迷霧沼島(marsh)、鹽晶島(brine)、烈陽礁(solar)。例:孢子果凍 hp220→550、dmg28→56;珊瑚守護者 hp700→1750、dmg34→68。第一海(slime hp30/dmg8 等)不變。
+- **多人相容**:maxHp 由生成座標確定性計算,房主/客戶端在相同座標生成即一致;快照仍送絕對 `enemy.hp`,無同步問題。
+- 驗證:**build 綠**(tsc strict,50 模組)、**smoke 全綠**(新增測項:第二海孢子/珊瑚守護者數值強化、第一海史萊姆維持原值;既有第二海戰鬥測項全用相對血量比較,不受影響)。
+- **後續**:倍率為兩個常數,要調整難度直接改 `SECOND_SEA_HP_MUL`/`SECOND_SEA_DMG_MUL`;未來若要更細可改成每島梯度或吃玩家等級動態縮放。
+
 ## 2026-06-26(冰箭改寒冰箭矢、生命汲取改吸血光束)
 
 > 接續寶石特效升級,把這兩技從共用 `Shockwave` 新月改成各自獨立的形態與機制(Rai 指定):冰箭=發射飛行箭矢,生命汲取=一條即時吸血光束。

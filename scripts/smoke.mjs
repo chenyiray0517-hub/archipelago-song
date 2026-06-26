@@ -1133,6 +1133,26 @@ sea2Islands.spore === 5 && sea2Islands.lifeY > 0.5
   ? ok(`靈脈島生成(孢子果凍×${sea2Islands.spore} + 靈脈守護者,島心 y=${sea2Islands.lifeY.toFixed(1)})`)
   : fail(`靈脈島異常:${JSON.stringify(sea2Islands)}`);
 
+// 45g-2. 第二海敵人大幅強化:血量 ×2.5、傷害 ×2(第一海敵人不變)
+const seaScaling = await page.evaluate(() => {
+  const g = window.__game;
+  const spore = g.enemies.find((e) => e.kind === "spore"); // 第二海,基礎 hp220/dmg28
+  const coral = g.enemies.find((e) => e.kind === "coralGuardian"); // 第二海,基礎 hp700/dmg34
+  const slime = g.enemies.find((e) => e.kind === "slime"); // 第一海,基礎 hp30/dmg8
+  return {
+    sporeHp: spore?.maxHp, sporeDmg: spore?.dmg,
+    coralHp: coral?.maxHp, coralDmg: coral?.dmg,
+    slimeHp: slime?.maxHp, slimeDmg: slime?.dmg,
+  };
+});
+seaScaling.sporeHp === 550 && seaScaling.sporeDmg === 56 &&
+seaScaling.coralHp === 1750 && seaScaling.coralDmg === 68
+  ? ok(`第二海敵人強化(孢子 hp${seaScaling.sporeHp}/dmg${seaScaling.sporeDmg}、珊瑚守護者 hp${seaScaling.coralHp}/dmg${seaScaling.coralDmg})`)
+  : fail(`第二海強化異常:${JSON.stringify(seaScaling)}`);
+seaScaling.slimeHp === 30 && seaScaling.slimeDmg === 8
+  ? ok("第一海敵人維持原數值(史萊姆 hp30/dmg8)")
+  : fail(`第一海不該被改:${JSON.stringify(seaScaling)}`);
+
 // 45h. 碧波石碧波震盪:授予寶石 → 站到礁島心、聚集礁石果凍 → B 施放 → 靈力扣除 + 周身敵人凍結受傷
 const aquaBefore = await page.evaluate(() => {
   const g = window.__game;

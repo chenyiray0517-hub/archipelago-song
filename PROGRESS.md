@@ -1,5 +1,16 @@
 # PROGRESS
 
+## 2026-06-28(NPC 換骨骼動畫角色模型:Quaternius CC0 Pirate Kit 七種)
+
+> 把全部 NPC 從程序化村民(圓柱袍+球頭+帽)換成帶骨骼動畫的角色模型(Rai 指定七種:Henry/Barbarossa/Anne/Skeleton/Skeleton_Headless/Mako/Sharky),沿用敵人模型那套 glTF + cel-shading 管線。**載入失敗一律回退原程序化村民,絕不擋開場。**
+
+- **新增 `world/npcModels.ts`**(對照 `enemyModels.ts`):載入 `public/models/characters/` 的七個自包 glTF(幾何+圖集貼圖 base64 內嵌)→ `toonMaterial` 掛內嵌貼圖 + `addSkinnedOutlines` 描邊 → 正規化(底部 y=0、水平置中、身高 1.9)→ 原型 `Map`,`pickNpcModel(key)` 用 `SkeletonUtils.clone` 取獨立骨架複製。`NpcModelKey` = 七種角色鍵。
+- **`entities/npc.ts` 加模型分支**:建構子加第 7 參數 `model?: NpcModelKey`。有模型 → `AnimationMixer` 播 `Idle`,玩家進入對話範圍(`TALK_RANGE`)時 `crossFade` 到 `Wave` 揮手一次再淡回 Idle;無模型 → 維持原程序化村民 + 呼吸起伏。面向玩家邏輯不變。
+- **`main.ts` 載入與指派**:`loadNpcModels()` 併入開場 `Promise.all`(與 scenery/enemy 一起,各自 `.catch` 回退)。18 位 NPC 逐位指定角色:村長阿海=barbarossa、漁夫小蝦=henry、商人圓圓=anne、鍛造爐婆=sharky、領航者汐音/珊瑚祭司娜瑪=mako、鎮長波叔=barbarossa、靈脈守林人葉羅=anne;`makeHuntNpc` config 加 `model` 欄,十個狩獵委託 NPC 分配七種角色(戰鬥委託多給 skeleton/headless)。
+- **資產**:`public/models/characters/` 七個 .gltf(各 ~1.3–1.8MB,自包)。
+- 驗證:**build 綠**(tsc strict,50→51 模組)、**smoke 全綠 95 項**(NPC 數量/對話/任務測項皆不受影響,模型分支對外行為與程序化村民一致)。
+- **後續**:目前只播 Idle/Wave;可再依角色加走動巡邏、或商人/鍛造特定動作;之後若要也能把同套用到玩家本體(背包 model-stage 已預留)。
+
 ## 2026-06-28(背包改版:頂部玩家卡 + 永駐能力分配)
 
 > 重整背包版面(Rai 指定):頂部兩欄,左上玩家模型卡、右上能力分配;下方依序裝備 → 寶石 → 重要道具 → 傳送;維持可滑動。

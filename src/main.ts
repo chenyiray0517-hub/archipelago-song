@@ -6,6 +6,7 @@ import { createOcean, updateOcean } from "./world/ocean";
 import { Sky } from "./world/sky";
 import { loadSceneryModels } from "./world/sceneryModels";
 import { loadEnemyModels } from "./world/enemyModels";
+import { loadNpcModels, type NpcModelKey } from "./world/npcModels";
 import {
   createWorld,
   groundHeight,
@@ -480,6 +481,7 @@ function main(): void {
     crystalSize: CrystalSize;
     crystalCount: number;
     doneLines: string[];
+    model?: NpcModelKey;
   }): Npc =>
     new Npc(config.name, config.x, config.z, config.color, () => {
       const q = quests.get(config.quest);
@@ -508,7 +510,7 @@ function main(): void {
         `還剩 ${target - quests.huntProgress(config.quest)} 隻${config.enemyLabel},加油!`,
         "打完回來找我領賞!",
       ];
-    });
+    }, "talk", config.model);
 
   // 任務的接取/回報在對話開啟時結算(getLines 依任務狀態給詞並發獎勵)
   const npcs: Npc[] = [
@@ -722,7 +724,7 @@ function main(): void {
         ];
       }
       return ["大果凍還在主峰上等著你……", "記得打怪撿結晶,Tab 背包裡「使用」變強!"];
-    }),
+    }, "talk", "barbarossa"),
     new Npc("漁夫小蝦", -4, -48, 0x4a7a9a, () => {
       const q = quests.get("jelly");
       if (q === "done") return ["村子安全多了,謝謝你!", "聽說商人圓圓進了新貨,去看看吧。"];
@@ -748,12 +750,13 @@ function main(): void {
         `還剩 ${JELLY_TARGET - quests.jellyProgress()} 隻果凍怪,加油!`,
         "結晶要在背包(Tab)裡「使用」才會變強喔!",
       ];
-    }),
-    new Npc("商人圓圓", 7, -46, 0xc8884a, () => [], "shop"),
-    new Npc("鍛造大師爐婆", -150, 78, 0x8a4a2a, () => [], "forge"),
+    }, "talk", "henry"),
+    new Npc("商人圓圓", 7, -46, 0xc8884a, () => [], "shop", "anne"),
+    new Npc("鍛造大師爐婆", -150, 78, 0x8a4a2a, () => [], "forge", "sharky"),
     // 各島清剿任務 NPC(位置避開重生石碑與敵人仇恨範圍 12)
     makeHuntNpc({
       name: "獵人小藤",
+      model: "henry",
       x: 160,
       z: 66,
       color: 0x4a8a3a,
@@ -772,6 +775,7 @@ function main(): void {
     }),
     makeHuntNpc({
       name: "礦工岩叔",
+      model: "skeleton",
       x: -160,
       z: 76,
       color: 0x9a6a3a,
@@ -790,6 +794,7 @@ function main(): void {
     }),
     makeHuntNpc({
       name: "嚮導阿凜",
+      model: "barbarossa",
       x: 74,
       z: -212,
       color: 0x6a9ac8,
@@ -808,6 +813,7 @@ function main(): void {
     }),
     makeHuntNpc({
       name: "觀星者星嵐",
+      model: "anne",
       x: -6,
       z: 282,
       color: 0x7a5aa8,
@@ -862,7 +868,7 @@ function main(): void {
         `・修煉至 Lv.${SEA2_LEVEL}(目前 Lv.${player.stats.level})`,
         "達成之後,再回來找我。",
       ];
-    }),
+    }, "talk", "mako"),
     // 第二海・港口鎮:給予「熔砂的試煉」,熔岩守護者掉落第七顆寶石溶岩石
     new Npc("鎮長波叔", SECOND_SEA.x, SECOND_SEA.z - 36, 0xc8a04a, () => {
       const ql = quests.get("lava");
@@ -901,7 +907,7 @@ function main(): void {
         "【任務】登上熔砂島,擊敗熔岩守護者,取得溶岩石!",
         "想回第一海?在背包使用【第一海寶石】就行。",
       ];
-    }),
+    }, "talk", "barbarossa"),
     // 第二海・珊瑚礁島:給予「礁海的低語」,珊瑚守護者掉落碧波石
     new Npc("珊瑚祭司娜瑪", 1768, -92, 0x3aa6c0, () => {
       const qa = quests.get("aqua");
@@ -936,7 +942,7 @@ function main(): void {
         "牠守著一顆『碧波石』——能凝聚潮汐凍結萬物的靈紋寶石。",
         "【任務】擊敗島心的珊瑚守護者,取得碧波石!",
       ];
-    }),
+    }, "talk", "mako"),
     // 第二海・靈脈島:給予「靈脈的搏動」,靈脈守護者掉落翠生石
     new Npc("靈脈守林人葉羅", 2098, -162, 0x3ab060, () => {
       const ql = quests.get("life");
@@ -971,10 +977,11 @@ function main(): void {
         "牠藏著一顆『翠生石』——能將傷害化為生命的靈紋寶石。",
         "【任務】擊敗島心的靈脈守護者,取得翠生石!",
       ];
-    }),
+    }, "talk", "anne"),
     // 第二海・熔砂島:打怪委託(熔砂果凍)
     makeHuntNpc({
       name: "拓荒者沙吉",
+      model: "mako",
       x: 2168,
       z: 178,
       color: 0xc89850,
@@ -994,6 +1001,7 @@ function main(): void {
     // 第二海・珊瑚礁島:打怪委託(礁石果凍)
     makeHuntNpc({
       name: "潛水夫阿蚌",
+      model: "sharky",
       x: 1812,
       z: -130,
       color: 0x3a9ab8,
@@ -1013,6 +1021,7 @@ function main(): void {
     // 第二海・靈脈島:打怪委託(孢子果凍)
     makeHuntNpc({
       name: "採集者藤吉",
+      model: "skeletonHeadless",
       x: 2142,
       z: -200,
       color: 0x6aa83a,
@@ -1032,6 +1041,7 @@ function main(): void {
     // 第二海・迷霧沼島:打怪委託(沼氣果凍)
     makeHuntNpc({
       name: "沼澤嚮導苔翁",
+      model: "henry",
       x: 1740,
       z: 142,
       color: 0x4a7a5a,
@@ -1051,6 +1061,7 @@ function main(): void {
     // 第二海・鹽晶島:打怪委託(鹽晶果凍)
     makeHuntNpc({
       name: "鹽工鹵伯",
+      model: "skeleton",
       x: 1980,
       z: 232,
       color: 0x9ab8c0,
@@ -1070,6 +1081,7 @@ function main(): void {
     // 第二海・烈陽礁:打怪委託(熾光果凍)
     makeHuntNpc({
       name: "拾光人焰娃",
+      model: "barbarossa",
       x: 2260,
       z: -22,
       color: 0xe09838,
@@ -2857,8 +2869,12 @@ function main(): void {
   });
 }
 
-// 先載入自然素材 + 怪物模型(任一失敗都各自回退程序化樹石/果凍),載完才建世界開場;
-// 絕不因模型卡住開場
-Promise.all([loadSceneryModels().catch(() => false), loadEnemyModels().catch(() => false)])
+// 先載入自然素材 + 怪物模型 + NPC 角色模型(任一失敗都各自回退程序化樹石/果凍/村民),
+// 載完才建世界開場;絕不因模型卡住開場
+Promise.all([
+  loadSceneryModels().catch(() => false),
+  loadEnemyModels().catch(() => false),
+  loadNpcModels().catch(() => false),
+])
   .catch(() => {})
   .finally(() => main());

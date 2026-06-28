@@ -10,17 +10,29 @@ import { MAX_EQUIPPED_FRUITS, type FruitBag, type FruitKey } from "../systems/fr
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 
 const BAG_CSS = `
-#bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 380px; max-height: 72vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
+#bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 480px; max-width: 92vw; max-height: 80vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
 #bag::-webkit-scrollbar { width: 8px; }
 #bag::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 4px; }
 #bag.show { display: block; }
 #bag h3 { margin: 0 0 12px; font-size: 18px; }
+#bag h4 { margin: 0 0 8px; font-size: 14px; opacity: 0.9; }
 #bag .section { margin-bottom: 14px; }
 #bag .item { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; font-size: 14px; }
 #bag button { border: none; border-radius: 6px; padding: 4px 12px; margin-left: 6px; cursor: pointer; background: #3a6fd8; color: #fff; font-size: 13px; }
 #bag button:disabled { background: #44546a; cursor: default; opacity: 0.6; }
 #bag .alloc button { background: #8e6fe8; }
 #bag .muted { opacity: 0.7; font-size: 12px; }
+#bag .top { display: grid; grid-template-columns: 150px 1fr; gap: 14px; margin-bottom: 16px; align-items: stretch; }
+#bag .portrait { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 12px 8px; text-align: center; }
+#bag .avatar { font-size: 56px; line-height: 1; margin: 2px 0 8px; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)); }
+#bag .pname { font-size: 14px; font-weight: 700; }
+#bag .plv { font-size: 12px; opacity: 0.8; margin-bottom: 8px; }
+#bag .expbar { height: 7px; border-radius: 4px; background: rgba(0,0,0,0.4); overflow: hidden; margin: 0 4px 4px; }
+#bag .expbar > i { display: block; height: 100%; background: linear-gradient(90deg,#5ad1ff,#3a6fd8); }
+#bag .pstats { font-size: 13px; line-height: 1.7; margin-top: 6px; }
+#bag .alloc-box { display: flex; flex-direction: column; }
+#bag .arow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+#bag .arow .pts { font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
 #bag .gems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 #bag .gem-slot { border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 12px; line-height: 1.5; }
 #bag .gem-slot.off { opacity: 0.35; filter: grayscale(1); }
@@ -44,6 +56,15 @@ const ATTR_LABEL: Record<AttributeKey, string> = {
   spirit: "靈能(靈力上限 +5)",
   agi: "敏捷(速度 +1%)",
   vit: "體魄(防禦 +2)",
+};
+
+/** 能力分配列用的精簡圖示與短名(完整說明放 title 提示) */
+const ATTR_META: Record<AttributeKey, [string, string]> = {
+  hp: ["❤️", "生命"],
+  str: ["⚔️", "力量"],
+  spirit: ["✨", "靈能"],
+  agi: ["💨", "敏捷"],
+  vit: ["🛡️", "體魄"],
 };
 
 /**
@@ -110,17 +131,17 @@ export class BagPanel {
       })
       .join("");
 
-    const allocRows =
-      s.points > 0
-        ? (Object.keys(ATTR_LABEL) as AttributeKey[])
-            .map(
-              (key) => `<div class="item">
-                <span>${ATTR_LABEL[key]} <span class="muted">目前 ${s.attrs[key]}</span></span>
-                <button data-alloc="${key}">+1</button>
-              </div>`,
-            )
-            .join("")
-        : `<div class="muted">升級後可在此分配能力點數</div>`;
+    // 能力分配:永遠顯示五維,沒點數時 +1 鈕變灰(仍可看到目前數值)
+    const noPoints = s.points <= 0;
+    const allocRows = (Object.keys(ATTR_META) as AttributeKey[])
+      .map((key) => {
+        const [icon, name] = ATTR_META[key];
+        return `<div class="arow">
+          <span title="${ATTR_LABEL[key]}">${icon} ${name} <span class="muted">${s.attrs[key]}</span></span>
+          <button data-alloc="${key}" ${noPoints ? "disabled" : ""}>+1</button>
+        </div>`;
+      })
+      .join("");
 
     const gemSlots: Array<[GemKey, string, string]> = [
       ["flame", "🔥", "焰心石"],
@@ -200,20 +221,33 @@ export class BagPanel {
       })
       .join("");
 
+    const expMax = s.expToNext();
+    const expPct = expMax > 0 ? Math.min(100, Math.round((s.exp / expMax) * 100)) : 0;
+    const importantRows = `${crystalRows}${seaGemRows.join("")}`;
+
     this.root.innerHTML = `
       <h3>背包</h3>
-      <div class="section">
-        <div class="muted">Lv.${s.level}｜EXP ${s.exp} / ${s.expToNext()}｜可分配點數 ${s.points}<br/>
-        攻擊 ${s.atk}｜防禦 ${s.def}｜生命上限 ${s.maxHP}｜靈力上限 ${s.maxMP}</div>
+      <div class="top">
+        <div class="portrait">
+          <div class="avatar">🧝</div>
+          <div class="pname">海島旅人</div>
+          <div class="plv">Lv.${s.level}</div>
+          <div class="expbar"><i style="width:${expPct}%"></i></div>
+          <div class="muted">EXP ${s.exp} / ${expMax}</div>
+          <div class="pstats">⚔️ ${s.atk}　🛡️ ${s.def}<br/>❤️ ${s.maxHP}　✨ ${s.maxMP}</div>
+        </div>
+        <div class="alloc-box alloc">
+          <h4>能力分配</h4>
+          <div class="pts">可分配點數 <b>${s.points}</b></div>
+          ${allocRows}
+        </div>
       </div>
-      <div class="section">${crystalRows}</div>
-      ${seaGemRows.length > 0 ? `<div class="section"><h3>重要道具</h3>${seaGemRows.join("")}</div>` : ""}
       <div class="section"><h3>裝備</h3>${equipRows || '<div class="muted">尚無裝備,去商人圓圓那裡看看吧</div>'}</div>
       <div class="section"><h3>靈紋寶石盤(出戰 ${this.gems.equipped.length}/${MAX_EQUIPPED_GEMS})</h3>
         <div class="muted" style="margin-bottom:6px;">點「裝備」選擇出戰寶石(只有出戰中的技能與被動才生效);出戰的主動寶石點下方數字 1–6 指定快捷鍵位</div>
         <div class="gems">${gemGrid}</div></div>
       <div class="section"><h3>靈樹果實(出戰 ${this.fruits.equipped.length}/${MAX_EQUIPPED_FRUITS})</h3><div class="gems">${fruitGrid}</div></div>
-      <div class="section alloc"><h3>能力點分配</h3>${allocRows}</div>
+      <div class="section"><h3>重要道具</h3>${importantRows || '<div class="muted">尚無重要道具</div>'}</div>
       <div class="section"><h3>傳送</h3>${this.renderTeleport()}</div>
       <div class="muted">按 Tab 關閉</div>
     `;

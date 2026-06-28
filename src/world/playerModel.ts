@@ -20,15 +20,16 @@ export interface PlayerModelProto {
 
 const BASE = import.meta.env.BASE_URL;
 const VRM_URL = `${BASE}models/player/player.vrm`;
-const ANIM_URL: Record<"run" | "attack" | "death", string> = {
+const ANIM_URL: Record<"idle" | "run" | "attack" | "death", string> = {
+  idle: `${BASE}anim/idle.fbx`,
   run: `${BASE}anim/run.fbx`,
   attack: `${BASE}anim/attack.fbx`,
   death: `${BASE}anim/death.fbx`,
 };
 
 /**
- * 合成待機姿:把上臂從 T-pose 放下到身側(VRM 無內建 Idle 時的墊檔)+ 胸口輕微起伏當呼吸。
- * 之後若拿到 Mixamo Idle FBX,改成 loadMixamoClip 即可。
+ * 合成待機姿(墊檔):Idle FBX 載入失敗時才用。
+ * 把上臂從 T-pose 放下到身側 + 胸口輕微起伏當呼吸。
  */
 function buildIdleClip(vrm: VRM): THREE.AnimationClip {
   const tracks: THREE.KeyframeTrack[] = [];
@@ -201,12 +202,15 @@ export async function loadPlayerModel(): Promise<boolean> {
     if (o instanceof THREE.Mesh) o.castShadow = true;
   });
 
-  const [run, attack, death] = await Promise.all([
+  const [idle, run, attack, death] = await Promise.all([
+    loadMixamoClip(ANIM_URL.idle, vrm, true).catch(() => buildIdleClip(vrm)), // 載失敗回退合成待機
     loadMixamoClip(ANIM_URL.run, vrm, true), // 跑步鎖根位移→原地跑,與遊戲移動同步
     loadMixamoClip(ANIM_URL.attack, vrm),
     loadMixamoClip(ANIM_URL.death, vrm),
   ]);
+  // Idle 軌全空(retarget 失敗)也回退合成待機,避免站定變 T-pose
+  const idleClip = idle.tracks.length > 0 ? idle : buildIdleClip(vrm);
 
-  proto = { vrm, clips: { idle: buildIdleClip(vrm), run, attack, death } };
+  proto = { vrm, clips: { idle: idleClip, run, attack, death } };
   return true;
 }

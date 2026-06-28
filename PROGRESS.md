@@ -12,6 +12,12 @@
 - 驗證:**build 綠**(tsc strict,57 模組)、**smoke 全綠 95 項**(VRM 純視覺,玩家邏輯/命中/技能不變)、截圖目視:idle 放手呼吸站姿、run 自然跑步擺臂 + 頭髮裙襬飄動、面向正確、NPC 模型同框正常。
 - **已知/後續**:① **沒有 Idle 動作**,目前用合成放手姿,拿到 Mixamo Idle FBX 換 `loadMixamoClip` 即可;②攻擊動作是「持盾」但 VRM 手上無武器(空手比劃),可後續把劍/盾掛到手骨;③ **player.vrm 16MB 偏大**,網頁載入慢,建議之後在 VRoid Studio 匯出時開多邊形/貼圖縮減;④多人遠端 avatar 仍是程序化(本次只換本機玩家)。
 
+### 修正(同日):跑步根位移 + 待機手臂方向
+
+- **跑步原地化**:Mixamo Slow Run 自帶 Hips 水平根位移,模型會自走、迴圈重置時彈回,與遊戲邏輯移動疊加成「超前再被拉回」。`loadMixamoClip` 加 `lockRootXZ` 參數(跑步開啟):把 retarget 後 Hips 位移軌的 X/Z 鎖在首幀值、只留 Y 上下彈跳 → **原地跑**,水平位移完全交給遊戲邏輯,模型與實體同步、迴圈順暢。
+- **待機手臂翻正**:`buildIdleClip` 上臂旋轉 z 號相反(原本把手舉起),改成放下身側。
+- 驗證:build 綠、smoke 全綠(首次 2 項偶發失敗為 16MB VRM 載入拖慢時序所致,重跑即過)、截圖目視:待機手放下、跑步留在畫面中央不漂移。
+
 ## 2026-06-28(NPC 換骨骼動畫角色模型:Quaternius CC0 Pirate Kit 七種)
 
 > 把全部 NPC 從程序化村民(圓柱袍+球頭+帽)換成帶骨骼動畫的角色模型(Rai 指定七種:Henry/Barbarossa/Anne/Skeleton/Skeleton_Headless/Mako/Sharky),沿用敵人模型那套 glTF + cel-shading 管線。**載入失敗一律回退原程序化村民,絕不擋開場。**

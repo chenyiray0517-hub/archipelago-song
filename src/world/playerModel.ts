@@ -40,8 +40,8 @@ function buildIdleClip(vrm: VRM): THREE.AnimationClip {
       new THREE.QuaternionKeyframeTrack(`${node.name}.quaternion`, [0, 2], [...q, ...q]),
     );
   };
-  armDown("leftUpperArm", -1.2);
-  armDown("rightUpperArm", 1.2);
+  armDown("leftUpperArm", 1.2);
+  armDown("rightUpperArm", -1.2);
   // 呼吸:胸口繞 X 軸極小幅度來回
   const chest = vrm.humanoid.getNormalizedBoneNode("chest") ?? vrm.humanoid.getNormalizedBoneNode("spine");
   if (chest) {
@@ -113,7 +113,12 @@ const MIXAMO_VRM_RIG: Record<string, string> = {
  * 改寫自 @pixiv/three-vrm 官方 Mixamo 範例(MIT):
  * 把每根骨的世界旋轉換算到 VRM 正規化骨架,VRM 0.0 需鏡射 x/z。
  */
-async function loadMixamoClip(url: string, vrm: VRM): Promise<THREE.AnimationClip> {
+async function loadMixamoClip(
+  url: string,
+  vrm: VRM,
+  /** 鎖住 Hips 水平根位移(原地跑/原地動,位置交給遊戲邏輯,避免動畫自走+迴圈彈回) */
+  lockRootXZ = false,
+): Promise<THREE.AnimationClip> {
   const asset = await new FBXLoader().loadAsync(url);
   const clip = THREE.AnimationClip.findByName(asset.animations, "mixamo.com") ?? asset.animations[0];
 
@@ -126,6 +131,7 @@ async function loadMixamoClip(url: string, vrm: VRM): Promise<THREE.AnimationCli
   const motionHips = asset.getObjectByName("mixamorigHips");
   const hipsBone = vrm.humanoid.getNormalizedBoneNode("hips");
   if (!motionHips || !hipsBone) return new THREE.AnimationClip(url, clip.duration, []);
+  const hipsNodeName = hipsBone.name;
   const motionHipsHeight = motionHips.position.y;
   const vrmHipsY = hipsBone.getWorldPosition(_vec3).y;
   const vrmRootY = vrm.scene.getWorldPosition(_vec3).y;
@@ -159,6 +165,13 @@ async function loadMixamoClip(url: string, vrm: VRM): Promise<THREE.AnimationCli
       const values = Array.from(track.values).map((v, i) =>
         (isVrm0 && i % 3 !== 1 ? -v : v) * hipsPositionScale,
       );
+      // 原地跑:把 Hips 位移軌的 X/Z 鎖在首幀值(只保留 Y 上下彈跳),根位移交給遊戲邏輯
+      if (lockRootXZ && propertyName === "position" && vrmNodeName === hipsNodeName) {
+        for (let i = 0; i < values.length; i += 3) {
+          values[i] = values[0]; // X
+          values[i + 2] = values[2]; // Z
+        }
+      }
       tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.${propertyName}`, Array.from(track.times), values));
     }
   }
@@ -189,7 +202,7 @@ export async function loadPlayerModel(): Promise<boolean> {
   });
 
   const [run, attack, death] = await Promise.all([
-    loadMixamoClip(ANIM_URL.run, vrm),
+    loadMixamoClip(ANIM_URL.run, vrm, true), // 跑步鎖根位移→原地跑,與遊戲移動同步
     loadMixamoClip(ANIM_URL.attack, vrm),
     loadMixamoClip(ANIM_URL.death, vrm),
   ]);

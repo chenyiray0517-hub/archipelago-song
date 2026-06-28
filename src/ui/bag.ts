@@ -10,7 +10,7 @@ import { MAX_EQUIPPED_FRUITS, type FruitBag, type FruitKey } from "../systems/fr
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 
 const BAG_CSS = `
-#bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 480px; max-width: 92vw; max-height: 80vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
+#bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 920px; max-width: 94vw; max-height: 84vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 20px 24px; display: none; z-index: 10; }
 #bag::-webkit-scrollbar { width: 8px; }
 #bag::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 4px; }
 #bag.show { display: block; }
@@ -22,18 +22,23 @@ const BAG_CSS = `
 #bag button:disabled { background: #44546a; cursor: default; opacity: 0.6; }
 #bag .alloc button { background: #8e6fe8; }
 #bag .muted { opacity: 0.7; font-size: 12px; }
-#bag .top { display: grid; grid-template-columns: 150px 1fr; gap: 14px; margin-bottom: 16px; align-items: stretch; }
-#bag .portrait { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 12px 8px; text-align: center; }
-#bag .avatar { font-size: 56px; line-height: 1; margin: 2px 0 8px; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)); }
-#bag .pname { font-size: 14px; font-weight: 700; }
-#bag .plv { font-size: 12px; opacity: 0.8; margin-bottom: 8px; }
-#bag .expbar { height: 7px; border-radius: 4px; background: rgba(0,0,0,0.4); overflow: hidden; margin: 0 4px 4px; }
+#bag .top { display: grid; grid-template-columns: 320px 1fr; gap: 20px; margin-bottom: 18px; align-items: stretch; }
+#bag .portrait { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 14px 12px; text-align: center; }
+/* 角色展示台:之後 3D 模型的 canvas 放進這裡(目前先放 emoji) */
+#bag .model-stage { height: 240px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: radial-gradient(ellipse at 50% 70%, rgba(90,209,255,0.18), rgba(0,0,0,0.35)); margin-bottom: 10px; overflow: hidden; }
+#bag .model-stage canvas { width: 100%; height: 100%; display: block; }
+#bag .avatar { font-size: 130px; line-height: 1; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.55)); }
+#bag .pname { font-size: 17px; font-weight: 700; }
+#bag .plv { font-size: 13px; opacity: 0.8; margin-bottom: 8px; }
+#bag .expbar { height: 9px; border-radius: 5px; background: rgba(0,0,0,0.4); overflow: hidden; margin: 0 4px 5px; }
 #bag .expbar > i { display: block; height: 100%; background: linear-gradient(90deg,#5ad1ff,#3a6fd8); }
-#bag .pstats { font-size: 13px; line-height: 1.7; margin-top: 6px; }
-#bag .alloc-box { display: flex; flex-direction: column; }
-#bag .arow { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 14px; }
-#bag .arow .pts { font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
-#bag .gems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#bag .pstats { font-size: 16px; line-height: 1.8; margin-top: 8px; }
+#bag .alloc-box { display: flex; flex-direction: column; justify-content: center; }
+#bag .alloc-box h4 { font-size: 16px; }
+#bag .arow { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; font-size: 16px; }
+#bag .arow .pts { font-size: 13px; opacity: 0.8; margin-bottom: 6px; }
+#bag .eq-icon { display: inline-block; width: 1.5em; font-size: 16px; }
+#bag .gems { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 #bag .gem-slot { border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 12px; line-height: 1.5; }
 #bag .gem-slot.off { opacity: 0.35; filter: grayscale(1); }
 #bag .gem-slot.eq { border-color: #f0c040; background: rgba(240,192,64,0.14); }
@@ -56,6 +61,25 @@ const ATTR_LABEL: Record<AttributeKey, string> = {
   spirit: "靈能(靈力上限 +5)",
   agi: "敏捷(速度 +1%)",
   vit: "體魄(防禦 +2)",
+};
+
+/** 各件裝備的 emoji 圖示(依 id) */
+const EQUIP_ICON: Record<string, string> = {
+  cap: "🧢",
+  helm: "⛑️",
+  crown: "👑",
+  vest: "🦺",
+  plate: "🛡️",
+  scalemail: "🐉",
+  sandals: "👡",
+  greaves: "🥾",
+  windboots: "🌬️",
+  badge: "🎖️",
+  locket: "💗",
+  ring: "💍",
+  gauntlet: "🥊",
+  amulet: "🔱",
+  treepend: "🌳",
 };
 
 /** 能力分配列用的精簡圖示與短名(完整說明放 title 提示) */
@@ -210,8 +234,9 @@ export class BagPanel {
         const def = equipDefOf(id);
         if (!def) return "";
         const slot = this.equipment.slotOf(id);
+        const icon = EQUIP_ICON[id] ?? "🎽";
         return `<div class="item">
-          <span>${slot ? "✅ " : ""}${def.name} <span class="muted">(${def.desc})</span></span>
+          <span><span class="eq-icon">${icon}</span>${slot ? "✅ " : ""}${def.name} <span class="muted">(${def.desc})</span></span>
           ${
             slot
               ? `<button data-unequip="${slot}">卸下</button>`
@@ -229,7 +254,7 @@ export class BagPanel {
       <h3>背包</h3>
       <div class="top">
         <div class="portrait">
-          <div class="avatar">🧝</div>
+          <div class="model-stage"><div class="avatar">🧝</div></div>
           <div class="pname">海島旅人</div>
           <div class="plv">Lv.${s.level}</div>
           <div class="expbar"><i style="width:${expPct}%"></i></div>

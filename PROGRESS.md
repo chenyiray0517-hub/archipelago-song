@@ -1,5 +1,17 @@
 # PROGRESS
 
+## 2026-06-28(玩家換 VRM 模型 + Mixamo 動作:VRoid 一號女)
+
+> 把玩家從程序化角色換成 VRoid 匯出的 VRM(`一號女`),並把三個 Mixamo FBX 動作(Slow Run / Sword And Shield Attack / Sword And Shield Death)retarget 上去,接到玩家狀態機。**載入失敗回退原程序化角色,絕不擋開場。**
+
+- **新依賴**:`@pixiv/three-vrm@^3`(3.5.4)。VRM 0.0 用 `GLTFLoader` + `VRMLoaderPlugin` 載入;Mixamo FBX 用 `FBXLoader` 載入後 retarget。
+- **新增 `world/playerModel.ts`**:① 載 `public/models/player/player.vrm`;② `loadMixamoClip` 改寫自 three-vrm 官方 Mixamo 範例——`MIXAMO_VRM_RIG` 把 `mixamorig*` 骨名映射到 VRM 人形骨,逐軌把世界旋轉換算到 VRM 正規化骨架,VRM 0.0 鏡射 quaternion x/z、Hips 位移乘身高比;③ `buildIdleClip` 合成待機姿(上臂從 T-pose 放下身側 + 胸口呼吸起伏)墊檔——**因為使用者只給了跑/攻擊/死亡,沒給 Idle**。
+- **`entities/player.ts` 加 VRM 分支**:`useModel(proto)` 隱藏所有程序化視覺(邏輯各 group 位置不受影響)、把 VRM 包一層 wrapper(正規化身高 1.8、`rotation.y=π` 把 VRM0 的 -Z 面向轉成 +Z 與既有角色一致)、建 `AnimationMixer` 收 idle/run/attack/death 四動作。`animate()` 開頭若有 VRM 就走 `updateModel(dt)` 並 return(跳過程序化擺動):依狀態切換(死亡→death once、攻擊中→attack once 含上升緣重播、移動→run loop、其餘→idle),推進 mixer + `vrm.update(dt)`(表情/頭髮裙襬彈簧骨)。
+- **`main.ts`**:`loadPlayerModel()` 併入開場 `Promise.all`;建立 `player` 後 `getPlayerModel()` 有就 `player.useModel(...)`。
+- **資產**:`public/models/player/player.vrm`(**16MB**)+ `public/anim/{run,attack,death}.fbx`。
+- 驗證:**build 綠**(tsc strict,57 模組)、**smoke 全綠 95 項**(VRM 純視覺,玩家邏輯/命中/技能不變)、截圖目視:idle 放手呼吸站姿、run 自然跑步擺臂 + 頭髮裙襬飄動、面向正確、NPC 模型同框正常。
+- **已知/後續**:① **沒有 Idle 動作**,目前用合成放手姿,拿到 Mixamo Idle FBX 換 `loadMixamoClip` 即可;②攻擊動作是「持盾」但 VRM 手上無武器(空手比劃),可後續把劍/盾掛到手骨;③ **player.vrm 16MB 偏大**,網頁載入慢,建議之後在 VRoid Studio 匯出時開多邊形/貼圖縮減;④多人遠端 avatar 仍是程序化(本次只換本機玩家)。
+
 ## 2026-06-28(NPC 換骨骼動畫角色模型:Quaternius CC0 Pirate Kit 七種)
 
 > 把全部 NPC 從程序化村民(圓柱袍+球頭+帽)換成帶骨骼動畫的角色模型(Rai 指定七種:Henry/Barbarossa/Anne/Skeleton/Skeleton_Headless/Mako/Sharky),沿用敵人模型那套 glTF + cel-shading 管線。**載入失敗一律回退原程序化村民,絕不擋開場。**

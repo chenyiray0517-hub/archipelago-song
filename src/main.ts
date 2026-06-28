@@ -7,6 +7,7 @@ import { Sky } from "./world/sky";
 import { loadSceneryModels } from "./world/sceneryModels";
 import { loadEnemyModels } from "./world/enemyModels";
 import { loadNpcModels, type NpcModelKey } from "./world/npcModels";
+import { loadPlayerModel, getPlayerModel } from "./world/playerModel";
 import {
   createWorld,
   groundHeight,
@@ -205,6 +206,8 @@ function main(): void {
 
   const input = new Input(renderer.domElement);
   const player = new Player();
+  const playerModel = getPlayerModel();
+  if (playerModel) player.useModel(playerModel);
   scene.add(player.mesh);
 
   // ── 多人連線(第 1 階段:看得到彼此)──────────────────────────
@@ -2875,6 +2878,7 @@ Promise.all([
   loadSceneryModels().catch(() => false),
   loadEnemyModels().catch(() => false),
   loadNpcModels().catch(() => false),
+  loadPlayerModel().catch(() => false),
 ])
   .catch(() => {})
   .finally(() => main());

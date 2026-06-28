@@ -3,6 +3,8 @@ import type { Input } from "../core/input";
 import { PlayerStats } from "../systems/stats";
 import { buildHero, COLOR } from "./heroModel";
 import { groundHeight, isWalkable, resolveObstacles } from "../world/terrain";
+import type { PlayerModelProto, PlayerAnim } from "../world/playerModel";
+import type { VRM } from "@pixiv/three-vrm";
 
 const GRAVITY = 28;
 const JUMP_SPEED = 11;
@@ -110,6 +112,13 @@ export class Player {
   private readonly shieldHomePos = new THREE.Vector3(0, 1.45, -0.46);
   private readonly shieldBlockPos = new THREE.Vector3(0.18, 1.32, 0.5);
 
+  // ── VRM 模型分支(useModel 後啟用;否則維持程序化角色)──
+  private vrm: VRM | null = null;
+  private vrmMixer: THREE.AnimationMixer | null = null;
+  private vrmActions = new Map<PlayerAnim, THREE.AnimationAction>();
+  private vrmState: PlayerAnim = "idle";
+  private vrmWasAttacking = false;
+
   constructor() {
     this.hp = this.stats.maxHP;
     this.mp = this.stats.maxMP;
@@ -168,6 +177,63 @@ export class Player {
     this.stamina = 100;
     this.velocityY = 0;
     this.mesh.position.set(0, groundHeight(0, -52), -52);
+  }
+
+  /**
+   * 套用 VRM 模型:隱藏程序化角色,改用此 VRM 當視覺,動畫由 updateModel 依狀態驅動。
+   * 載入失敗(未呼叫此法)則維持原程序化角色。
+   */
+  useModel(p: PlayerModelProto): void {
+    this.vrm = p.vrm;
+    // 隱藏既有程序化視覺(邏輯仍用各 group 的位置,不受影響)
+    for (const child of [...this.mesh.children]) child.visible = false;
+
+    // 包一層 wrapper:正規化身高 + VRM0 面向修正(面向 +Z,與程序化角色一致)
+    const root = new THREE.Group();
+    root.add(p.vrm.scene);
+    const box = new THREE.Box3().setFromObject(p.vrm.scene);
+    const h = box.max.y - box.min.y || 1;
+    root.scale.setScalar(1.8 / h);
+    root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z
+    this.mesh.add(root);
+
+    this.vrmMixer = new THREE.AnimationMixer(p.vrm.scene);
+    for (const key of ["idle", "run", "attack", "death"] as PlayerAnim[]) {
+      this.vrmActions.set(key, this.vrmMixer.clipAction(p.clips[key]));
+    }
+    this.vrmActions.get("idle")?.play(); // 起始待機
+  }
+
+  /** 依玩家狀態切換 VRM 動畫(跑/攻擊/死亡,其餘 idle 休息姿勢)+ 推進骨架與彈簧骨 */
+  private updateModel(dt: number): void {
+    if (!this.vrm || !this.vrmMixer) return;
+
+    const attackingNow = this.attacking;
+    let desired: PlayerAnim;
+    if (this.isDead) desired = "death";
+    else if (attackingNow) desired = "attack";
+    else if (this.moveAmount > 0.08) desired = "run";
+    else desired = "idle";
+
+    // 攻擊上升緣 → 重播(連續揮擊也能重新觸發)
+    const restartAttack = desired === "attack" && !this.vrmWasAttacking;
+    if (desired !== this.vrmState || restartAttack) {
+      const prev = this.vrmActions.get(this.vrmState);
+      const next = this.vrmActions.get(desired);
+      if (next) {
+        const once = desired === "attack" || desired === "death";
+        next.reset();
+        next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+        next.clampWhenFinished = once;
+        next.fadeIn(0.18).play();
+      }
+      if (prev && prev !== next) prev.fadeOut(0.18);
+      this.vrmState = desired;
+    }
+    this.vrmWasAttacking = attackingNow;
+
+    this.vrmMixer.update(dt);
+    this.vrm.update(dt); // 表情 / 彈簧骨(頭髮、裙襬)
   }
 
   /**
@@ -373,6 +439,12 @@ export class Player {
     while (delta < -Math.PI) delta += Math.PI * 2;
     this.renderYaw += delta * Math.min(TURN_LERP * dt, 1);
     this.mesh.rotation.y = this.renderYaw;
+
+    // VRM 模型分支:用骨骼動畫,跳過下方程序化擺動
+    if (this.vrm) {
+      this.updateModel(dt);
+      return;
+    }
 
     this.idlePhase += dt * 2.2;
     const moving = this.moveAmount > 0.05;

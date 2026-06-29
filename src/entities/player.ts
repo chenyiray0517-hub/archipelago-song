@@ -31,6 +31,8 @@ const BLOCK_DAMAGE_FACTOR = 0.15;
 const BLOCK_ARC_COS = 0.26;
 /** 緩速時的移速倍率(頭目寒霜爆) */
 const CHILL_MOVE_FACTOR = 0.5;
+/** VRM 模型正規化身高(僅視覺;邏輯/碰撞不受影響) */
+const MODEL_HEIGHT = 3;
 
 /** 攻擊判定參數:距離與面向夾角 */
 export const ATTACK_RANGE = 3.4;
@@ -193,7 +195,7 @@ export class Player {
     root.add(p.vrm.scene);
     const box = new THREE.Box3().setFromObject(p.vrm.scene);
     const h = box.max.y - box.min.y || 1;
-    root.scale.setScalar(1.8 / h);
+    root.scale.setScalar(MODEL_HEIGHT / h);
     root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z
     this.mesh.add(root);
 

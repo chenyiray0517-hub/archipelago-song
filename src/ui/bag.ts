@@ -8,6 +8,7 @@ import {
 import { MAX_EQUIPPED_GEMS, GEM_SLOT_COUNT, isActiveGem, type GemBag, type GemKey } from "../systems/gems";
 import { MAX_EQUIPPED_FRUITS, type FruitBag, type FruitKey } from "../systems/fruits";
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
+import { PlayerPortrait } from "./playerPortrait";
 
 const BAG_CSS = `
 #bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 920px; max-width: 94vw; max-height: 84vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 20px 24px; display: none; z-index: 10; }
@@ -24,7 +25,7 @@ const BAG_CSS = `
 #bag .muted { opacity: 0.7; font-size: 12px; }
 #bag .top { display: grid; grid-template-columns: 320px 1fr; gap: 20px; margin-bottom: 18px; align-items: stretch; }
 #bag .portrait { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 14px 12px; text-align: center; }
-/* 角色展示台:之後 3D 模型的 canvas 放進這裡(目前先放 emoji) */
+/* 角色展示台:PlayerPortrait 的 3D 模型 canvas 掛進這裡;載入失敗才退回 .avatar emoji */
 #bag .model-stage { height: 240px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: radial-gradient(ellipse at 50% 70%, rgba(90,209,255,0.18), rgba(0,0,0,0.35)); margin-bottom: 10px; overflow: hidden; }
 #bag .model-stage canvas { width: 100%; height: 100%; display: block; }
 #bag .avatar { font-size: 130px; line-height: 1; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.55)); }
@@ -99,6 +100,8 @@ export class BagPanel {
   private visible = false;
   /** 底部傳送區是否展開(每次開背包重設為收合) */
   private teleportOpen = false;
+  /** 角色展示台:3D 玩家模型(載入失敗自動退回 emoji) */
+  private portrait = new PlayerPortrait();
 
   constructor(
     private inventory: Inventory,
@@ -134,6 +137,8 @@ export class BagPanel {
     if (this.visible) {
       this.teleportOpen = false;
       this.render();
+    } else {
+      this.portrait.stop(); // 關背包停掉展示台渲染迴圈
     }
   }
 
@@ -345,6 +350,10 @@ export class BagPanel {
         this.render();
       });
     });
+
+    // 展示台:把 3D 玩家模型掛進剛重建的 .model-stage(失敗則維持其中的 emoji)
+    const stage = this.root.querySelector<HTMLElement>(".model-stage");
+    if (stage) this.portrait.mount(stage);
   }
 
   /** 底部傳送區:收合時一顆按鈕,點開列出已設置的重生點 */

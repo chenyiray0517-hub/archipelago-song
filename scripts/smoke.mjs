@@ -140,6 +140,18 @@ await page.evaluate(() => {
 await page.keyboard.press("Tab");
 await page.waitForTimeout(400);
 await page.screenshot({ path: "/tmp/archipelago-3-bag.png" });
+// 4b. 角色展示台:.model-stage 應掛上 3D 模型 canvas(模型載入成功時取代 emoji)
+const portrait = await page.evaluate(() => {
+  const stage = document.querySelector("#bag .model-stage");
+  const avatar = stage?.querySelector(".avatar");
+  return {
+    hasCanvas: !!stage?.querySelector("canvas"),
+    avatarHidden: !avatar || getComputedStyle(avatar).display === "none",
+  };
+});
+portrait.hasCanvas && portrait.avatarHidden
+  ? ok("背包角色展示台顯示 3D 模型")
+  : fail(`展示台異常:${JSON.stringify(portrait)}`);
 await page.click('button[data-use="small"][data-count="999"]');
 await page.waitForTimeout(400);
 const afterUse = await page.evaluate(() => ({

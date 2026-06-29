@@ -1,5 +1,16 @@
 # PROGRESS
 
+## 2026-06-29(背包角色展示台:emoji → 3D 玩家模型)
+
+> 把背包面板左上「角色展示台」(`.model-stage`)原本的 emoji 占位(🧝)換成實際的玩家 VRM 模型,待機動作即時旋轉。**載入失敗自動退回 emoji,絕不擋住背包。** model-stage 本來就為此預留。
+
+- **為何要「第二份」VRM**:遊戲場景的玩家 VRM 是單例(`getPlayerModel`),開背包時遊戲仍在背景渲染、那顆 VRM 正被主場景佔用;且 VRM 動畫靠各自的 `vrm.update(dt)` 把正規化骨架同步到蒙皮骨架,無法只 clone `.scene`(會不動)。故展示台另載一份。
+- **`world/playerModel.ts` 加 `loadPortraitModel()`**:重用既有 `VRM_URL` / `loadMixamoClip` / `buildIdleClip`,載一份獨立 VRM + idle 動作,結果快取(背包反覆開關只載一次)。失敗回傳 null。
+- **新增 `ui/playerPortrait.ts`(`PlayerPortrait`)**:自有的小 `WebGLRenderer`(`alpha:true` 露出展示台漸層底)+ Scene + 半球光/方向光 + 30° 透視鏡頭。模型包 wrapper 正規化身高 1.7、`rotation.y=π` 面向 +Z(朝鏡頭),`AnimationMixer` 播 idle、每幀 `vrm.update`(頭髮裙襬彈簧骨)。**只在背包開啟時跑 raf 迴圈**;每幀依 canvas 實際尺寸調繪圖緩衝。
+- **`ui/bag.ts` 接線**:`render()` 重建 innerHTML 後把持久的 canvas `mount` 回新的 `.model-stage`(樂觀隱藏 `.avatar` emoji);`toggle()` 關背包時 `portrait.stop()` 停迴圈。載入失敗 `onFailed()` 移除 canvas、還原 emoji。
+- 驗證:**build 綠**(tsc strict,58 模組)、**smoke 全綠 96 項**(新增「背包角色展示台顯示 3D 模型」)、截圖目視:展示台顯示 VRoid 紅裙少女全身待機站姿、構圖置中、打光自然、emoji 已消失。
+- **已知/後續**:① 第二份 VRM 首次開背包才載(沿用快取 16MB 資產),開啟瞬間到模型出現有短暫空檔(顯示漸層底);可預載或顯示載入提示。② 展示台目前只播 idle;之後可換姿勢或隨裝備變化。③ 多人/換裝視覺尚未反映在展示台。
+
 ## 2026-06-28(玩家換 VRM 模型 + Mixamo 動作:VRoid 一號女)
 
 > 把玩家從程序化角色換成 VRoid 匯出的 VRM(`一號女`),並把三個 Mixamo FBX 動作(Slow Run / Sword And Shield Attack / Sword And Shield Death)retarget 上去,接到玩家狀態機。**載入失敗回退原程序化角色,絕不擋開場。**

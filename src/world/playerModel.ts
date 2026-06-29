@@ -185,6 +185,44 @@ export function getPlayerModel(): PlayerModelProto | null {
   return proto;
 }
 
+/** 背包展示台用的獨立 VRM(只含待機動作) */
+export interface PortraitModelProto {
+  vrm: VRM;
+  idle: THREE.AnimationClip;
+}
+
+let portraitProto: PortraitModelProto | null = null;
+let portraitPending: Promise<PortraitModelProto | null> | null = null;
+
+/**
+ * 載入背包展示台專用的「第二份」玩家 VRM(只需待機動作)。
+ * 遊戲場景的 VRM 單例(getPlayerModel)在背景仍被佔用、且 VRM 動畫需各自的
+ * vrm.update 同步骨架,故展示台另載一份。失敗回傳 null,展示台退回 emoji。
+ * 同一份結果快取重用,背包反覆開關只載一次。
+ */
+export function loadPortraitModel(): Promise<PortraitModelProto | null> {
+  if (portraitProto) return Promise.resolve(portraitProto);
+  if (portraitPending) return portraitPending;
+  portraitPending = (async () => {
+    try {
+      const loader = new GLTFLoader();
+      loader.register((parser) => new VRMLoaderPlugin(parser));
+      const gltf = await loader.loadAsync(VRM_URL);
+      const vrm = gltf.userData.vrm as VRM | undefined;
+      if (!vrm) return null;
+      vrm.scene.traverse((o) => {
+        o.frustumCulled = false;
+      });
+      const idle = await loadMixamoClip(ANIM_URL.idle, vrm, true).catch(() => buildIdleClip(vrm));
+      portraitProto = { vrm, idle: idle.tracks.length > 0 ? idle : buildIdleClip(vrm) };
+      return portraitProto;
+    } catch {
+      return null;
+    }
+  })();
+  return portraitPending;
+}
+
 /**
  * 載入玩家 VRM + 三個 Mixamo 動作(開場前呼叫一次)。
  * 任一步失敗回傳 false,player.ts 維持程序化角色。

@@ -14,7 +14,7 @@
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # tsc 嚴格檢查 + vite build(兩者都過才算綠)
-npm run smoke    # Playwright 端到端煙霧測試 95 項(需先開 dev server,需本機 Chrome)
+npm run smoke    # Playwright 端到端煙霧測試 150 項(需先開 dev server,需本機 Chrome)
 npm run server   # 多人連線伺服器(WebSocket 轉發站,埠 8787;多人/部署才需要)
 node scripts/mp-check.mjs   # 多人連線驗證 23 項(需先開 server + dev server)
 ```
@@ -56,12 +56,12 @@ src/
 │   ├── equipment.ts     # 防具三件套 + 飾品兩格
 │   ├── quests.ts / save.ts(localStorage v1,新欄位一律 optional 保持舊檔相容)
 └── ui/                  # 全 DOM:hud/bag/dialog/shop/forge/settings/floating
-scripts/smoke.mjs        # ★ 95 項端到端測試,改任何功能後必跑
+scripts/smoke.mjs        # ★ 150 項端到端測試,改任何功能後必跑
 ```
 
 ## 不可違反的慣例
 
-1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 95 項)。新功能要加對應 smoke 步驟。
+1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 150 項)。新功能要加對應 smoke 步驟。
 2. **存檔相容**:`save.ts` 的 SaveData 加欄位一律 optional + 讀檔給預設值,不要破壞玩家舊存檔;結構大改才升版本號。
 3. **回饋三件套**:任何新的傷害來源接 `floats.spawn`(跳字)、新的拾取接 `feed.push`(中央提示)、新的動作配 `audio.sfx`(每種動作不同音效)——Rai 明確要求。
 4. **新敵人至少四段動作**(移動/蓄力/攻擊/死亡),新模型必過 `toonMaterial` + `addOutlines` + castShadow。

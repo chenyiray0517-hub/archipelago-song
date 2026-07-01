@@ -26,8 +26,13 @@ const BAG_CSS = `
 #bag .top { display: grid; grid-template-columns: 320px 1fr; gap: 20px; margin-bottom: 18px; align-items: stretch; }
 #bag .portrait { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 14px 12px; text-align: center; }
 /* 角色展示台:PlayerPortrait 的 3D 模型 canvas 掛進這裡;載入失敗才退回 .avatar emoji */
-#bag .model-stage { height: 240px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: radial-gradient(ellipse at 50% 70%, rgba(90,209,255,0.18), rgba(0,0,0,0.35)); margin-bottom: 10px; overflow: hidden; }
+#bag .model-stage { position: relative; height: 240px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: radial-gradient(ellipse at 50% 70%, rgba(90,209,255,0.18), rgba(0,0,0,0.35)); margin-bottom: 4px; overflow: hidden; }
 #bag .model-stage canvas { width: 100%; height: 100%; display: block; }
+#bag .char-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 30px; height: 44px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; background: rgba(0,0,0,0.38); color: #eaf6ff; font-size: 22px; line-height: 1; cursor: pointer; }
+#bag .char-nav:hover { background: rgba(90,209,255,0.32); }
+#bag .char-nav.prev { left: 6px; }
+#bag .char-nav.next { right: 6px; }
+#bag .char-name { text-align: center; font-size: 13px; color: #cfeaff; margin-bottom: 10px; letter-spacing: 1px; }
 #bag .avatar { font-size: 130px; line-height: 1; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.55)); }
 #bag .pname { font-size: 17px; font-weight: 700; }
 #bag .plv { font-size: 13px; opacity: 0.8; margin-bottom: 8px; }
@@ -116,6 +121,10 @@ export class BagPanel {
     private getShrineTargets: () => { id: string; island: string }[],
     private onTeleportShrine: (id: string) => void,
     private onLoadoutChange: () => void,
+    /** 切換角色外觀(dir = -1 上一個 / +1 下一個) */
+    private onSwitchCharacter: (dir: number) => void,
+    /** 目前角色的顯示名(展示台下方標籤用) */
+    private getCharacterName: () => string,
   ) {
     const style = document.createElement("style");
     style.textContent = BAG_CSS;
@@ -259,7 +268,12 @@ export class BagPanel {
       <h3>背包</h3>
       <div class="top">
         <div class="portrait">
-          <div class="model-stage"><div class="avatar">🧝</div></div>
+          <div class="model-stage">
+            <button class="char-nav prev" data-char="-1" title="上一個角色">‹</button>
+            <div class="avatar">🧝</div>
+            <button class="char-nav next" data-char="1" title="下一個角色">›</button>
+          </div>
+          <div class="char-name">${this.getCharacterName()}</div>
           <div class="pname">海島旅人</div>
           <div class="plv">Lv.${s.level}</div>
           <div class="expbar"><i style="width:${expPct}%"></i></div>
@@ -351,9 +365,24 @@ export class BagPanel {
       });
     });
 
+    // 角色切換箭頭:交給 main 載入新 VRM,完成後回呼 refreshCharacter 更新展示台
+    this.root.querySelectorAll<HTMLButtonElement>("button[data-char]").forEach((btn) => {
+      btn.addEventListener("click", () => this.onSwitchCharacter(Number(btn.dataset.char)));
+    });
+
     // 展示台:把 3D 玩家模型掛進剛重建的 .model-stage(失敗則維持其中的 emoji)
     const stage = this.root.querySelector<HTMLElement>(".model-stage");
     if (stage) this.portrait.mount(stage);
+  }
+
+  /**
+   * 切換角色完成後由 main 呼叫:更新展示台模型與名稱標籤(背包開著時才有意義)。
+   * @param id 新角色 id(給展示台重載對應 VRM)
+   */
+  refreshCharacter(id: string): void {
+    const label = this.root.querySelector<HTMLElement>(".char-name");
+    if (label) label.textContent = this.getCharacterName();
+    if (this.visible) this.portrait.setCharacter(id);
   }
 
   /** 底部傳送區:收合時一顆按鈕,點開列出已設置的重生點 */

@@ -52,6 +52,8 @@ export interface SaveData {
   gemSlots?: (GemKey | null)[];
   /** 出戰中的靈樹果實(上限 2;舊檔無此欄位時依持有順序遷移) */
   fruitsEquipped?: FruitKey[];
+  /** 玩家選擇的角色外觀 id(playerModel 的 CHARACTERS;舊檔無此欄位時用預設角色) */
+  characterId?: string;
 }
 
 /** 寫入 localStorage(失敗靜默,遊戲不因存檔掛掉) */
@@ -60,6 +62,21 @@ export function saveGame(data: SaveData): void {
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   } catch {
     // 私密模式等情況下寫入失敗,略過
+  }
+}
+
+/**
+ * 僅讀取存檔中的角色外觀 id(開場載入 VRM 前需要,早於完整 loadGame 套用)。
+ * 無存檔/無此欄位/讀取失敗一律回 null,由呼叫端套用預設角色。
+ */
+export function peekCharacterId(): string | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as SaveData;
+    return typeof data.characterId === "string" ? data.characterId : null;
+  } catch {
+    return null;
   }
 }
 

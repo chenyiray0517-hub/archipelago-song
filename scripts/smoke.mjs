@@ -1806,6 +1806,35 @@ const mapClosed = await page.evaluate(() => ({
   ? ok("再按 M 關閉地圖")
   : fail(`地圖未關閉:${JSON.stringify(mapClosed)}`);
 
+// ── 角色外觀切換(可自由更換的多套 VRM)──────────────────────
+const roster = await page.evaluate(() => ({
+  count: window.__game.characters?.length ?? 0,
+  first: window.__game.characterId,
+}));
+roster.count === 8
+  ? ok(`角色外觀名單載入(${roster.count} 套 VRM,目前 ${roster.first})`)
+  : fail(`角色名單數量不符:${JSON.stringify(roster)}`);
+
+// 切到下一套,等新 VRM 載入完成(characterId 變更)
+await page.evaluate(() => window.__game.switchCharacter(1));
+const switched = await page
+  .waitForFunction((prev) => window.__game.characterId !== prev, roster.first, { timeout: 15000 })
+  .then(() => true)
+  .catch(() => false);
+const afterId = await page.evaluate(() => window.__game.characterId);
+switched && afterId === "char2"
+  ? ok(`背包箭頭切換角色外觀 → ${afterId}`)
+  : fail(`角色切換失敗:switched=${switched} id=${afterId}`);
+
+// 選擇寫入存檔(characterId 持久化)
+const savedChar = await page.evaluate(() => {
+  window.__game.doSave();
+  return JSON.parse(localStorage.getItem("archipelago-save-v1")).characterId;
+});
+savedChar === "char2"
+  ? ok(`角色外觀選擇寫入存檔(characterId=${savedChar})`)
+  : fail(`角色外觀未存檔:${savedChar}`);
+
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");
 process.exit(errors.length > 0 ? 1 : 0);

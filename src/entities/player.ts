@@ -3,7 +3,7 @@ import type { Input } from "../core/input";
 import { PlayerStats } from "../systems/stats";
 import { buildHero, COLOR } from "./heroModel";
 import { groundHeight, isWalkable, resolveObstacles } from "../world/terrain";
-import type { PlayerModelProto, PlayerAnim } from "../world/playerModel";
+import { disposeVrm, type PlayerModelProto, type PlayerAnim } from "../world/playerModel";
 import type { VRM } from "@pixiv/three-vrm";
 
 const GRAVITY = 28;
@@ -116,6 +116,8 @@ export class Player {
 
   // ── VRM 模型分支(useModel 後啟用;否則維持程序化角色)──
   private vrm: VRM | null = null;
+  /** VRM 視覺根節點(切換角色時移除+釋放舊的) */
+  private vrmRoot: THREE.Group | null = null;
   private vrmMixer: THREE.AnimationMixer | null = null;
   private vrmActions = new Map<PlayerAnim, THREE.AnimationAction>();
   private vrmState: PlayerAnim = "idle";
@@ -186,6 +188,16 @@ export class Player {
    * 載入失敗(未呼叫此法)則維持原程序化角色。
    */
   useModel(p: PlayerModelProto): void {
+    // 切換角色:先卸除並釋放前一個 VRM(避免 GPU 資源累積)
+    if (this.vrmRoot) {
+      this.mesh.remove(this.vrmRoot);
+      this.vrmMixer?.stopAllAction();
+      this.vrmActions.clear();
+      if (this.vrm) disposeVrm(this.vrm);
+      this.vrmRoot = null;
+      this.vrmMixer = null;
+    }
+
     this.vrm = p.vrm;
     // 隱藏既有程序化視覺(邏輯仍用各 group 的位置,不受影響)
     for (const child of [...this.mesh.children]) child.visible = false;
@@ -198,7 +210,11 @@ export class Player {
     root.scale.setScalar(MODEL_HEIGHT / h);
     root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z
     this.mesh.add(root);
+    this.vrmRoot = root;
 
+    // 重置動畫狀態機(切換後從待機重新開始,避免殘留上一角色的狀態)
+    this.vrmState = "idle";
+    this.vrmWasAttacking = false;
     this.vrmMixer = new THREE.AnimationMixer(p.vrm.scene);
     for (const key of ["idle", "run", "attack", "death"] as PlayerAnim[]) {
       this.vrmActions.set(key, this.vrmMixer.clipAction(p.clips[key]));

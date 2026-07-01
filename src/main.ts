@@ -7,7 +7,14 @@ import { Sky } from "./world/sky";
 import { loadSceneryModels } from "./world/sceneryModels";
 import { loadEnemyModels } from "./world/enemyModels";
 import { loadNpcModels, type NpcModelKey } from "./world/npcModels";
-import { loadPlayerModel, getPlayerModel } from "./world/playerModel";
+import {
+  loadPlayerModel,
+  getPlayerModel,
+  currentCharacterId,
+  cycleCharacter,
+  characterDef,
+  CHARACTERS,
+} from "./world/playerModel";
 import {
   createWorld,
   groundHeight,
@@ -86,7 +93,7 @@ import {
 } from "./systems/fruits";
 import { EquipmentState } from "./systems/equipment";
 import { QuestLog, JELLY_TARGET, HUNTS, type HuntId } from "./systems/quests";
-import { loadGame, saveGame, type SaveData } from "./systems/save";
+import { loadGame, saveGame, peekCharacterId, type SaveData } from "./systems/save";
 import { Inventory, type CrystalSize } from "./systems/stats";
 import { Hud } from "./ui/hud";
 import { MapOverlay } from "./ui/map";
@@ -1253,7 +1260,33 @@ function main(): void {
         })),
     (id) => teleportToShrine(id),
     onLoadoutChange,
+    (dir) => switchCharacter(dir),
+    () => characterDef(currentCharacterId()).name,
   );
+
+  /**
+   * 切換玩家角色外觀:載入下一/上一個 VRM,套用到場景玩家,並更新展示台+存檔。
+   * 載入中防重入;載入失敗保留現有外觀(不擋遊玩)。
+   */
+  let switchingCharacter = false;
+  async function switchCharacter(dir: number): Promise<void> {
+    if (switchingCharacter) return;
+    switchingCharacter = true;
+    const nextId = cycleCharacter(currentCharacterId(), dir);
+    try {
+      const ok = await loadPlayerModel(nextId);
+      const proto = getPlayerModel();
+      if (ok && proto) {
+        player.useModel(proto);
+        audio.sfx("ui");
+        hud.showToast(`角色外觀:${characterDef(nextId).name}`);
+        doSave();
+      }
+      bag.refreshCharacter(currentCharacterId());
+    } finally {
+      switchingCharacter = false;
+    }
+  }
 
   /** 重生點傳送:背包傳送區選擇已啟用的石碑,人到碑前、船到該島近岸 */
   function teleportToShrine(id: string): void {
@@ -1358,6 +1391,7 @@ function main(): void {
     gemsEquipped: [...gems.equipped],
     gemSlots: [...gems.slots],
     fruitsEquipped: [...fruits.equipped],
+    characterId: currentCharacterId(),
   });
   const doSave = (): void => saveGame(collectSave());
   setInterval(doSave, 12000);
@@ -1680,6 +1714,12 @@ function main(): void {
         inventory,
         enemies,
         bag,
+        // 角色外觀切換(煙霧測試用):讀目前 id / 名單 / 觸發切換
+        get characterId() {
+          return currentCharacterId();
+        },
+        characters: CHARACTERS,
+        switchCharacter: (dir: number) => switchCharacter(dir),
         get pickups() {
           return pickups;
         },
@@ -2878,7 +2918,7 @@ Promise.all([
   loadSceneryModels().catch(() => false),
   loadEnemyModels().catch(() => false),
   loadNpcModels().catch(() => false),
-  loadPlayerModel().catch(() => false),
+  loadPlayerModel(peekCharacterId() ?? undefined).catch(() => false),
 ])
   .catch(() => {})
   .finally(() => main());

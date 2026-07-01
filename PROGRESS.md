@@ -1,5 +1,18 @@
 # PROGRESS
 
+## 2026-07-01(角色外觀自由更換:八套 VRM 可切換)
+
+> 把單一玩家 VRM 擴成**八套可切換角色**(`群島之歌角色模型` 的一~八號,四女四男),背包展示台加左右箭頭即時切換,選擇即時套用到遊戲中主角並寫入存檔。**沿用專案精神:任一模型載入失敗回退(維持現有外觀/程序化角色),絕不擋開場或遊玩。**
+
+- **資產**:八套 VRoid Studio 2.13.0 匯出的 VRM 0.0(與原 `player.vrm` 同管線,無需版本分支)複製到 `public/models/player/chars/char1.vrm`~`char8.vrm`(ascii 檔名避免 URL/部署問題;共 **128MB**)。原 `player.vrm` 保留為未知 id 的最終回退。
+- **`world/playerModel.ts`**:① 新增 `CHARACTERS` 名單(id/顯示名)+ `DEFAULT_CHARACTER` + `cycleCharacter`/`characterDef`/`currentCharacterId`;② `loadPlayerModel(id?)`、`loadPortraitModel(id?)` 改吃角色 id,單一常駐模型(切換時載入新的、釋放舊的,避免八套 VRM 同時佔 VRAM);③ Mixamo FBX 原始資產加 `fbxCache`(動作各角色共用,只抓一次,對每個 VRM 各自 retarget);④ `disposeVrm` 釋放舊模型的 geometry/material/texture。
+- **`entities/player.ts`**:`useModel()` 支援**熱切換**——先移除並 `disposeVrm` 前一個 VRM 根節點、停舊 mixer、清 actions,再掛新模型並把動畫狀態機重置回 idle。
+- **`ui/bag.ts` + `ui/playerPortrait.ts`**:展示台加 `‹ ›` 箭頭(絕對定位覆在 model-stage 上)+ 角色名標籤;`PlayerPortrait.setCharacter(id)` 重載展示台 VRM(`applyProto` 抽出共用,切換釋放舊份,`charId` 比對防競態);`bag.refreshCharacter(id)` 由 main 切換完成後回呼更新標籤與展示台。
+- **`main.ts`**:`switchCharacter(dir)`(防重入)載入新 VRM→`player.useModel`→音效+提示+存檔→`bag.refreshCharacter`;開場 `loadPlayerModel(peekCharacterId() ?? 預設)` 套用存檔角色;`__game` 掛 `characterId`/`characters`/`switchCharacter` 供煙霧測試。
+- **存檔**:`save.ts` `SaveData` 加 `characterId?: string`(optional,舊檔無此欄位→預設 char1,相容不破壞);`collectSave` 寫入 `currentCharacterId()`;加 `peekCharacterId()` 供開場早於完整 loadGame 讀角色。
+- 驗證:**build 綠**(tsc strict,58 模組)、**smoke 全綠 150 項**(新增 3 項:角色名單載入 8 套、箭頭切換 char1→char2、選擇寫入存檔)、截圖目視:背包切換一號女(紅裙)→二號女(深外套),展示台與遊戲中主角同步變更、名稱標籤與提示更新。
+- **已知/後續**:① 八套 VRM 各 ~16MB、合計 128MB 進 repo 與 gh-pages 部署(單檔 <100MB 符合限制,但 repo 變肥、切換時首載有短暫延遲);之後可在 VRoid 匯出時縮減多邊形/貼圖或改分區/延遲載入。② 切換只換本機玩家視覺,多人遠端 avatar 仍是程序化。③ 攻擊動作仍是持盾比劃、手上無武器(沿用前一版待辦)。
+
 ## 2026-06-29(背包角色展示台:emoji → 3D 玩家模型)
 
 > 把背包面板左上「角色展示台」(`.model-stage`)原本的 emoji 占位(🧝)換成實際的玩家 VRM 模型,待機動作即時旋轉。**載入失敗自動退回 emoji,絕不擋住背包。** model-stage 本來就為此預留。

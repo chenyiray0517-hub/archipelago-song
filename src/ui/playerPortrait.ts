@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import type { VRM } from "@pixiv/three-vrm";
-import { loadPortraitModel } from "../world/playerModel";
+import { loadPortraitModel, disposeVrm, currentCharacterId } from "../world/playerModel";
 
 /** 正規化展示身高(與遊戲內 useModel 的目標身高一致) */
 const TARGET_H = 1.7;
@@ -18,6 +18,10 @@ export class PlayerPortrait {
   private camera: THREE.PerspectiveCamera | null = null;
   private mixer: THREE.AnimationMixer | null = null;
   private vrm: VRM | null = null;
+  /** 目前掛在展示台上的 VRM 根節點(切換角色時移除+釋放) */
+  private modelRoot: THREE.Group | null = null;
+  /** 目前展示的角色 id(切換時比對,避免重複載入與競態覆蓋) */
+  private charId: string | null = null;
   private clock = new THREE.Clock();
   private raf = 0;
   private running = false;
@@ -90,24 +94,52 @@ export class PlayerPortrait {
     camera.lookAt(0, TARGET_H * 0.52, 0);
     this.camera = camera;
 
-    loadPortraitModel()
+    this.charId = currentCharacterId();
+    loadPortraitModel(this.charId)
       .then((proto) => {
         if (!proto) return this.onFailed();
-        const root = new THREE.Group();
-        root.add(proto.vrm.scene);
-        const box = new THREE.Box3().setFromObject(proto.vrm.scene);
-        const h = box.max.y - box.min.y || 1;
-        root.scale.setScalar(TARGET_H / h);
-        root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z(朝鏡頭)
-        scene.add(root);
-        this.vrm = proto.vrm;
-        this.mixer = new THREE.AnimationMixer(proto.vrm.scene);
-        this.mixer.clipAction(proto.idle).play();
+        this.applyProto(proto);
         this.ready = true;
         this.booting = false;
         if (this.stage) this.hideAvatar(this.stage);
       })
       .catch(() => this.onFailed());
+  }
+
+  /** 把一份展示台 VRM 掛上場景(取代前一個並釋放其資源) */
+  private applyProto(proto: { vrm: VRM; idle: THREE.AnimationClip }): void {
+    if (!this.scene) return;
+    if (this.modelRoot) {
+      this.scene.remove(this.modelRoot);
+      this.mixer?.stopAllAction();
+      if (this.vrm) disposeVrm(this.vrm);
+      this.modelRoot = null;
+    }
+    const root = new THREE.Group();
+    root.add(proto.vrm.scene);
+    const box = new THREE.Box3().setFromObject(proto.vrm.scene);
+    const h = box.max.y - box.min.y || 1;
+    root.scale.setScalar(TARGET_H / h);
+    root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z(朝鏡頭)
+    this.scene.add(root);
+    this.modelRoot = root;
+    this.vrm = proto.vrm;
+    this.mixer = new THREE.AnimationMixer(proto.vrm.scene);
+    this.mixer.clipAction(proto.idle).play();
+  }
+
+  /**
+   * 切換展示台角色(背包箭頭觸發)。載入失敗或已是同角色則不動作。
+   * 載入途中若又被切到別的角色,靠 charId 比對放棄過期結果。
+   */
+  setCharacter(id: string): void {
+    if (this.failed || this.charId === id) return;
+    this.charId = id;
+    loadPortraitModel(id)
+      .then((proto) => {
+        if (proto && this.charId === id && this.scene) this.applyProto(proto);
+      })
+      .catch(() => {});
   }
 
   private frame(): void {

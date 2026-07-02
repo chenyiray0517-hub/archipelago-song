@@ -1835,6 +1835,23 @@ savedChar === "char2"
   ? ok(`角色外觀選擇寫入存檔(characterId=${savedChar})`)
   : fail(`角色外觀未存檔:${savedChar}`);
 
+// ── VRM 劍盾掛手骨 + 攻擊動作加速 ──────────────────────
+const weaponInfo = await page.evaluate(() => {
+  const proto = window.__game.playerModel;
+  return {
+    sword: !!window.__game.player.mesh.getObjectByName("vrm-sword"),
+    shield: !!window.__game.player.mesh.getObjectByName("vrm-shield"),
+    attack: proto?.clips.attack.duration ?? 0,
+    raw: proto?.attackRawDuration ?? 0,
+  };
+});
+weaponInfo.sword && weaponInfo.shield
+  ? ok("VRM 玩家劍盾掛載到手骨")
+  : fail(`劍盾未掛載:${JSON.stringify(weaponInfo)}`);
+weaponInfo.raw > 0 && Math.abs(weaponInfo.attack - weaponInfo.raw * 0.5) < 1e-3
+  ? ok(`攻擊動作時間縮短 50%(${weaponInfo.raw.toFixed(2)}s → ${weaponInfo.attack.toFixed(2)}s)`)
+  : fail(`攻擊動作未加速:${JSON.stringify(weaponInfo)}`);
+
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");
 process.exit(errors.length > 0 ? 1 : 0);

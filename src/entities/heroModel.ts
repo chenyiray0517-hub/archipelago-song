@@ -115,9 +115,40 @@ function buildSword(): { sword: THREE.Group; bladeMaterial: THREE.MeshToonMateri
   const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), toonMaterial(COLOR.gold));
   pommel.position.y = -0.28;
   sword.add(blade, tip, ridge, guard, wing, wing2, grip, pommel);
-  sword.position.y = -0.58;
-  sword.rotation.x = Math.PI / 2;
   return { sword, bladeMaterial };
+}
+
+/** 圓盾:藍面 + 金屬框 + 金色紋章(正面朝 -Z) */
+function buildShield(): THREE.Group {
+  const shield = new THREE.Group();
+  const face = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.07, 16), toonMaterial(COLOR.shield));
+  face.rotation.x = Math.PI / 2;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.05, 8, 16), toonMaterial(COLOR.shieldRim));
+  const emblem = new THREE.Mesh(new THREE.OctahedronGeometry(0.12), toonMaterial(COLOR.gold));
+  emblem.position.z = -0.06;
+  emblem.scale.set(1, 1.4, 0.4);
+  shield.add(face, rim, emblem);
+  return shield;
+}
+
+/**
+ * VRM 玩家掛手骨用的同款劍盾(獨立成品,自帶描邊與陰影)。
+ * 位置/朝向/縮放由掛載端依骨架調整(見 playerModel.attachHeroWeapons)。
+ */
+export function buildHeroWeapons(): {
+  sword: THREE.Group;
+  shield: THREE.Group;
+  bladeMaterial: THREE.MeshToonMaterial;
+} {
+  const sw = buildSword();
+  const shield = buildShield();
+  for (const g of [sw.sword, shield]) {
+    addOutlines(g);
+    g.traverse((child) => {
+      if (child instanceof THREE.Mesh) child.castShadow = true;
+    });
+  }
+  return { sword: sw.sword, shield, bladeMaterial: sw.bladeMaterial };
 }
 
 /**
@@ -204,18 +235,13 @@ export function buildHero(tunic: number = COLOR.tunic, tunicDark?: number): Hero
   const aL = buildArm(0.46, tunic);
   const aR = buildArm(-0.46, tunic);
   const sw = buildSword();
+  sw.sword.position.y = -0.58; // 對齊右手位置(手在前臂群 y=-0.25 再往下)
+  sw.sword.rotation.x = Math.PI / 2;
   aR.arm.add(sw.sword);
   body.add(aL.arm, aR.arm);
 
   // 盾牌(平時揹背後,防禦時舉到身前)
-  const shield = new THREE.Group();
-  const face = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.07, 16), toonMaterial(COLOR.shield));
-  face.rotation.x = Math.PI / 2;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.05, 8, 16), toonMaterial(COLOR.shieldRim));
-  const emblem = new THREE.Mesh(new THREE.OctahedronGeometry(0.12), toonMaterial(COLOR.gold));
-  emblem.position.z = -0.06;
-  emblem.scale.set(1, 1.4, 0.4);
-  shield.add(face, rim, emblem);
+  const shield = buildShield();
   shield.position.copy(SHIELD_HOME);
   body.add(shield);
 

@@ -1,5 +1,17 @@
 # PROGRESS
 
+## 2026-07-02(VRM 劍盾掛手骨 + 攻擊動作縮短 50%)
+
+> 補上前一版待辦「攻擊動作空手比劃」:把程序化勇者的同款劍盾掛到 VRM 玩家的手骨上(隨 Mixamo 動作一起揮舞),並把攻擊動作播放時間縮短 50%(Rai 指定),出招更俐落、0.22s 揮劍時窗內看得到更完整的斬擊。
+
+- **`entities/heroModel.ts`**:劍/盾組裝抽成可獨立取得——`buildSword` 移除掛臂用的內建位移(移到 `buildHero` 呼叫處)、盾牌抽成 `buildShield()`;新增 `buildHeroWeapons()` 回傳自帶描邊+陰影的劍/盾/劍身材質(程序化勇者外觀不變,`buildHero` 產物與先前一致)。
+- **`world/playerModel.ts` 新增 `attachHeroWeapons(vrm, nativeHeight)`**:劍 → 右手骨(刃朝模型前方、劍面沿手指、握把從手腕挪到掌心),盾 → 左前臂骨(面朝手背側、長軸沿手臂,似臂帶盾,浮出一點避免陷肉)。掛在 **raw bone**(渲染骨架)上隨蒙皮姿勢動;朝向用 T-pose 實測的手指(rightMiddleProximal−rightHand)與前臂(leftHand−leftLowerArm)方向推算 + 模型空間換算,不依賴各 VRM 骨局部軸差異,八套 VRoid 角色通用;武器依 `nativeHeight / 2.9`(程序化勇者身高)等比縮放。缺人形手骨回 null,維持無武器不擋遊玩。
+- **攻擊動作加速**:`ATTACK_TIME_SCALE = 0.5`,`loadPlayerModel` 把攻擊 clip 所有關鍵幀時間 ×0.5(1.30s → 0.65s);原始秒數存 `proto.attackRawDuration` 供煙霧測試驗證。
+- **`entities/player.ts`**:`useModel` 掛武器並把集氣發光材質改指到 VRM 劍身;發光邏輯抽成 `updateBladeGlow()`,VRM 分支(先前整段跳過)也每幀呼叫——**修正 VRM 角色集氣時劍身不發光**;`idlePhase`(滿氣閃爍計時)移到分支前共用。切換角色時武器掛在舊 VRM 骨下,隨既有 `disposeVrm` 一併釋放。
+- **`main.ts`**:`__game` 加 `playerModel` getter(讀 proto 驗證掛載與加速)。
+- 驗證:**build 綠**(tsc strict,58 模組)、**smoke 全綠 152 項**(新增 2 項:劍盾掛載到手骨、攻擊動作時間縮短 50%)、截圖目視:待機劍在右手垂放身側、盾在左前臂;揮劍中劍隨手臂高舉劈下;集氣時 VRM 劍身發白光;比例與程序化勇者一致。
+- **已知/後續**:① 盾牌固定在前臂,舉盾(Q)沒有專屬格擋動作(程序化角色有舉盾姿);之後可加 Mixamo Block 動作。② 背包展示台與多人遠端 avatar 尚未掛武器。③ 迴旋斬仍沿用攻擊動作。
+
 ## 2026-07-01(角色外觀自由更換:八套 VRM 可切換)
 
 > 把單一玩家 VRM 擴成**八套可切換角色**(`群島之歌角色模型` 的一~八號,四女四男),背包展示台加左右箭頭即時切換,選擇即時套用到遊戲中主角並寫入存檔。**沿用專案精神:任一模型載入失敗回退(維持現有外觀/程序化角色),絕不擋開場或遊玩。**

@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { VRMLoaderPlugin, type VRM } from "@pixiv/three-vrm";
+import { buildHeroWeapons } from "../entities/heroModel";
 
 /** 玩家動畫狀態鍵(idle 為合成的放手待機姿,其餘來自 Mixamo FBX) */
 export type PlayerAnim = "idle" | "run" | "attack" | "death";
@@ -16,6 +17,20 @@ export type PlayerAnim = "idle" | "run" | "attack" | "death";
 export interface PlayerModelProto {
   vrm: VRM;
   clips: Record<PlayerAnim, THREE.AnimationClip>;
+  /** 攻擊 FBX 原始秒數(clips.attack 已依 ATTACK_TIME_SCALE 加速;供煙霧測試驗證) */
+  attackRawDuration: number;
+}
+
+/** 攻擊動作播放時間比率(Rai:攻擊動作時間縮短 50%,出招更俐落) */
+export const ATTACK_TIME_SCALE = 0.5;
+
+/** 把動作所有關鍵幀時間乘上 ratio(整體加速/減速),回傳原 clip */
+function scaleClipTime(clip: THREE.AnimationClip, ratio: number): THREE.AnimationClip {
+  for (const track of clip.tracks) {
+    for (let i = 0; i < track.times.length; i++) track.times[i] *= ratio;
+  }
+  clip.duration *= ratio;
+  return clip;
 }
 
 const BASE = import.meta.env.BASE_URL;
@@ -316,10 +331,98 @@ export async function loadPlayerModel(id: string = DEFAULT_CHARACTER): Promise<b
   ]);
   // Idle 軌全空(retarget 失敗)也回退合成待機,避免站定變 T-pose
   const idleClip = idle.tracks.length > 0 ? idle : buildIdleClip(vrm);
+  const attackRawDuration = attack.duration;
+  scaleClipTime(attack, ATTACK_TIME_SCALE); // 攻擊動作加速(時間縮短 50%)
 
-  proto = { vrm, clips: { idle: idleClip, run, attack, death } };
+  proto = { vrm, clips: { idle: idleClip, run, attack, death }, attackRawDuration };
   currentId = id;
   return true;
+}
+
+/** 程序化勇者(heroModel.buildHero)身高約 2.9 單位;VRM 掛武器時等比縮放用 */
+const HERO_HEIGHT = 2.9;
+
+export interface HeroWeapons {
+  sword: THREE.Group;
+  shield: THREE.Group;
+  /** 劍身材質(集氣發光用,同程序化勇者) */
+  bladeMaterial: THREE.MeshToonMaterial;
+}
+
+/**
+ * 把程序化勇者同款劍盾掛到 VRM 手骨:劍 → 右手骨(刃朝模型前方、劍面沿手指),
+ * 盾 → 左前臂骨(面朝手背側、長軸沿手臂,似臂帶盾)。
+ * 掛在 raw bone(渲染骨架)上,隨蒙皮姿勢/Mixamo 動作一起擺動;
+ * 朝向用骨架靜止姿(T-pose)實測的手指/手臂方向推算,不依賴各 VRM 的骨局部軸差異。
+ * 缺人形手骨(退化模型)回 null,外觀維持無武器,不影響遊玩。
+ * @param nativeHeight VRM 未縮放的原生身高(呼叫端量測,用來把武器縮到同身材比例)
+ */
+export function attachHeroWeapons(vrm: VRM, nativeHeight: number): HeroWeapons | null {
+  const handR = vrm.humanoid.getRawBoneNode("rightHand");
+  const foreL = vrm.humanoid.getRawBoneNode("leftLowerArm");
+  const handL = vrm.humanoid.getRawBoneNode("leftHand");
+  if (!handR || !foreL || !handL) return null;
+
+  // 一律換算到「模型空間」(vrm.scene 區域座標)再回骨區域座標,
+  // 呼叫時 vrm.scene 已被包 wrapper 縮放/轉向也不受影響。
+  vrm.scene.updateWorldMatrix(true, true);
+  const toModel = new THREE.Matrix4().copy(vrm.scene.matrixWorld).invert();
+  const posOf = (o: THREE.Object3D) =>
+    o.getWorldPosition(new THREE.Vector3()).applyMatrix4(toModel);
+  /** 以模型空間的目標朝向/位置,把物件掛進骨的區域座標 */
+  const mount = (
+    obj: THREE.Object3D,
+    bone: THREE.Object3D,
+    modelQ: THREE.Quaternion,
+    modelPos: THREE.Vector3,
+  ) => {
+    const boneInModel = new THREE.Matrix4().multiplyMatrices(toModel, bone.matrixWorld);
+    const boneQ = new THREE.Quaternion().setFromRotationMatrix(boneInModel);
+    obj.quaternion.copy(boneQ.invert().multiply(modelQ));
+    obj.position.copy(modelPos.applyMatrix4(boneInModel.invert()));
+    obj.scale.setScalar(nativeHeight / HERO_HEIGHT);
+    bone.add(obj);
+  };
+  const basisQ = (x: THREE.Vector3, y: THREE.Vector3, z: THREE.Vector3) =>
+    new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+
+  const forward = new THREE.Vector3(0, 0, vrm.meta?.metaVersion === "0" ? -1 : 1);
+  const up = new THREE.Vector3(0, 1, 0);
+  const weapons = buildHeroWeapons();
+  weapons.sword.name = "vrm-sword";
+  weapons.shield.name = "vrm-shield";
+
+  // 劍:刃(局部 +Y)朝模型前方、劍面(局部 X)沿手指方向;握把從手腕往掌心挪一點
+  const wristR = posOf(handR);
+  const fingerR = vrm.humanoid.getRawBoneNode("rightMiddleProximal");
+  const fingerDir = (fingerR ? posOf(fingerR).sub(wristR) : forward.clone()).normalize();
+  const swordY = forward.clone();
+  const swordZ = new THREE.Vector3().crossVectors(fingerDir, swordY).normalize();
+  const swordX = new THREE.Vector3().crossVectors(swordY, swordZ).normalize();
+  mount(
+    weapons.sword,
+    handR,
+    basisQ(swordX, swordY, swordZ),
+    wristR.clone().addScaledVector(fingerDir, nativeHeight * 0.04),
+  );
+
+  // 盾:正面(局部 -Z)朝手背側(T-pose 掌心朝下 → 手背朝上)、長軸(局部 Y)沿手臂,
+  // 掛在前臂中段、往手背側浮出一點避免陷進手臂
+  const elbowL = posOf(foreL);
+  const armVec = posOf(handL).sub(elbowL);
+  const armLen = armVec.length() || 1;
+  const armDir = armVec.normalize();
+  const shieldZ = up.clone().negate();
+  const shieldX = new THREE.Vector3().crossVectors(armDir, shieldZ).normalize();
+  const shieldY = new THREE.Vector3().crossVectors(shieldZ, shieldX).normalize();
+  mount(
+    weapons.shield,
+    foreL,
+    basisQ(shieldX, shieldY, shieldZ),
+    elbowL.clone().addScaledVector(armDir, armLen * 0.55).addScaledVector(up, nativeHeight * 0.03),
+  );
+
+  return weapons;
 }
 
 /** 釋放一份 VRM 佔用的 GPU 資源(切換角色時對舊模型呼叫,避免記憶體累積) */

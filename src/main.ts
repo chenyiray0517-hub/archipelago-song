@@ -1720,6 +1720,10 @@ function main(): void {
         },
         characters: CHARACTERS,
         switchCharacter: (dir: number) => switchCharacter(dir),
+        // 玩家 VRM 原型(煙霧測試:驗證劍盾掛載與攻擊動作加速)
+        get playerModel() {
+          return getPlayerModel();
+        },
         get pickups() {
           return pickups;
         },

@@ -3,7 +3,12 @@ import type { Input } from "../core/input";
 import { PlayerStats } from "../systems/stats";
 import { buildHero, COLOR } from "./heroModel";
 import { groundHeight, isWalkable, resolveObstacles } from "../world/terrain";
-import { disposeVrm, type PlayerModelProto, type PlayerAnim } from "../world/playerModel";
+import {
+  attachHeroWeapons,
+  disposeVrm,
+  type PlayerModelProto,
+  type PlayerAnim,
+} from "../world/playerModel";
 import type { VRM } from "@pixiv/three-vrm";
 
 const GRAVITY = 28;
@@ -212,6 +217,11 @@ export class Player {
     this.mesh.add(root);
     this.vrmRoot = root;
 
+    // 劍盾掛到 VRM 手骨(隨動作擺動;切換角色時隨舊 VRM 一併釋放);
+    // 集氣發光改作用在這把 VRM 劍的劍身材質
+    const weapons = attachHeroWeapons(p.vrm, h);
+    if (weapons) this.bladeMaterial = weapons.bladeMaterial;
+
     // 重置動畫狀態機(切換後從待機重新開始,避免殘留上一角色的狀態)
     this.vrmState = "idle";
     this.vrmWasAttacking = false;
@@ -250,8 +260,22 @@ export class Player {
     }
     this.vrmWasAttacking = attackingNow;
 
+    this.updateBladeGlow(); // VRM 劍同樣吃集氣發光
     this.vrmMixer.update(dt);
     this.vrm.update(dt); // 表情 / 彈簧骨(頭髮、裙襬)
+  }
+
+  /** 集氣劍身發光:集氣中漸亮,滿氣時強烈閃爍 + 刃色閃白(程序化與 VRM 劍共用) */
+  private updateBladeGlow(): void {
+    const ratio = this.chargeRatio;
+    if (ratio >= 1) {
+      const flash = 0.5 + 0.5 * Math.sin(this.idlePhase * 18);
+      this.bladeMaterial.emissiveIntensity = 1.6 + flash * 1.2;
+      this.bladeMaterial.color.setHex(0xdce6f2).lerp(new THREE.Color(0xffffff), flash);
+    } else {
+      this.bladeMaterial.emissiveIntensity = ratio * 1.2;
+      this.bladeMaterial.color.setHex(0xdce6f2);
+    }
   }
 
   /**
@@ -458,13 +482,14 @@ export class Player {
     this.renderYaw += delta * Math.min(TURN_LERP * dt, 1);
     this.mesh.rotation.y = this.renderYaw;
 
+    this.idlePhase += dt * 2.2; // 滿氣閃爍計時,程序化與 VRM 分支共用
+
     // VRM 模型分支:用骨骼動畫,跳過下方程序化擺動
     if (this.vrm) {
       this.updateModel(dt);
       return;
     }
 
-    this.idlePhase += dt * 2.2;
     const moving = this.moveAmount > 0.05;
     if (moving) this.walkPhase += dt * 11 * Math.min(this.moveAmount, 1.4);
 
@@ -516,16 +541,7 @@ export class Player {
           : -0.2 - Math.max(0, swing) * 0.4;
     if (this.spinT <= 0) this.sword.rotation.x = Math.PI / 2;
 
-    // 集氣劍身發光:集氣中漸亮,滿氣時強烈閃爍 + 劍身刃色閃白
-    const ratio = this.chargeRatio;
-    if (ratio >= 1) {
-      const flash = 0.5 + 0.5 * Math.sin(this.idlePhase * 18);
-      this.bladeMaterial.emissiveIntensity = 1.6 + flash * 1.2;
-      this.bladeMaterial.color.setHex(0xdce6f2).lerp(new THREE.Color(0xffffff), flash);
-    } else {
-      this.bladeMaterial.emissiveIntensity = ratio * 1.2;
-      this.bladeMaterial.color.setHex(0xdce6f2);
-    }
+    this.updateBladeGlow();
 
     // 身體:迴旋斬整圈旋轉、走路上下顛、待機呼吸、翻滾前傾
     this.body.rotation.y = this.spinT > 0 ? (1 - this.spinT / SPIN_TIME) * Math.PI * 2 : 0;

@@ -100,6 +100,8 @@ export class Inventory {
   firstSeaGem = false;
   /** 第二海寶石(重要道具,使用後傳送至第二海・港口鎮) */
   secondSeaGem = false;
+  /** 第三海寶石(重要道具,使用後傳送至第三海・望潮鎮) */
+  thirdSeaGem = false;
 
   /**
    * 使用指定數量的經驗結晶,回傳注入的 EXP 總量。

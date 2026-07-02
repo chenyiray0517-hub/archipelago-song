@@ -33,7 +33,7 @@ export interface SaveData {
   /** 已啟用的重生石碑 id(依設置順序) */
   shrines?: string[];
   /** 海寶石持有狀態(往返第一/第二海的重要道具) */
-  seaGems?: { first: boolean; second: boolean };
+  seaGems?: { first: boolean; second: boolean; third?: boolean };
   /** 溶岩石持有狀態(第七顆靈紋寶石,熔砂島取得) */
   lavaOwned?: boolean;
   /** 碧波石持有狀態(第二海・珊瑚礁島取得) */

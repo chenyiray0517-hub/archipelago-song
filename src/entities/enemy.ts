@@ -24,7 +24,10 @@ export type EnemyKind =
   | "lifeGuardian"
   | "marsh"
   | "brine"
-  | "solar";
+  | "solar"
+  | "maple"
+  | "shade"
+  | "star";
 
 type EnemyState =
   | "patrol"
@@ -128,6 +131,9 @@ interface EnemyConfig {
  */
 const SECOND_SEA_HP_MUL = 2.5;
 const SECOND_SEA_DMG_MUL = 2;
+/** 第三海(Lv.35 之後)再往上拉一階 */
+const THIRD_SEA_HP_MUL = 3.2;
+const THIRD_SEA_DMG_MUL = 2.4;
 
 const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   slime: { hp: 30, dmg: 8, speed: 3.4, scale: 1, color: 0x52c878 },
@@ -161,6 +167,12 @@ const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   brine: { hp: 230, dmg: 26, speed: 3.6, scale: 1.45, color: 0xc8e8f0 },
   // 第二海・烈陽礁:熾光果凍
   solar: { hp: 225, dmg: 29, speed: 4.0, scale: 1.4, color: 0xf0a838 },
+  // 第三海・楓紅島:楓靈果凍(Lv.35+ 後期帶;無守護者,委託清剿)
+  maple: { hp: 240, dmg: 30, speed: 3.9, scale: 1.45, color: 0xd86038 },
+  // 第三海・幽影灣:幽影果凍
+  shade: { hp: 250, dmg: 31, speed: 4.0, scale: 1.45, color: 0x7a5ac8 },
+  // 第三海・星砂洲:星砂果凍
+  star: { hp: 245, dmg: 30, speed: 4.1, scale: 1.4, color: 0x9ad8e8 },
 };
 
 /**
@@ -198,6 +210,7 @@ const KIND_MODEL: Partial<Record<EnemyKind, string>> = {
   marsh: "Frog",
   brine: "PinkBlob",
   solar: "Birb",
+  // 第三海(maple/shade/star)未列:素材包 20 隻已用罄,依設計回退主題色程序化果凍 blob
 };
 
 /**
@@ -304,9 +317,11 @@ export class Enemy {
     this.kind = kind;
     this.config = CONFIGS[kind];
     // 第二海敵人大幅強化:依生成座標套區域倍率
-    const sea2 = seaOf(x) === 2;
-    this.maxHp = Math.round(this.config.hp * (sea2 ? SECOND_SEA_HP_MUL : 1));
-    this.dmg = Math.round(this.config.dmg * (sea2 ? SECOND_SEA_DMG_MUL : 1));
+    const sea = seaOf(x);
+    const hpMul = sea === 3 ? THIRD_SEA_HP_MUL : sea === 2 ? SECOND_SEA_HP_MUL : 1;
+    const dmgMul = sea === 3 ? THIRD_SEA_DMG_MUL : sea === 2 ? SECOND_SEA_DMG_MUL : 1;
+    this.maxHp = Math.round(this.config.hp * hpMul);
+    this.dmg = Math.round(this.config.dmg * dmgMul);
     this.hp = this.maxHp;
     this.home = new THREE.Vector3(x, 0, z);
     this.waypoint = this.home.clone();

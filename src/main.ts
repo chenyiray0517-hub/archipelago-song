@@ -24,6 +24,7 @@ import {
   TIDE_SITE,
   SUNKEN_CITY,
   SECOND_SEA,
+  THIRD_SEA,
   seaOf,
   islandAt,
   THUNDER_FRUIT_SITE,
@@ -394,6 +395,24 @@ function main(): void {
     new Enemy("solar", 2232, -38),
     new Enemy("solar", 2288, -38),
     new Enemy("solar", 2260, -14),
+    // 第三海・楓紅島(中心 4200,150):楓靈果凍(委託清剿,無守護者)
+    new Enemy("maple", 4180, 130),
+    new Enemy("maple", 4222, 134),
+    new Enemy("maple", 4166, 158),
+    new Enemy("maple", 4234, 166),
+    new Enemy("maple", 4196, 190),
+    // 第三海・幽影灣(中心 3780,-130):幽影果凍
+    new Enemy("shade", 3760, -158),
+    new Enemy("shade", 3814, -152),
+    new Enemy("shade", 3746, -128),
+    new Enemy("shade", 3812, -108),
+    new Enemy("shade", 3776, -100),
+    // 第三海・星砂洲(中心 4230,-170):星砂果凍
+    new Enemy("star", 4212, -192),
+    new Enemy("star", 4248, -190),
+    new Enemy("star", 4202, -170),
+    new Enemy("star", 4258, -168),
+    new Enemy("star", 4230, -140),
   ];
   for (const enemy of enemies) scene.add(enemy.mesh);
   // 多人:陣列索引作為跨端同步的穩定 id(各端以相同順序建立同一批敵人)
@@ -469,6 +488,19 @@ function main(): void {
     ownedGemCount() === 6 &&
     killedKindCount() === ENEMY_KINDS.length &&
     player.stats.level >= SEA2_LEVEL;
+
+  // ---- 第三海解鎖條件(遠航者檢查 + HUD 追蹤列共用):Lv.35 + 擊敗第二海全部頭目 ----
+  const SEA3_LEVEL = 35;
+  /** 第二海全部頭目;擊敗紀錄走 quests.killsOf(隨存檔保留,重整重生不失紀錄) */
+  const SEA2_BOSSES: { kind: string; name: string }[] = [
+    { kind: "magmaGuardian", name: "熔岩守護者" },
+    { kind: "coralGuardian", name: "珊瑚守護者" },
+    { kind: "lifeGuardian", name: "靈脈守護者" },
+  ];
+  const defeatedSea2BossCount = (): number =>
+    SEA2_BOSSES.filter((b) => quests.killsOf(b.kind) > 0).length;
+  const sea3Ready = (): boolean =>
+    player.stats.level >= SEA3_LEVEL && defeatedSea2BossCount() === SEA2_BOSSES.length;
 
   /** 結晶尺寸顯示名 */
   const crystalName = (size: CrystalSize): string =>
@@ -882,12 +914,19 @@ function main(): void {
     // 第二海・港口鎮:給予「熔砂的試煉」,熔岩守護者掉落第七顆寶石溶岩石
     new Npc("鎮長波叔", SECOND_SEA.x, SECOND_SEA.z - 36, 0xc8a04a, () => {
       const ql = quests.get("lava");
-      if (ql === "done")
+      if (ql === "done") {
+        if (inventory.thirdSeaGem)
+          return [
+            "熔砂島的熱浪,連海風都燙得發顫……",
+            "聽說你已經遠渡第三海了——真有你的!",
+          ];
         return [
           "熔砂島的熱浪,連海風都燙得發顫……",
           "有了溶岩石,你連腳下的岩漿都能驅使了。",
-          "想回第一海?在背包使用【第一海寶石】就行。",
+          "對了,東南外海浮現了一座「遠海之門」。",
+          "島上的遠航者,能為通過試煉的人開啟第三海之路。",
         ];
+      }
       if (ql === "active" && gems.lavaOwned) {
         quests.complete("lava");
         inventory.coins += 600;
@@ -1108,6 +1147,120 @@ function main(): void {
       crystalCount: 2,
       doneLines: ["礁石涼下來了,可以好好拾光啦!", "謝謝你,旅人。"],
     }),
+    // 遠海之門:第三海解鎖試煉(Lv.35 + 擊敗第二海全部守護者),通過發第三海寶石
+    new Npc("遠航者滄瀾", 2320, -195, 0x5a7ac8, () => {
+      if (inventory.thirdSeaGem)
+        return [
+          "第三海寶石與你同行,滄海再遠也有歸途。",
+          "在背包(Tab)使用海寶石,即可往返三片海域。",
+          "願望潮鎮的燈火,為你指路。",
+        ];
+      if (sea3Ready()) {
+        if (quests.get("sea3") === null) quests.accept("sea3");
+        quests.complete("sea3");
+        inventory.thirdSeaGem = true;
+        audio.sfx("gem");
+        feed.push("🌊 獲得重要道具【第三海寶石】");
+        hud.showToast("獲得第三海寶石!在背包(Tab)使用即可前往第三海");
+        doSave();
+        return [
+          "三位守護者的記憶、足以遠渡滄海的修為……",
+          "你通過了試煉。收下吧——【第三海寶石】。",
+          "在背包中使用它,海流就會帶你前往第三海的門戶「望潮鎮」。",
+        ];
+      }
+      if (quests.get("sea3") === null) {
+        quests.accept("sea3");
+        hud.showToast("接受任務:遠渡滄海");
+      }
+      return [
+        "我是遠航者滄瀾,滄海的引路人。",
+        "第二海之外是更遼闊的第三海——想遠渡,須有斬破巨浪的實力:",
+        `・擊敗第二海全部守護者(${defeatedSea2BossCount()}/${SEA2_BOSSES.length})`,
+        `・修煉至 Lv.${SEA3_LEVEL}(目前 Lv.${player.stats.level})`,
+        "達成之後,再回來找我。",
+      ];
+    }, "talk", "sharky"),
+    // 第三海・望潮鎮:門戶城鎮的迎賓與指路(第三海為委託之海,無守護者)
+    new Npc("鎮長汐婆", THIRD_SEA.x, THIRD_SEA.z - 36, 0x6ab8a0, () => {
+      const allDone =
+        quests.get("mapleHunt") === "done" &&
+        quests.get("shadeHunt") === "done" &&
+        quests.get("starHunt") === "done";
+      if (allDone)
+        return [
+          "三座島的委託都辦妥了?你可是望潮鎮的大恩人!",
+          "潮聲說,更遠的海之後還會再召喚你……",
+          "想回去的話,在背包使用對應的海寶石就行。",
+        ];
+      return [
+        "歡迎來到第三海的門戶——望潮鎮!",
+        "能遠渡滄海的,都是傳說級的冒險者。",
+        "東北的『楓紅島』、西南的『幽影灣』、東南的『星砂洲』,",
+        "各有居民貼出了清剿委託,去幫幫他們吧!",
+        "想回第一、二海?在背包使用對應的海寶石就行。",
+      ];
+    }, "talk", "anne"),
+    // 第三海・楓紅島:打怪委託(楓靈果凍)
+    makeHuntNpc({
+      name: "楓園主楓伯",
+      model: "henry",
+      x: 4170,
+      z: 176,
+      color: 0xd06838,
+      quest: "mapleHunt",
+      title: "楓靈清剿",
+      enemyLabel: "楓靈果凍",
+      intro: [
+        "滿島的楓糖正要開採,楓靈果凍卻把楓林霸佔了。",
+        "【任務】幫我清掉 4 隻楓靈果凍!",
+        "牠們皮糙肉厚,別跟牠們硬拚。",
+      ],
+      coins: 600,
+      crystalSize: "large",
+      crystalCount: 3,
+      doneLines: ["楓林安靜下來了,今年的楓糖有著落啦!", "這片楓紅,現在看著才叫美。"],
+    }),
+    // 第三海・幽影灣:打怪委託(幽影果凍)
+    makeHuntNpc({
+      name: "提燈人幽伯",
+      model: "skeleton",
+      x: 3748,
+      z: -104,
+      color: 0x8a6ad8,
+      quest: "shadeHunt",
+      title: "幽影清剿",
+      enemyLabel: "幽影果凍",
+      intro: [
+        "灣裡的霧越來越沉,幽影果凍在暗處出沒。",
+        "【任務】幫我清掉 4 隻幽影果凍!",
+        "提燈照不到的地方,更要小心。",
+      ],
+      coins: 600,
+      crystalSize: "large",
+      crystalCount: 3,
+      doneLines: ["燈火又能照亮整個灣了,謝謝你!", "夜路,總算敢走了。"],
+    }),
+    // 第三海・星砂洲:打怪委託(星砂果凍)
+    makeHuntNpc({
+      name: "拾砂人星珂",
+      model: "mako",
+      x: 4206,
+      z: -144,
+      color: 0x6ac8e0,
+      quest: "starHunt",
+      title: "星砂清剿",
+      enemyLabel: "星砂果凍",
+      intro: [
+        "夜裡會發光的星砂是這座洲的寶貝,卻被星砂果凍吞了個精光。",
+        "【任務】幫我清掉 4 隻星砂果凍!",
+        "牠們動作飛快,抓準時機再出手。",
+      ],
+      coins: 600,
+      crystalSize: "large",
+      crystalCount: 3,
+      doneLines: ["星砂又開始發光了,像把星空撒在沙上!", "捧一把回去吧,算我謝你。"],
+    }),
   ];
   for (const npc of npcs) scene.add(npc.mesh);
 
@@ -1117,7 +1270,7 @@ function main(): void {
   const shrineActiveIds: string[] = [];
 
   /** 某重生點 id 屬於哪片海域(依石碑座標) */
-  const seaOfShrine = (id: string): 1 | 2 => {
+  const seaOfShrine = (id: string): 1 | 2 | 3 => {
     const s = shrines.find((sh) => sh.def.id === id);
     return s ? seaOf(s.def.x) : 1;
   };
@@ -1305,11 +1458,17 @@ function main(): void {
   }
 
   /** 海寶石傳送:人與船一起移動到目標海域的港邊(航行/潛水中也可用) */
-  function travelTo(sea: 1 | 2): void {
+  function travelTo(sea: 1 | 2 | 3): void {
     if (player.isDead) return;
     if (diving) setDiving(false);
     sailing = false;
-    if (sea === 2) {
+    if (sea === 3) {
+      const x = THIRD_SEA.x;
+      const z = THIRD_SEA.z - 44;
+      player.mesh.position.set(x, groundHeight(x, z), z);
+      boat.place(THIRD_SEA.x + 2, THIRD_SEA.z - 58); // 停在望潮鎮碼頭旁
+      hud.showToast("海流湧動……抵達第三海【望潮鎮】");
+    } else if (sea === 2) {
       const x = SECOND_SEA.x;
       const z = SECOND_SEA.z - 44;
       player.mesh.position.set(x, groundHeight(x, z), z);
@@ -1379,7 +1538,11 @@ function main(): void {
     gemLevels: { ...gems.levels },
     equipment: equipment.serialize(),
     shrines: [...shrineActiveIds],
-    seaGems: { first: inventory.firstSeaGem, second: inventory.secondSeaGem },
+    seaGems: {
+      first: inventory.firstSeaGem,
+      second: inventory.secondSeaGem,
+      third: inventory.thirdSeaGem,
+    },
     lavaOwned: gems.lavaOwned,
     aquaOwned: gems.aquaOwned,
     lifeOwned: gems.lifeOwned,
@@ -1436,6 +1599,7 @@ function main(): void {
     voidDefeated = saved.voidDefeated ?? false;
     inventory.firstSeaGem = saved.seaGems?.first ?? false;
     inventory.secondSeaGem = saved.seaGems?.second ?? false;
+    inventory.thirdSeaGem = saved.seaGems?.third ?? false;
     player.stats.weaponLevel = saved.weaponLevel ?? 0;
     if (saved.gemLevels) Object.assign(gems.levels, saved.gemLevels);
     if (saved.equipment) equipment.restore(saved.equipment);
@@ -1795,8 +1959,10 @@ function main(): void {
 
     // 日夜與天氣(影響光照/天色/海況/航速/配樂)
     const env = sky.update(dt, player.mesh.position, diving);
-    // 海面網格跟著玩家所在海域走(兩海相距甚遠,共用同一張海面)
-    if (seaOf(player.mesh.position.x) === 2) ocean.position.set(SECOND_SEA.x, 0, SECOND_SEA.z);
+    // 海面網格跟著玩家所在海域走(三海相距甚遠,共用同一張海面)
+    const playerSea = seaOf(player.mesh.position.x);
+    if (playerSea === 3) ocean.position.set(THIRD_SEA.x, 0, THIRD_SEA.z);
+    else if (playerSea === 2) ocean.position.set(SECOND_SEA.x, 0, SECOND_SEA.z);
     else ocean.position.set(75, 0, 55);
     updateOcean(ocean, elapsed, env.waveScale);
     audio.setRain(env.raining && !diving);
@@ -1835,7 +2001,8 @@ function main(): void {
       if (islName !== shownIslandName) {
         shownIslandName = islName;
         if (islName) {
-          hud.showIslandTitle(islName, seaOf(player.mesh.position.x) === 2 ? "第二海" : "第一海");
+          const sea = seaOf(player.mesh.position.x);
+          hud.showIslandTitle(islName, sea === 3 ? "第三海" : sea === 2 ? "第二海" : "第一海");
         }
       }
       map.render(player.mesh.position.x, player.mesh.position.z);
@@ -2785,6 +2952,13 @@ function main(): void {
           : `跨越界海:寶石${ownedGemCount()}/6・圖鑑${killedKindCount()}/${ENEMY_KINDS.length}・Lv.${player.stats.level}/${SEA2_LEVEL}`,
       );
     }
+    if (quests.get("sea3") === "active") {
+      questLines.push(
+        sea3Ready()
+          ? "遠渡滄海:回遠海之門找遠航者滄瀾"
+          : `遠渡滄海:守護者${defeatedSea2BossCount()}/${SEA2_BOSSES.length}・Lv.${player.stats.level}/${SEA3_LEVEL}`,
+      );
+    }
     if (quests.get("lava") === "active") {
       questLines.push(
         gems.lavaOwned
@@ -2814,6 +2988,12 @@ function main(): void {
       { id: "sandHunt", title: "熱砂清剿", npc: "拓荒者沙吉" },
       { id: "reefHunt", title: "礁石清剿", npc: "潛水夫阿蚌" },
       { id: "sporeHunt", title: "孢子清剿", npc: "採集者藤吉" },
+      { id: "marshHunt", title: "沼氣清剿", npc: "沼澤嚮導苔翁" },
+      { id: "brineHunt", title: "鹽晶清剿", npc: "鹽工鹵伯" },
+      { id: "solarHunt", title: "熾光清剿", npc: "拾光人焰娃" },
+      { id: "mapleHunt", title: "楓靈清剿", npc: "楓園主楓伯" },
+      { id: "shadeHunt", title: "幽影清剿", npc: "提燈人幽伯" },
+      { id: "starHunt", title: "星砂清剿", npc: "拾砂人星珂" },
     ];
     for (const track of huntTracks) {
       if (quests.get(track.id) !== "active") continue;

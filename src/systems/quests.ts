@@ -20,7 +20,11 @@ export type QuestId =
   | "sea2"
   | "lava"
   | "aqua"
-  | "life";
+  | "life"
+  | "sea3"
+  | "mapleHunt"
+  | "shadeHunt"
+  | "starHunt";
 export type QuestState = "active" | "done";
 
 /** 果凍清理任務目標數 */
@@ -37,7 +41,10 @@ export type HuntId =
   | "sporeHunt"
   | "marshHunt"
   | "brineHunt"
-  | "solarHunt";
+  | "solarHunt"
+  | "mapleHunt"
+  | "shadeHunt"
+  | "starHunt";
 
 /** 清剿任務配置:目標敵人種類與數量(敵人重新整理頁面後會重生,不會卡關) */
 export const HUNTS: Record<HuntId, { kind: string; target: number }> = {
@@ -53,6 +60,10 @@ export const HUNTS: Record<HuntId, { kind: string; target: number }> = {
   marshHunt: { kind: "marsh", target: 4 },
   brineHunt: { kind: "brine", target: 4 },
   solarHunt: { kind: "solar", target: 4 },
+  // 第三海三島(委託島,無守護者)
+  mapleHunt: { kind: "maple", target: 4 },
+  shadeHunt: { kind: "shade", target: 4 },
+  starHunt: { kind: "star", target: 4 },
 };
 
 /** 任務存檔格式(huntKills/huntBases 後加,optional 保持舊檔相容) */

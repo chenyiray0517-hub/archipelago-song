@@ -77,7 +77,7 @@ export class MapOverlay {
     const sea = seaOf(px);
     const isls = ISLANDS.filter((i) => seaOf(i.x) === sea);
     const here = islandAt(px, pz);
-    this.seaLabel.textContent = sea === 2 ? "第二海" : "第一海";
+    this.seaLabel.textContent = sea === 3 ? "第三海" : sea === 2 ? "第二海" : "第一海";
 
     // 以島嶼(含半徑)與玩家點求世界邊界,等比縮放置中到畫布
     const pad = 46;

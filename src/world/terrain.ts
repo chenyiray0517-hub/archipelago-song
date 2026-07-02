@@ -9,8 +9,9 @@ interface Flora {
   decor: string[];
 }
 const FLORA_DEFAULT: Flora = { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] };
-/** 這些「綠色島嶼」維持原本的程序化樹石(不用素材包模型,也不鋪裝飾)——Rai 指定 */
-const PROCEDURAL_ISLANDS = new Set(["曙光嶼", "翠風林島", "港口鎮", "靈脈島"]);
+/** 這些「綠色島嶼」維持原本的程序化樹石(不用素材包模型,也不鋪裝飾)——Rai 指定。
+ *  楓紅島也走程序化:素材包樹一律綠色,程序化樹才吃 treeColor 染成楓紅。 */
+const PROCEDURAL_ISLANDS = new Set(["曙光嶼", "翠風林島", "港口鎮", "靈脈島", "望潮鎮", "楓紅島"]);
 const FLORA: Record<string, Flora> = {
   曙光嶼: { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] },
   翠風林島: { trees: ["palm", "common"], rock: "rock_moss", decor: ["grass", "bush", "plant"] },
@@ -25,6 +26,12 @@ const FLORA: Record<string, Flora> = {
   迷霧沼島: { trees: ["willow", "dead"], rock: "rock_moss", decor: ["grass", "plant"] },
   鹽晶島: { trees: ["cactus"], rock: "rock_snow", decor: [] },
   烈陽礁: { trees: ["palm", "cactus"], rock: "rock", decor: ["grass_short"] },
+  遠海之門: { trees: ["pine_snow", "birch"], rock: "rock_snow", decor: [] },
+  // 第三海
+  望潮鎮: { trees: ["common", "birch"], rock: "rock", decor: ["grass", "wheat", "flowers"] },
+  楓紅島: { trees: ["common", "birch"], rock: "rock_moss", decor: ["grass", "flowers"] },
+  幽影灣: { trees: ["willow", "dead"], rock: "rock_moss", decor: ["plant", "grass"] },
+  星砂洲: { trees: ["palm"], rock: "rock", decor: ["grass_short"] },
 };
 
 interface Hill {
@@ -60,10 +67,16 @@ const SECOND_SEA_X = 2000;
 export const SECOND_SEA = { x: SECOND_SEA_X, z: 0 };
 /** 兩海分界 x:超過即視為身處第二海 */
 export const SEA_BORDER_X = 1100;
+/** 第三海中心 x(Lv.35 + 擊敗第二海全部頭目後,靠第三海寶石抵達) */
+const THIRD_SEA_X = 4000;
+/** 第三海:望潮鎮所在海域中心(海面網格與傳送目標共用) */
+export const THIRD_SEA = { x: THIRD_SEA_X, z: 0 };
+/** 二、三海分界 x:超過即視為身處第三海 */
+export const SEA3_BORDER_X = 3100;
 
-/** 判定座標屬於第一海(1)或第二海(2) */
-export function seaOf(x: number): 1 | 2 {
-  return x > SEA_BORDER_X ? 2 : 1;
+/** 判定座標屬於第一海(1)、第二海(2)或第三海(3) */
+export function seaOf(x: number): 1 | 2 | 3 {
+  return x > SEA3_BORDER_X ? 3 : x > SEA_BORDER_X ? 2 : 1;
 }
 
 /** 傳回座標所在的島嶼(在其半徑 r 內);不在任何島上(航行於外海)回 null。
@@ -283,6 +296,87 @@ export const ISLANDS: IslandDef[] = [
     treeCount: 8,
     treeColor: 0x8a7a3a,
   },
+  {
+    name: "遠海之門", // 第三海解鎖試煉之島(對應第一海的界海之門,港口鎮東南外海)
+    x: 2320,
+    z: -160,
+    r: 46,
+    hills: [
+      { x: 0, z: 8, r: 26, h: 9 },
+      { x: -16, z: -12, r: 14, h: 4 },
+      { x: 18, z: -10, r: 13, h: 4 },
+    ],
+    sand: 0xd8dce8,
+    grass: 0x8aa0d0,
+    dark: 0x44548a,
+    treeCount: 12,
+    treeColor: 0x3a6a8a,
+  },
+  // ── 第三海(x > SEA3_BORDER_X)──────────────────────────
+  {
+    name: "望潮鎮", // 第三海門戶城鎮(仿港口鎮:南灘房屋群 + 木棧碼頭)
+    x: THIRD_SEA_X,
+    z: 0,
+    r: 55,
+    hills: [
+      { x: 0, z: 20, r: 30, h: 7 },
+      { x: -24, z: -4, r: 18, h: 4 },
+      { x: 26, z: 0, r: 16, h: 4.5 },
+    ],
+    sand: 0xe8d8b0,
+    grass: 0x6ab86a,
+    dark: 0x3a8a5a,
+    treeCount: 26,
+    treeColor: 0x3a8a5a,
+  },
+  {
+    name: "楓紅島",
+    x: 4200,
+    z: 150,
+    r: 54,
+    hills: [
+      { x: 0, z: 0, r: 34, h: 14 },
+      { x: -22, z: 16, r: 18, h: 6 },
+      { x: 24, z: -14, r: 16, h: 5 },
+    ],
+    sand: 0xe8cf9a,
+    grass: 0xd08848,
+    dark: 0x9a5028,
+    treeCount: 60,
+    treeColor: 0xd05a2a,
+  },
+  {
+    name: "幽影灣",
+    x: 3780,
+    z: -130,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 34, h: 12 },
+      { x: -20, z: 16, r: 16, h: 5 },
+      { x: 22, z: -12, r: 14, h: 4.5 },
+    ],
+    sand: 0x8a86a0,
+    grass: 0x5a4a7a,
+    dark: 0x2c2242,
+    treeCount: 40,
+    treeColor: 0x4a3a6a,
+  },
+  {
+    name: "星砂洲",
+    x: 4230,
+    z: -170,
+    r: 50,
+    hills: [
+      { x: 0, z: 0, r: 32, h: 10 },
+      { x: -18, z: 14, r: 16, h: 5 },
+      { x: 20, z: -14, r: 14, h: 4 },
+    ],
+    sand: 0xf0ead0,
+    grass: 0xb8d8e0,
+    dark: 0x6a9ab0,
+    treeCount: 12,
+    treeColor: 0x4a9a8a,
+  },
 ];
 
 /** 隱藏海域:潮汐石漂浮處(企劃書:潮汐石取得地點「隱藏海域」) */
@@ -440,14 +534,14 @@ export function createWorld(): THREE.Group {
     OBSTACLES.push({ x: pillar.position.x, z: pillar.position.z, r: 1.0 });
   }
 
-  group.add(createPortTown());
+  group.add(createTown(SECOND_SEA.x)); // 港口鎮(第二海門戶)
+  group.add(createTown(THIRD_SEA.x)); // 望潮鎮(第三海門戶,同款南灘小鎮)
   return group;
 }
 
-/** 港口鎮造景:南灘小鎮(房屋群)+ 伸入海中的木棧碼頭 */
-function createPortTown(): THREE.Group {
+/** 門戶城鎮造景:南灘小鎮(房屋群)+ 伸入海中的木棧碼頭(港口鎮/望潮鎮共用,cx = 島中心 x) */
+function createTown(cx: number): THREE.Group {
   const town = new THREE.Group();
-  const cx = SECOND_SEA.x;
 
   const houseSpots: Array<{ x: number; z: number; body: number; roof: number }> = [
     { x: cx - 12, z: -26, body: 0xe8dcc0, roof: 0xc05a3a },

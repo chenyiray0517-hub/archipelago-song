@@ -117,7 +117,7 @@ export class BagPanel {
     private onUseCrystal: (size: CrystalSize, count: number) => void,
     private onAllocate: (key: AttributeKey) => void,
     private onEquipChange: () => void,
-    private onUseSeaGem: (sea: 1 | 2) => void,
+    private onUseSeaGem: (sea: 1 | 2 | 3) => void,
     private getShrineTargets: () => { id: string; island: string }[],
     private onTeleportShrine: (id: string) => void,
     private onLoadoutChange: () => void,
@@ -242,6 +242,11 @@ export class BagPanel {
         <span>🌐 第二海寶石 <span class="muted">(傳送至第二海・港口鎮)</span></span>
         <button data-sea="2">使用</button>
       </div>`);
+    if (this.inventory.thirdSeaGem)
+      seaGemRows.push(`<div class="item">
+        <span>🌊 第三海寶石 <span class="muted">(傳送至第三海・望潮鎮)</span></span>
+        <button data-sea="3">使用</button>
+      </div>`);
 
     const equipRows = this.equipment.owned
       .map((id) => {
@@ -305,7 +310,8 @@ export class BagPanel {
     });
     this.root.querySelectorAll<HTMLButtonElement>("button[data-sea]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        this.onUseSeaGem(Number(btn.dataset.sea) === 2 ? 2 : 1);
+        const n = Number(btn.dataset.sea);
+        this.onUseSeaGem(n === 3 ? 3 : n === 2 ? 2 : 1);
       });
     });
     this.root.querySelector<HTMLButtonElement>("button[data-tp-open]")?.addEventListener("click", () => {

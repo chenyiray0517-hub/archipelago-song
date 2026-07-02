@@ -813,7 +813,7 @@ dayState.mode === "day" && !dayState.rain
 
 // 38. 重生點:每島一座石碑;F 設置(上限 2,第三座替換最早的)
 const shrineCount = await page.evaluate(() => window.__game.shrines.length);
-shrineCount === 12 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7,共 12 座)") : fail(`石碑數量異常:${shrineCount}`);
+shrineCount === 16 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7 + 第三海 4,共 16 座)") : fail(`石碑數量異常:${shrineCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(-9, 1, -46); // 曙光嶼石碑旁
@@ -880,7 +880,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 18 ? ok("任務 NPC 到位(共 18 位,含領航者、鎮長、兩島祭司/守林人與第二海六位委託人)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 23 ? ok("任務 NPC 到位(共 23 位,含兩位引路人、兩位鎮長、兩島祭司/守林人與二、三海九位委託人)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
@@ -1287,7 +1287,7 @@ lifeQuestDone.state === "done" && lifeQuestDone.coins >= coinsBeforeLife + 700
 // 45m. 第二海重生石碑:四座就位;在第二海設置走「每海上限 2」且與第一海獨立
 const SEA2_SHRINES = ["port", "desert", "coral", "spring"];
 const sea2ShrineDefs = await page.evaluate(
-  () => window.__game.shrines.filter((s) => s.def.x > 1100).map((s) => s.def.id),
+  () => window.__game.shrines.filter((s) => s.def.x > 1100 && s.def.x < 3100).map((s) => s.def.id),
 );
 sea2ShrineDefs.length === 7 &&
 ["port", "desert", "coral", "spring", "marsh", "brine", "solar"].every((id) => sea2ShrineDefs.includes(id))
@@ -1425,6 +1425,139 @@ const marshDone = await page.evaluate(() => ({
 marshAccepted === "active" && marshDone.state === "done" && marshDone.coins >= marshCoinsBefore + 500
   ? ok(`迷霧沼島委託「沼氣清剿」可接取並完成(獲得 ${marshDone.coins - marshCoinsBefore} 貝拉幣)`)
   : fail(`沼氣清剿異常:${JSON.stringify({ marshAccepted, marshDone })}`);
+
+// 45q. 第三海解鎖:遠海之門的遠航者——條件不足(守護者未全滅)時接取「遠渡滄海」並顯示進度
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(2320, 3, -193); // 遠海之門南灘,遠航者滄瀾旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const sea3First = await page.evaluate(() => ({
+  state: window.__game.quests.get("sea3"),
+  hasGem: window.__game.inventory.thirdSeaGem,
+  hudText: document.getElementById("hud-quest-list")?.textContent ?? "",
+}));
+sea3First.state === "active" && !sea3First.hasGem
+  ? ok("遠航者對話:條件不足,接取「遠渡滄海」未發寶石")
+  : fail(`遠渡滄海接取異常:${JSON.stringify(sea3First)}`);
+sea3First.hudText.includes("遠渡滄海")
+  ? ok(`HUD 顯示遠渡滄海進度(${sea3First.hudText.match(/遠渡滄海[^楓幽星沼鹽熾]*/)?.[0] ?? ""})`)
+  : fail(`HUD 無遠渡滄海追蹤:${sea3First.hudText}`);
+await page.screenshot({ path: "/tmp/archipelago-45q-fargate.png" });
+
+// 45r. 補滿條件(Lv.35 已達,補三位守護者擊敗紀錄)→ 再對話 → 獲得第三海寶石
+await page.evaluate(() => {
+  const g = window.__game;
+  for (const kind of ["magmaGuardian", "coralGuardian", "lifeGuardian"]) g.quests.addKill(kind);
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const sea3Gem = await page.evaluate(() => ({
+  gem: window.__game.inventory.thirdSeaGem,
+  state: window.__game.quests.get("sea3"),
+}));
+sea3Gem.gem ? ok("試煉通過:獲得第三海寶石") : fail(`第三海寶石未發放:${JSON.stringify(sea3Gem)}`);
+sea3Gem.state === "done" ? ok("「遠渡滄海」任務完成") : fail(`任務狀態:${sea3Gem.state}`);
+
+// 45s. 使用第三海寶石 → 背包列三顆海寶石;人與船一起傳送到望潮鎮
+await page.keyboard.press("Tab");
+await page.waitForTimeout(300);
+const sea3Buttons = await page.evaluate(
+  () => document.getElementById("bag").querySelectorAll("button[data-sea]").length,
+);
+sea3Buttons === 3
+  ? ok("背包「重要道具」區顯示三顆海寶石")
+  : fail(`海寶石按鈕數異常:${sea3Buttons}`);
+await page.click('button[data-sea="3"]');
+await page.waitForTimeout(500);
+const arrive3 = await page.evaluate(() => {
+  const g = window.__game;
+  const p = g.player.mesh.position;
+  const b = g.boat.mesh.position;
+  return { x: p.x, z: p.z, bx: b.x, bz: b.z, bagOpen: g.bag.isOpen, sailing: g.sailing };
+});
+arrive3.x > 3500 && !arrive3.sailing
+  ? ok(`傳送至第三海望潮鎮(位置 ${arrive3.x.toFixed(0)},${arrive3.z.toFixed(0)})`)
+  : fail(`第三海傳送異常:${JSON.stringify(arrive3)}`);
+Math.hypot(arrive3.bx - 4002, arrive3.bz - -58) < 5
+  ? ok("船隻同行,停在望潮鎮碼頭旁")
+  : fail(`船位異常:${arrive3.bx.toFixed(0)},${arrive3.bz.toFixed(0)}`);
+await page.screenshot({ path: "/tmp/archipelago-45s-tidewatch.png" });
+
+// 45t. 第三海三座委託島生成:楓靈/幽影/星砂果凍各 ×5,且立於陸地;敵人再強化(hp ×3.2、dmg ×2.4)
+const sea3Spawn = await page.evaluate(() => {
+  const g = window.__game;
+  const of = (k) => g.enemies.filter((e) => e.kind === k);
+  const maple = of("maple")[0];
+  return {
+    maple: of("maple").length,
+    shade: of("shade").length,
+    star: of("star").length,
+    mapleY: maple?.mesh.position.y ?? -1,
+    hp: maple?.maxHp,
+    dmg: maple?.dmg,
+  };
+});
+sea3Spawn.maple === 5 && sea3Spawn.shade === 5 && sea3Spawn.star === 5 && sea3Spawn.mapleY > 0.5
+  ? ok(`第三海三島生成(楓靈×${sea3Spawn.maple}、幽影×${sea3Spawn.shade}、星砂×${sea3Spawn.star})`)
+  : fail(`第三海敵人生成異常:${JSON.stringify(sea3Spawn)}`);
+sea3Spawn.hp === 768 && sea3Spawn.dmg === 72
+  ? ok(`第三海敵人強化(楓靈 hp${sea3Spawn.hp}/dmg${sea3Spawn.dmg},基礎 240/30 × 3.2/2.4)`)
+  : fail(`第三海強化異常:${JSON.stringify(sea3Spawn)}`);
+
+// 45u. 楓紅島打怪委託:楓園主楓伯「楓靈清剿」接取 → 模擬擊殺 → 回報領獎
+await page.evaluate(() => window.__game.player.mesh.position.set(4170, 3, 174)); // 楓園主楓伯旁
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const mapleAccepted = await page.evaluate(() => window.__game.quests.get("mapleHunt"));
+const mapleCoinsBefore = await page.evaluate(() => {
+  for (let i = 0; i < 4; i++) window.__game.quests.addKill("maple"); // 模擬擊殺 4 隻
+  return window.__game.inventory.coins;
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 8; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const mapleDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("mapleHunt"),
+  coins: window.__game.inventory.coins,
+}));
+mapleAccepted === "active" && mapleDone.state === "done" && mapleDone.coins >= mapleCoinsBefore + 600
+  ? ok(`楓紅島委託「楓靈清剿」可接取並完成(獲得 ${mapleDone.coins - mapleCoinsBefore} 貝拉幣)`)
+  : fail(`楓靈清剿異常:${JSON.stringify({ mapleAccepted, mapleDone })}`);
+await page.screenshot({ path: "/tmp/archipelago-45u-maple.png" });
 
 // 45l. 出戰配置上限:9 顆寶石只能同時裝備 4 顆,第 5 顆被拒
 const capTest = await page.evaluate(() => {

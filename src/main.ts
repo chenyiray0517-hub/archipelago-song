@@ -2868,7 +2868,16 @@ function main(): void {
         (player.blocking ? 2 : 0) |
         (player.airborne ? 4 : 0) |
         (player.hurtT > 0 ? 8 : 0);
-      const state: NetState = { x: p.x, y: p.y, z: p.z, facing: player.facing, moving: movedSq > 1e-5, act, dead: player.isDead };
+      const state: NetState = {
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        facing: player.facing,
+        moving: movedSq > 1e-5,
+        act,
+        dead: player.isDead,
+        char: currentCharacterId(), // 角色外觀:遠端據此顯示同款 VRM(含中途切換)
+      };
       net.sendState(state);
     }
 

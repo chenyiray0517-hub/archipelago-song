@@ -1,11 +1,14 @@
 // 群島之歌 — 遠端玩家 avatar(階段 4a 動作跨端 / 4c 死亡 / 5b 插值緩衝)
 //
-// 與本機玩家共用同一套劍盾勇者模型(heroModel.buildHero),只把長袍換成各自的醒目色 →
-// 大家長一樣、只有袍色不同好區分。動畫(走路/揮劍/舉盾/騰空/受擊/倒地)由網路狀態驅動。
+// 外觀:封包帶對方的角色外觀 id(NetState.char)→ 載入同一套 VRM 管線
+// (playerModel.loadCharacterModel + MountedVrm,含手骨劍盾),看到彼此選的角色;
+// 載入中/載入失敗/舊版客戶端缺 char → 回退程序化袍色勇者(buildHero + 醒目袍色),絕不擋遊玩。
+// 動畫(走路/揮劍/騰空/受擊/倒地)由網路狀態驅動。
 
 import * as THREE from "three";
 import type { NetState } from "./net";
 import { buildHero, SHIELD_HOME, SHIELD_BLOCK, type HeroRig } from "../entities/heroModel";
+import { disposeVrm, loadCharacterModel, MountedVrm, type PlayerAnim } from "../world/playerModel";
 
 /** 動作位元旗標(與 main 送出端一致):1 攻擊 / 2 舉盾 / 4 騰空 / 8 受擊 */
 const ACT_ATTACK = 1;
@@ -63,10 +66,19 @@ export class RemotePlayer {
   dead = false;
   private deathLean = 0;
 
+  // ── VRM 外觀(封包 char 驅動;載入完成前維持程序化勇者)──
+  /** 最新要求的角色 id(char 變更觸發重載;完成前又變更則丟棄舊載入,防競態) */
+  private charId: string | null = null;
+  /** 已掛上的 VRM 實體(null = 程序化勇者) */
+  private mounted: MountedVrm | null = null;
+  /** 已掛上的角色 id(測試掛鉤/防重複套用) */
+  private appliedCharId: string | null = null;
+  private disposed = false;
+
   constructor(id: string, initial: NetState) {
     const color = colorFor(id);
     this.tunicColor = new THREE.Color(color);
-    this.rig = buildHero(color); // 與本機同模型,長袍換成此玩家的醒目色
+    this.rig = buildHero(color); // 回退外觀:與本機同模型,長袍換成此玩家的醒目色
     this.mesh = this.rig.group;
 
     this.renderYaw = initial.facing;
@@ -75,6 +87,29 @@ export class RemotePlayer {
     this.buffer.push({ t: now(), x: initial.x, y: initial.y, z: initial.z, facing: initial.facing, moving: initial.moving });
     this.mesh.position.set(initial.x, initial.y, initial.z);
     this.mesh.rotation.y = this.renderYaw;
+    if (initial.char) void this.applyCharacter(initial.char);
+  }
+
+  /**
+   * 載入並套用對方選的 VRM 角色(封包 char 首次出現或變更時)。
+   * 失敗維持現有外觀;載入期間又換角色或本人已離線 → 丟棄這份,絕不擋遊玩。
+   */
+  private async applyCharacter(id: string): Promise<void> {
+    this.charId = id;
+    const proto = await loadCharacterModel(id);
+    if (!proto) return;
+    if (this.charId !== id || this.disposed) {
+      disposeVrm(proto.vrm); // 過期載入(已換角色/已離線):立即釋放
+      return;
+    }
+    this.mounted?.dispose(); // 卸下前一套(切角色)
+    this.mounted = new MountedVrm(proto);
+    this.appliedCharId = id;
+    this.mesh.add(this.mounted.root);
+    // 隱藏程序化視覺(位置/邏輯不受影響);VRM 在時程序化動畫碼不再執行
+    for (const child of this.mesh.children) {
+      if (child !== this.mounted.root) child.visible = false;
+    }
   }
 
   /** 從緩衝取 renderT 時刻的內插位置/朝向/移動旗標 */
@@ -106,6 +141,8 @@ export class RemotePlayer {
     if (next & ACT_HURT) this.hurtT = HURT_DUR;
     this.act = next;
     this.dead = s.dead ?? false;
+    // 角色外觀:首次出現或中途切換都重載(舊版客戶端缺 char → 維持程序化)
+    if (s.char && s.char !== this.charId) void this.applyCharacter(s.char);
   }
 
   /** 每幀:從插值緩衝取位置/朝向,依動作驅動勇者骨架動畫 */
@@ -119,6 +156,20 @@ export class RemotePlayer {
     delta = Math.atan2(Math.sin(delta), Math.cos(delta));
     this.renderYaw += delta * t;
     this.mesh.rotation.y = this.renderYaw;
+
+    // VRM 外觀分支:骨骼動畫由網路狀態驅動,跳過下方程序化擺動
+    if (this.mounted) {
+      this.mesh.rotation.x = 0; // 倒地由 death 動作呈現,不用程序化前傾
+      this.swingT = Math.max(0, this.swingT - dt);
+      this.hurtT = Math.max(0, this.hurtT - dt);
+      let desired: PlayerAnim;
+      if (this.dead) desired = "death";
+      else if (this.swingT > 0) desired = "attack";
+      else if (this.moving) desired = "run";
+      else desired = "idle";
+      this.mounted.update(desired, dt);
+      return;
+    }
 
     const { legL, legR, armL, armR, shield, tunicMat } = this.rig;
 
@@ -188,8 +239,16 @@ export class RemotePlayer {
     return this.swingT > 0;
   }
 
-  /** 從場景移除並釋放幾何體 */
+  /** 測試掛鉤:已掛上的 VRM 角色 id(尚未載入/載入失敗為 null = 程序化外觀) */
+  get vrmCharacterId(): string | null {
+    return this.appliedCharId;
+  }
+
+  /** 從場景移除並釋放幾何體(含 VRM 與手骨劍盾) */
   dispose(): void {
+    this.disposed = true; // 進行中的角色載入完成後自行丟棄
+    this.mounted?.dispose();
+    this.mounted = null;
     this.mesh.parent?.remove(this.mesh);
     this.mesh.traverse((c) => {
       if (c instanceof THREE.Mesh) c.geometry.dispose();

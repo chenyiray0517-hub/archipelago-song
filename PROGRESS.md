@@ -1,5 +1,16 @@
 # PROGRESS
 
+## 2026-07-02(多人也看到 VRM 角色:遠端 avatar 換裝)
+
+> 補上待辦「角色切換只換本機視覺」:狀態封包帶角色外觀 id(`NetState.char`),遠端玩家 avatar 從程序化袍色勇者升級成對方實際選擇的 VRM 角色(含手骨劍盾),中途切換也跨端同步。**載入中/失敗/舊版客戶端缺 char → 維持程序化袍色勇者,絕不擋遊玩。**
+
+- **共用化重構(`world/playerModel.ts`)**:① `loadPlayerModel` 拆出 `loadCharacterModel(id)`——載一套 VRM + 四動作(攻擊已加速)且**不動全域單例**,本機/遠端共用(Mixamo FBX 有 fbxCache,多套只多 retarget 不重複下載);② 新增 `MountedVrm` 類——wrapper 正規化身高/轉向 + mixer 四動作 + 手骨劍盾 + `update(desired, dt)` 動畫狀態機(attack/death 播一次、attack 上升緣重播)+ `dispose()`,`player.useModel` 與 `RemotePlayer` 共用(player.ts 原六個 vrm 欄位縮成一個 `mounted`)。
+- **`net/net.ts`**:`NetState` 加 `char?: string`(20Hz 狀態每包都帶,幾 bytes);`main.ts` 送出 `currentCharacterId()`。伺服器純轉發 + 快取 last state,**server 不用改**,welcome 的 others 自動帶到。
+- **`net/remotePlayer.ts`**:封包 `char` 首次出現/變更 → `applyCharacter` 非同步載入並掛上 `MountedVrm`、隱藏程序化視覺;競態防護(載入中又換角色/已離線 → `disposeVrm` 丟棄);VRM 分支動畫由網路狀態驅動(dead→death、揮劍鎖定→attack、moving→run、否則 idle),倒地由 death 動作呈現(不再程序化前傾/轉灰);`dispose` 連 VRM 一起釋放。測試掛鉤 `vrmCharacterId`。
+- **驗證**:build 綠(tsc strict,58 模組)、**smoke 全綠 152 項**、**mp-check 全綠 25 項**(新增 2 項:遠端掛上 VRM、中途切換跨端換裝;連跑三輪穩定)、截圖目視:B 視角遠端 A = 紅裙一號女 + 左臂盾右手劍,A 切二號女後 B 端同步換裝。
+- **修三個既有測試腳本時序問題(非遊戲 bug)**:① mp-check 開頭連線等待 10s → 45s(開場 `net.connect` 在資產 Promise.all 之後,6/28 起 16MB VRM 讓三頁冷載常超過 10s,`ids[1]=null` 連鎖掛 5+ 項);② mp-check AoE 測項改「先 forceSpecial(蓄力期敵人定住)再貼位」——原本先貼位再施放,敵人在同步等待期間追擊移動,引爆時偶發雙雙在半徑外全 miss;③ smoke reload 測項固定等 2s → 等 `__game` 就緒(重載開機含 16MB VRM 偶爾超過 2s 直接 TypeError 中斷)。
+- **已知/後續**:① 遠端玩家失去袍色區別,兩人選同角色會撞衫;可加頭頂名牌/色環。② 遠端受擊閃紅(程序化長袍變色)在 VRM 上未實作。③ 每位遠端各載一份 VRM(~16MB,瀏覽器 HTTP 快取有幫忙),2~4 熟人共玩量級 OK。④ 背包展示台仍未掛武器。
+
 ## 2026-07-02(VRM 劍盾掛手骨 + 攻擊動作縮短 50%)
 
 > 補上前一版待辦「攻擊動作空手比劃」:把程序化勇者的同款劍盾掛到 VRM 玩家的手骨上(隨 Mixamo 動作一起揮舞),並把攻擊動作播放時間縮短 50%(Rai 指定),出招更俐落、0.22s 揮劍時窗內看得到更完整的斬擊。

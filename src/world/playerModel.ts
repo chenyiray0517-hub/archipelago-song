@@ -309,13 +309,13 @@ export function loadPortraitModel(id: string = currentId): Promise<PortraitModel
 }
 
 /**
- * 載入指定角色 VRM + 四個 Mixamo 動作。
- * 開場呼叫一次(id 省略 = 存檔角色或預設),之後切換角色時再帶新 id 呼叫。
- * 任一步失敗回傳 false 並保留原有 proto,player.ts 維持現狀(程序化或前一個模型)。
+ * 載入一套指定角色的 VRM + 四個 Mixamo 動作(攻擊已加速),**不動全域單例**。
+ * 本機玩家(loadPlayerModel)與多人遠端玩家 avatar 共用;失敗回 null。
+ * Mixamo FBX 原始資產有 fbxCache,多載幾套只多 retarget、不重複下載。
  */
-export async function loadPlayerModel(id: string = DEFAULT_CHARACTER): Promise<boolean> {
+export async function loadCharacterModel(id: string): Promise<PlayerModelProto | null> {
   const vrm = await loadVrm(id);
-  if (!vrm) return false;
+  if (!vrm) return null;
 
   // skinned mesh 視錐裁切容易整隻消失;關閉
   vrm.scene.traverse((o) => {
@@ -334,7 +334,18 @@ export async function loadPlayerModel(id: string = DEFAULT_CHARACTER): Promise<b
   const attackRawDuration = attack.duration;
   scaleClipTime(attack, ATTACK_TIME_SCALE); // 攻擊動作加速(時間縮短 50%)
 
-  proto = { vrm, clips: { idle: idleClip, run, attack, death }, attackRawDuration };
+  return { vrm, clips: { idle: idleClip, run, attack, death }, attackRawDuration };
+}
+
+/**
+ * 載入指定角色 VRM 成本機玩家單例。
+ * 開場呼叫一次(id 省略 = 存檔角色或預設),之後切換角色時再帶新 id 呼叫。
+ * 任一步失敗回傳 false 並保留原有 proto,player.ts 維持現狀(程序化或前一個模型)。
+ */
+export async function loadPlayerModel(id: string = DEFAULT_CHARACTER): Promise<boolean> {
+  const p = await loadCharacterModel(id);
+  if (!p) return false;
+  proto = p;
   currentId = id;
   return true;
 }
@@ -423,6 +434,75 @@ export function attachHeroWeapons(vrm: VRM, nativeHeight: number): HeroWeapons |
   );
 
   return weapons;
+}
+
+/** VRM 正規化身高(僅視覺;邏輯/碰撞不受影響。本機與遠端玩家一致) */
+const MODEL_HEIGHT = 3;
+
+/**
+ * 掛好動畫的 VRM 實體:wrapper 正規化身高/轉向 + AnimationMixer 四動作 + 手骨劍盾。
+ * 本機玩家(player.useModel)與多人遠端玩家(RemotePlayer)共用。
+ * 擁有者把 root 加進自己的 mesh,每幀依自身狀態呼叫 update(desired, dt)。
+ */
+export class MountedVrm {
+  readonly root: THREE.Group;
+  readonly vrm: VRM;
+  readonly weapons: HeroWeapons | null;
+  private readonly mixer: THREE.AnimationMixer;
+  private readonly actions = new Map<PlayerAnim, THREE.AnimationAction>();
+  private state: PlayerAnim = "idle";
+  private wasAttacking = false;
+
+  constructor(proto: PlayerModelProto) {
+    this.vrm = proto.vrm;
+    // 包一層 wrapper:正規化身高 + VRM0 面向修正(面向 +Z,與程序化角色一致)
+    const root = new THREE.Group();
+    root.add(proto.vrm.scene);
+    const box = new THREE.Box3().setFromObject(proto.vrm.scene);
+    const h = box.max.y - box.min.y || 1;
+    root.scale.setScalar(MODEL_HEIGHT / h);
+    root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z
+    this.root = root;
+    this.weapons = attachHeroWeapons(proto.vrm, h);
+
+    this.mixer = new THREE.AnimationMixer(proto.vrm.scene);
+    for (const key of ["idle", "run", "attack", "death"] as PlayerAnim[]) {
+      this.actions.set(key, this.mixer.clipAction(proto.clips[key]));
+    }
+    this.actions.get("idle")?.play(); // 起始待機
+  }
+
+  /**
+   * 依目標狀態切換動畫(attack/death 播一次、attack 支援上升緣重播,其餘循環),
+   * 並推進骨架與彈簧骨(頭髮、裙襬)。
+   */
+  update(desired: PlayerAnim, dt: number): void {
+    const attackingNow = desired === "attack";
+    const restartAttack = attackingNow && !this.wasAttacking; // 連續揮擊也能重新觸發
+    if (desired !== this.state || restartAttack) {
+      const prev = this.actions.get(this.state);
+      const next = this.actions.get(desired);
+      if (next) {
+        const once = desired === "attack" || desired === "death";
+        next.reset();
+        next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+        next.clampWhenFinished = once;
+        next.fadeIn(0.18).play();
+      }
+      if (prev && prev !== next) prev.fadeOut(0.18);
+      this.state = desired;
+    }
+    this.wasAttacking = attackingNow;
+    this.mixer.update(dt);
+    this.vrm.update(dt); // 表情 / 彈簧骨(頭髮、裙襬)
+  }
+
+  /** 從父節點卸下並釋放 GPU 資源(切換角色/玩家離線時呼叫) */
+  dispose(): void {
+    this.root.parent?.remove(this.root);
+    this.mixer.stopAllAction();
+    disposeVrm(this.vrm);
+  }
 }
 
 /** 釋放一份 VRM 佔用的 GPU 資源(切換角色時對舊模型呼叫,避免記憶體累積) */

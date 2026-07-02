@@ -19,6 +19,8 @@ export interface NetState {
   act?: number;
   /** 是否已倒下(階段 4c):房主據此略過鎖定,遠端 avatar 播倒地/站起 */
   dead?: boolean;
+  /** 角色外觀 id(playerModel.CHARACTERS):遠端據此載入/切換 VRM;缺省(舊版)維持程序化勇者 */
+  char?: string;
 }
 
 /** 伺服器 → 客戶端訊息 */

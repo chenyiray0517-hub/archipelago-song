@@ -21,9 +21,10 @@ await A.goto("http://localhost:5173/?room=mptest", { waitUntil: "networkidle" })
 await B.goto("http://localhost:5173/?room=mptest", { waitUntil: "networkidle" });
 await C.goto("http://localhost:5173/?room=other", { waitUntil: "networkidle" });
 
-// 1. 三頁都連上伺服器(等 welcome 封包設好 net.localId,而非猜固定時間)
+// 1. 三頁都連上伺服器(等 welcome 封包設好 net.localId,而非猜固定時間)。
+// 開場 net.connect 在資產 Promise.all(含 16MB 玩家 VRM)之後,三頁同時冷載會拖長,等待放寬到 45s
 await Promise.all(
-  [A, B, C].map((p) => p.waitForFunction(() => window.__game?.net?.localId != null, null, { timeout: 10000 })),
+  [A, B, C].map((p) => p.waitForFunction(() => window.__game?.net?.localId != null, null, { timeout: 45000 })),
 ).catch(() => fail("等待連線逾時(localId 未就緒)"));
 const ids = await Promise.all([A, B, C].map((p) => p.evaluate(() => window.__game?.net?.localId)));
 const rooms = await Promise.all([A, B, C].map((p) => p.evaluate(() => window.__game?.net?.room)));
@@ -181,6 +182,27 @@ blocked
   ? ok("玩家動作跨端:A 舉盾旗標同步到 B")
   : fail("舉盾未跨端:B 端遠端 A 未收到舉盾位元");
 
+// ── VRM 角色外觀跨端 ────────────────────────────────────────
+// 13b. 封包帶角色 id(NetState.char)→ B 端「遠端 A」載入同款 VRM(取代程序化袍色勇者)
+const charSeen = await B.waitForFunction(
+  (tid) => window.__game.remotePlayers.get(tid)?.vrmCharacterId != null,
+  ids[0], { timeout: 20000 },
+).then(() => true).catch(() => false);
+const charA = await B.evaluate((tid) => window.__game.remotePlayers.get(tid)?.vrmCharacterId, ids[0]);
+charSeen && charA === "char1"
+  ? ok(`VRM 外觀跨端:B 端遠端 A 掛上角色 ${charA}`)
+  : fail(`遠端 VRM 未掛上:seen=${charSeen} char=${charA}`);
+
+// 13c. A 中途切換角色 → B 端遠端 A 應重載成新角色
+await A.evaluate(() => window.__game.switchCharacter(1));
+const charSwitched = await B.waitForFunction(
+  (tid) => window.__game.remotePlayers.get(tid)?.vrmCharacterId === "char2",
+  ids[0], { timeout: 20000 },
+).then(() => true).catch(() => false);
+charSwitched
+  ? ok("VRM 外觀切換跨端:A 換角色後 B 端遠端 A 同步換裝(char2)")
+  : fail("角色切換未跨端:B 端遠端 A 仍為舊外觀");
+
 // ── 階段 4b:房間聊天 ──────────────────────────────────────
 // 14. A 發話 → B 端聊天框應收到並顯示該訊息
 const chatMsg = "嗨大家_" + (Date.now() % 100000);
@@ -220,14 +242,17 @@ aliveSeen
   : fail("重生未同步:房主端遠端 B 仍為 dead");
 
 // ── 階段 4d:頭目 AoE 多人分別判定 ──────────────────────────
-// 17. A、B 同時站在菁英特殊技範圍內 → 引爆時兩人應各自受擊(非只打最近一位)
-const ep12 = await A.evaluate(() => { const e = window.__game.enemies[12].mesh.position; return { x: e.x, z: e.z }; });
-await A.evaluate((e) => { const g = window.__game; g.player.hp = g.player.stats.maxHP; g.player.mesh.position.set(e.x + 2, 2, e.z); }, ep12);
-await B.evaluate((e) => { const g = window.__game; g.player.hp = g.player.stats.maxHP; g.player.mesh.position.set(e.x - 2, 2, e.z + 2); }, ep12);
-await A.waitForTimeout(400); // 等 B 位置同步到房主
+// 17. A、B 同時站在菁英特殊技範圍內 → 引爆時兩人應各自受擊(非只打最近一位)。
+// 先 forceSpecial 再貼位:蓄力期(0.7s)敵人定住不動,兩人距離才有保證
+// (先貼位再施放的話,敵人在同步等待期間追擊/突進移動,引爆時可能雙雙在半徑外 → 偶發全 miss)
+await A.evaluate(() => { window.__game.player.hp = window.__game.player.stats.maxHP; });
+await B.evaluate(() => { window.__game.player.hp = window.__game.player.stats.maxHP; });
 const hpA0 = await A.evaluate(() => window.__game.player.hp);
 const hpB0 = await B.evaluate(() => window.__game.player.hp);
 await A.evaluate(() => window.__game.enemies[12].forceSpecial());
+const ep12 = await A.evaluate(() => { const e = window.__game.enemies[12].mesh.position; return { x: e.x, z: e.z }; });
+await A.evaluate((e) => window.__game.player.mesh.position.set(e.x + 2, 2, e.z), ep12);
+await B.evaluate((e) => window.__game.player.mesh.position.set(e.x - 2, 2, e.z + 2), ep12); // 20Hz 送包,0.7s 蓄力內同步到房主綽綽有餘
 await A.waitForTimeout(1300); // 蓄力 0.7s + 引爆 + 同步
 const hpA1 = await A.evaluate(() => window.__game.player.hp);
 const hpB1 = await B.evaluate(() => window.__game.player.hp);

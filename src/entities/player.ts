@@ -3,13 +3,7 @@ import type { Input } from "../core/input";
 import { PlayerStats } from "../systems/stats";
 import { buildHero, COLOR } from "./heroModel";
 import { groundHeight, isWalkable, resolveObstacles } from "../world/terrain";
-import {
-  attachHeroWeapons,
-  disposeVrm,
-  type PlayerModelProto,
-  type PlayerAnim,
-} from "../world/playerModel";
-import type { VRM } from "@pixiv/three-vrm";
+import { MountedVrm, type PlayerModelProto, type PlayerAnim } from "../world/playerModel";
 
 const GRAVITY = 28;
 const JUMP_SPEED = 11;
@@ -36,8 +30,6 @@ const BLOCK_DAMAGE_FACTOR = 0.15;
 const BLOCK_ARC_COS = 0.26;
 /** 緩速時的移速倍率(頭目寒霜爆) */
 const CHILL_MOVE_FACTOR = 0.5;
-/** VRM 模型正規化身高(僅視覺;邏輯/碰撞不受影響) */
-const MODEL_HEIGHT = 3;
 
 /** 攻擊判定參數:距離與面向夾角 */
 export const ATTACK_RANGE = 3.4;
@@ -120,13 +112,8 @@ export class Player {
   private readonly shieldBlockPos = new THREE.Vector3(0.18, 1.32, 0.5);
 
   // ── VRM 模型分支(useModel 後啟用;否則維持程序化角色)──
-  private vrm: VRM | null = null;
-  /** VRM 視覺根節點(切換角色時移除+釋放舊的) */
-  private vrmRoot: THREE.Group | null = null;
-  private vrmMixer: THREE.AnimationMixer | null = null;
-  private vrmActions = new Map<PlayerAnim, THREE.AnimationAction>();
-  private vrmState: PlayerAnim = "idle";
-  private vrmWasAttacking = false;
+  /** 掛好動畫與劍盾的 VRM 實體(playerModel.MountedVrm;切換角色時整份釋放換新) */
+  private mounted: MountedVrm | null = null;
 
   constructor() {
     this.hp = this.stats.maxHP;
@@ -194,75 +181,30 @@ export class Player {
    */
   useModel(p: PlayerModelProto): void {
     // 切換角色:先卸除並釋放前一個 VRM(避免 GPU 資源累積)
-    if (this.vrmRoot) {
-      this.mesh.remove(this.vrmRoot);
-      this.vrmMixer?.stopAllAction();
-      this.vrmActions.clear();
-      if (this.vrm) disposeVrm(this.vrm);
-      this.vrmRoot = null;
-      this.vrmMixer = null;
-    }
+    this.mounted?.dispose();
 
-    this.vrm = p.vrm;
     // 隱藏既有程序化視覺(邏輯仍用各 group 的位置,不受影響)
     for (const child of [...this.mesh.children]) child.visible = false;
 
-    // 包一層 wrapper:正規化身高 + VRM0 面向修正(面向 +Z,與程序化角色一致)
-    const root = new THREE.Group();
-    root.add(p.vrm.scene);
-    const box = new THREE.Box3().setFromObject(p.vrm.scene);
-    const h = box.max.y - box.min.y || 1;
-    root.scale.setScalar(MODEL_HEIGHT / h);
-    root.rotation.y = Math.PI; // VRM0 預設面向 -Z,轉正面向 +Z
-    this.mesh.add(root);
-    this.vrmRoot = root;
-
-    // 劍盾掛到 VRM 手骨(隨動作擺動;切換角色時隨舊 VRM 一併釋放);
+    // 掛上新 VRM(wrapper 正規化 + 動畫狀態機從待機重新開始 + 手骨劍盾);
     // 集氣發光改作用在這把 VRM 劍的劍身材質
-    const weapons = attachHeroWeapons(p.vrm, h);
-    if (weapons) this.bladeMaterial = weapons.bladeMaterial;
-
-    // 重置動畫狀態機(切換後從待機重新開始,避免殘留上一角色的狀態)
-    this.vrmState = "idle";
-    this.vrmWasAttacking = false;
-    this.vrmMixer = new THREE.AnimationMixer(p.vrm.scene);
-    for (const key of ["idle", "run", "attack", "death"] as PlayerAnim[]) {
-      this.vrmActions.set(key, this.vrmMixer.clipAction(p.clips[key]));
-    }
-    this.vrmActions.get("idle")?.play(); // 起始待機
+    this.mounted = new MountedVrm(p);
+    this.mesh.add(this.mounted.root);
+    if (this.mounted.weapons) this.bladeMaterial = this.mounted.weapons.bladeMaterial;
   }
 
   /** 依玩家狀態切換 VRM 動畫(跑/攻擊/死亡,其餘 idle 休息姿勢)+ 推進骨架與彈簧骨 */
   private updateModel(dt: number): void {
-    if (!this.vrm || !this.vrmMixer) return;
+    if (!this.mounted) return;
 
-    const attackingNow = this.attacking;
     let desired: PlayerAnim;
     if (this.isDead) desired = "death";
-    else if (attackingNow) desired = "attack";
+    else if (this.attacking) desired = "attack";
     else if (this.moveAmount > 0.08) desired = "run";
     else desired = "idle";
 
-    // 攻擊上升緣 → 重播(連續揮擊也能重新觸發)
-    const restartAttack = desired === "attack" && !this.vrmWasAttacking;
-    if (desired !== this.vrmState || restartAttack) {
-      const prev = this.vrmActions.get(this.vrmState);
-      const next = this.vrmActions.get(desired);
-      if (next) {
-        const once = desired === "attack" || desired === "death";
-        next.reset();
-        next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
-        next.clampWhenFinished = once;
-        next.fadeIn(0.18).play();
-      }
-      if (prev && prev !== next) prev.fadeOut(0.18);
-      this.vrmState = desired;
-    }
-    this.vrmWasAttacking = attackingNow;
-
     this.updateBladeGlow(); // VRM 劍同樣吃集氣發光
-    this.vrmMixer.update(dt);
-    this.vrm.update(dt); // 表情 / 彈簧骨(頭髮、裙襬)
+    this.mounted.update(desired, dt);
   }
 
   /** 集氣劍身發光:集氣中漸亮,滿氣時強烈閃爍 + 刃色閃白(程序化與 VRM 劍共用) */
@@ -485,7 +427,7 @@ export class Player {
     this.idlePhase += dt * 2.2; // 滿氣閃爍計時,程序化與 VRM 分支共用
 
     // VRM 模型分支:用骨骼動畫,跳過下方程序化擺動
-    if (this.vrm) {
+    if (this.mounted) {
       this.updateModel(dt);
       return;
     }

@@ -1696,7 +1696,9 @@ const beforeReload = await page.evaluate(() => {
   };
 });
 await page.reload({ waitUntil: "networkidle" });
-await page.waitForTimeout(2000);
+// 重載開機含 16MB 玩家 VRM,固定等待偶爾不夠 → 等 __game 掛鉤就緒再讀
+await page.waitForFunction(() => !!window.__game, null, { timeout: 30000 });
+await page.waitForTimeout(800); // 再等存檔套用/系統接線完成
 const afterReload = await page.evaluate(() => ({
   level: window.__game.player.stats.level,
   flame: window.__game.gems.flameOwned,

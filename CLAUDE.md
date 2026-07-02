@@ -16,7 +16,7 @@ npm run dev      # http://localhost:5173
 npm run build    # tsc 嚴格檢查 + vite build(兩者都過才算綠)
 npm run smoke    # Playwright 端到端煙霧測試 150 項(需先開 dev server,需本機 Chrome)
 npm run server   # 多人連線伺服器(WebSocket 轉發站,埠 8787;多人/部署才需要)
-node scripts/mp-check.mjs   # 多人連線驗證 23 項(需先開 server + dev server)
+node scripts/mp-check.mjs   # 多人連線驗證 25 項(需先開 server + dev server)
 ```
 
 > **多人連線**(階段 3~6,已完成):房主權威共享世界。改多人相關程式後跑 `mp-check`;**改 `server/index.mjs` 後記得重啟 `npm run server`**(Node 不熱更新,常見漏洞)。部署:`render.yaml`(Render 部署伺服器)+ `.github/workflows/deploy.yml`(push main → 自動 build 注入 `VITE_SERVER_URL` → 部署 gh-pages)。

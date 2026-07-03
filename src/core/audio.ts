@@ -29,6 +29,7 @@ export type SfxName =
   | "vortex"
   | "aqua"
   | "life"
+  | "astral"
   | "shrine"
   | "seaTravel"
   | "shrineTravel";
@@ -308,6 +309,12 @@ export class AudioEngine {
         // 生命汲取:溫潤的回復和弦
         this.tone("sine", 523.25, 880, 0.26, 0.25);
         this.tone("sine", 783.99, 1046.5, 0.3, 0.2, 0.08);
+        break;
+      case "astral":
+        // 星芒斬:清亮星光上揚 + 高頻星屑閃爍
+        this.tone("sine", 880, 1760, 0.24, 0.26);
+        this.tone("sine", 1318.5, 2637, 0.2, 0.18, 0.06);
+        this.noiseBurst("highpass", 2400, 5600, 0.18, 0.12);
         break;
       case "shrine":
         [659.25, 987.77, 1318.5].forEach((freq, i) =>

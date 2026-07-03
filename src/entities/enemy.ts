@@ -27,7 +27,8 @@ export type EnemyKind =
   | "solar"
   | "maple"
   | "shade"
-  | "star";
+  | "star"
+  | "astralGuardian";
 
 type EnemyState =
   | "patrol"
@@ -97,6 +98,8 @@ const SPECIALS: Partial<Record<EnemyKind, SpecialDef>> = {
   coralGuardian: { name: "潮汐衝擊", sfx: "aqua", color: 0x46c8e0, radius: 8.5, dmgMul: 1.3, knock: 20, telegraph: 0.7, cooldown: 7, effect: "knockback" },
   // 第二海・靈脈島・靈脈守護者:靈脈汲取——強力吸血回復
   lifeGuardian: { name: "靈脈汲取", sfx: "life", color: 0x5ae07a, radius: 7.5, dmgMul: 1.3, knock: 8, telegraph: 0.75, cooldown: 6, effect: "drain" },
+  // 第三海・星穹島・星穹守護者:星隕震爆——高傷大範圍強擊退
+  astralGuardian: { name: "星隕震爆", sfx: "astral", color: 0x9ab8ff, radius: 8.5, dmgMul: 1.5, knock: 20, telegraph: 0.8, cooldown: 7, effect: "knockback" },
 };
 
 /** drain 效果回復自身傷害量的倍率 */
@@ -173,6 +176,8 @@ const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   shade: { hp: 250, dmg: 31, speed: 4.0, scale: 1.45, color: 0x7a5ac8 },
   // 第三海・星砂洲:星砂果凍
   star: { hp: 245, dmg: 30, speed: 4.1, scale: 1.4, color: 0x9ad8e8 },
+  // 第三海・星穹島:星穹守護者(掉星芒石)
+  astralGuardian: { hp: 750, dmg: 36, speed: 2.9, scale: 3.2, color: 0x8ab8ff },
 };
 
 /**
@@ -211,6 +216,8 @@ const KIND_MODEL: Partial<Record<EnemyKind, string>> = {
   brine: "PinkBlob",
   solar: "Birb",
   // 第三海(maple/shade/star)未列:素材包 20 隻已用罄,依設計回退主題色程序化果凍 blob
+  // 第三海·星穹島:守護者複用 Ghost 染星藍(enemyModels 的 tint)
+  astralGuardian: "AstralGhost",
 };
 
 /**

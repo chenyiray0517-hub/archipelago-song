@@ -40,6 +40,7 @@ export const SHRINE_DEFS: ShrineDef[] = [
   { id: "mapleisle", island: "楓紅島", x: 4174, z: 116, boat: { x: 4200, z: 88 } },
   { id: "shadecove", island: "幽影灣", x: 3800, z: -114, boat: { x: 3780, z: -72 } },
   { id: "stardust", island: "星砂洲", x: 4252, z: -152, boat: { x: 4230, z: -110 } },
+  { id: "starpeak", island: "星穹島", x: 3938, z: 178, boat: { x: 3960, z: 148 } },
 ];
 
 /**

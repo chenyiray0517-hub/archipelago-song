@@ -23,6 +23,11 @@ interface ModelSpec {
   file: string;
   /** 正規化目標高度(世界單位,未乘敵人 config.scale) */
   targetH: number;
+  /** 色調(與貼圖相乘;素材包 20 隻用罄後,複用模型改色做新頭目用) */
+  tint?: number;
+  /** 自發光(複用模型時做出辨識度,如星穹守護者的星藍光暈) */
+  emissive?: number;
+  emissiveIntensity?: number;
 }
 
 /**
@@ -60,6 +65,8 @@ const MODELS: Record<string, ModelSpec> = {
   Frog: { file: "Frog", targetH: 1.5 },
   PinkBlob: { file: "PinkBlob", targetH: 1.6 },
   Birb: { file: "Birb", targetH: 1.7 },
+  // 第三海·星穹島:星穹守護者(素材包 20 隻已用罄,複用 Ghost + 星藍自發光與虛空守護者區隔)
+  AstralGhost: { file: "Ghost", targetH: 1.7, tint: 0xc4d8ff, emissive: 0x4a66d8, emissiveIntensity: 0.55 },
 };
 
 const prototypes = new Map<string, EnemyModelProto>();
@@ -71,20 +78,25 @@ export function hasEnemyModels(): boolean {
 }
 
 /** 把載入的網格轉成 cel-shading:保留 glTF 內嵌圖集當 map,套色階做出貼圖 + 卡通光影 */
-function toToon(root: THREE.Object3D): void {
+function toToon(root: THREE.Object3D, spec: ModelSpec): void {
   root.traverse((c) => {
     if (c instanceof THREE.Mesh) {
       const src = Array.isArray(c.material) ? c.material[0] : c.material;
       const map = src && (src as THREE.MeshStandardMaterial).map ? (src as THREE.MeshStandardMaterial).map! : undefined;
-      c.material = toonMaterial(0xffffff, { map });
+      c.material = toonMaterial(spec.tint ?? 0xffffff, {
+        map,
+        emissive: spec.emissive,
+        emissiveIntensity: spec.emissiveIntensity,
+      });
       c.castShadow = true;
     }
   });
 }
 
 /** 正規化:轉 toon + 骨架描邊,縮放到目標高度,底部移到 y=0、水平置中 */
-function prepare(scene: THREE.Group, targetH: number): THREE.Group {
-  toToon(scene);
+function prepare(scene: THREE.Group, spec: ModelSpec): THREE.Group {
+  toToon(scene, spec);
+  const targetH = spec.targetH;
   addSkinnedOutlines(scene);
   const box = new THREE.Box3().setFromObject(scene);
   const h = box.max.y - box.min.y || 1;
@@ -101,7 +113,7 @@ function prepare(scene: THREE.Group, targetH: number): THREE.Group {
 async function loadOne(key: string, spec: ModelSpec): Promise<void> {
   const gltf = await new GLTFLoader().setPath(PATH).loadAsync(`${spec.file}.gltf`);
   const scene = gltf.scene as THREE.Group;
-  prototypes.set(key, { scene: prepare(scene, spec.targetH), clips: gltf.animations });
+  prototypes.set(key, { scene: prepare(scene, spec), clips: gltf.animations });
 }
 
 /**

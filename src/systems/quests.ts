@@ -24,7 +24,8 @@ export type QuestId =
   | "sea3"
   | "mapleHunt"
   | "shadeHunt"
-  | "starHunt";
+  | "starHunt"
+  | "astral";
 export type QuestState = "active" | "done";
 
 /** 果凍清理任務目標數 */

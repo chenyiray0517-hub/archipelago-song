@@ -40,6 +40,8 @@ export interface SaveData {
   aquaOwned?: boolean;
   /** 翠生石持有狀態(第二海・靈脈島取得) */
   lifeOwned?: boolean;
+  /** 星芒石持有狀態(第三海・星穹島取得) */
+  astralOwned?: boolean;
   /** 靈樹果實持有狀態與升階(雷光果/引力果) */
   fruits?: {
     thunderOwned: boolean;

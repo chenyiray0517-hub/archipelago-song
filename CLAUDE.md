@@ -14,7 +14,7 @@
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # tsc 嚴格檢查 + vite build(兩者都過才算綠)
-npm run smoke    # Playwright 端到端煙霧測試 162 項(需先開 dev server,需本機 Chrome)
+npm run smoke    # Playwright 端到端煙霧測試 171 項(需先開 dev server,需本機 Chrome)
 npm run server   # 多人連線伺服器(WebSocket 轉發站,埠 8787;多人/部署才需要)
 node scripts/mp-check.mjs   # 多人連線驗證 25 項(需先開 server + dev server)
 ```
@@ -61,7 +61,7 @@ scripts/smoke.mjs        # ★ 150 項端到端測試,改任何功能後必跑
 
 ## 不可違反的慣例
 
-1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 162 項)。新功能要加對應 smoke 步驟。
+1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 171 項)。新功能要加對應 smoke 步驟。
 2. **存檔相容**:`save.ts` 的 SaveData 加欄位一律 optional + 讀檔給預設值,不要破壞玩家舊存檔;結構大改才升版本號。
 3. **回饋三件套**:任何新的傷害來源接 `floats.spawn`(跳字)、新的拾取接 `feed.push`(中央提示)、新的動作配 `audio.sfx`(每種動作不同音效)——Rai 明確要求。
 4. **新敵人至少四段動作**(移動/蓄力/攻擊/死亡),新模型必過 `toonMaterial` + `addOutlines` + castShadow。
@@ -70,9 +70,9 @@ scripts/smoke.mjs        # ★ 150 項端到端測試,改任何功能後必跑
 
 ## 操作對照(改鍵位前先確認 HUD 提示同步更新)
 
-WASD 移動|空白鍵 跳(風語石:二段/三段跳、按住滑翔)|Shift 閃避|左鍵短按普攻/按住集氣迴旋斬(滿氣加衝擊波)|Q 舉盾|數字 1–6 施放裝備中的主動寶石技能(火焰斬/地震波/冰箭/瞬移/熔岩噴發/碧波震盪/生命汲取;鍵位於背包點寶石下方數字 1–6 指定)|Z 連鎖閃電(雷光果,麻痺)|T 引力漩渦(引力果,聚怪)|R 藥水|F 對話/上下船/潛入/設置重生點|Tab 背包|M 地圖(當前海域島嶼相對位置)|ESC 設定
+WASD 移動|空白鍵 跳(風語石:二段/三段跳、按住滑翔)|Shift 閃避|左鍵短按普攻/按住集氣迴旋斬(滿氣加衝擊波)|Q 舉盾|數字 1–6 施放裝備中的主動寶石技能(火焰斬/地震波/冰箭/瞬移/熔岩噴發/碧波震盪/生命汲取/星芒斬;鍵位於背包點寶石下方數字 1–6 指定)|Z 連鎖閃電(雷光果,麻痺)|T 引力漩渦(引力果,聚怪)|R 藥水|F 對話/上下船/潛入/設置重生點|Tab 背包|M 地圖(當前海域島嶼相對位置)|ESC 設定
 
-> **兩套能力系統**:① 靈紋寶石(`gems.ts`/`GemBag`)= 群島刻入之力,七顆主動 + 風語/潮汐被動;主動寶石綁定數字鍵 1–6(`GemBag.slots`,背包 `assignSlot` 指定/對調、`ensureSlots` 補齊,存檔 `gemSlots`),主迴圈 `gemCast(key)` 依綁定鍵位施放。② 靈樹果實(`fruits.ts`/`FruitBag`)= 世界樹原初之力,兩顆,Z/T。兩者平行:各自存檔欄位、背包區塊、HUD 技能列、鍛造升階。加新果實照寶石模式抄。
+> **兩套能力系統**:① 靈紋寶石(`gems.ts`/`GemBag`)= 群島刻入之力,八顆主動 + 風語/潮汐被動;主動寶石綁定數字鍵 1–6(`GemBag.slots`,背包 `assignSlot` 指定/對調、`ensureSlots` 補齊,存檔 `gemSlots`),主迴圈 `gemCast(key)` 依綁定鍵位施放。② 靈樹果實(`fruits.ts`/`FruitBag`)= 世界樹原初之力,兩顆,Z/T。兩者平行:各自存檔欄位、背包區塊、HUD 技能列、鍛造升階。加新果實照寶石模式抄。
 
 ## 測試掛鉤(dev-only)
 
@@ -83,7 +83,7 @@ smoke 測試靠它讀狀態與快轉(授予寶石、傳送、強制天氣)。新
 
 - 模型是程式組裝幾何體(無骨骼動畫);升級路線:glTF 資產 + AnimationMixer。
 - 音樂是 WebAudio 程式編曲;換錄音資產時只動 `audio.ts` 內部(TRACKS/scheduleBar)。
-- 效能:目前全場景常駐(86 隻敵人 + 三海 18 島),要擴更多島嶼時做分區載入;海面網格只有一張,依玩家所在海域移動。
+- 效能:目前全場景常駐(91 隻敵人 + 三海 19 島),要擴更多島嶼時做分區載入;海面網格只有一張,依玩家所在海域移動。
 - 多人連線六階段已完成(共享世界 + 各自成長 + 互動細節 + 斷線重連/插值緩衝 + 公開部署);伺服器是純轉發站、無防作弊(2~4 熟人共玩)。
 - 未做:本地化、手把支援、原生打包上架(網頁版已上 gh-pages;Steam 走 Tauri)。
 - 詳細歷程與每輪驗證紀錄:`PROGRESS.md`(由新到舊);玩家視角功能清單:`README.md`。

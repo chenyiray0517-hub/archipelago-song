@@ -813,7 +813,7 @@ dayState.mode === "day" && !dayState.rain
 
 // 38. 重生點:每島一座石碑;F 設置(上限 2,第三座替換最早的)
 const shrineCount = await page.evaluate(() => window.__game.shrines.length);
-shrineCount === 16 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7 + 第三海 4,共 16 座)") : fail(`石碑數量異常:${shrineCount}`);
+shrineCount === 17 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7 + 第三海 5,共 17 座)") : fail(`石碑數量異常:${shrineCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(-9, 1, -46); // 曙光嶼石碑旁
@@ -1235,6 +1235,11 @@ await page.evaluate(() => {
   const g = window.__game;
   g.gems.aquaOwned = true;
   g.quests.accept("aqua");
+  // 礁島樹石隨機散布,偶爾長在傳送點上把玩家推出對話圈(曾致偶發紅);先清掉祭司身邊的障礙圓
+  for (let i = g.obstacles.length - 1; i >= 0; i--) {
+    const o = g.obstacles[i];
+    if (Math.hypot(o.x - 1768, o.z - -92) < 6) g.obstacles.splice(i, 1);
+  }
   g.player.mesh.position.set(1768, 12, -89); // 祭司娜瑪旁
 });
 await page.waitForTimeout(200);
@@ -1509,7 +1514,8 @@ const sea3Spawn = await page.evaluate(() => {
   return {
     maple: of("maple").length,
     shade: of("shade").length,
-    star: of("star").length,
+    // 星砂果凍分佈兩島(星砂洲 5 + 星穹島 4),此處只計星砂洲島上的
+    star: of("star").filter((e) => Math.hypot(e.mesh.position.x - 4230, e.mesh.position.z - -170) < 50).length,
     mapleY: maple?.mesh.position.y ?? -1,
     hp: maple?.maxHp,
     dmg: maple?.dmg,
@@ -1559,7 +1565,127 @@ mapleAccepted === "active" && mapleDone.state === "done" && mapleDone.coins >= m
   : fail(`楓靈清剿異常:${JSON.stringify({ mapleAccepted, mapleDone })}`);
 await page.screenshot({ path: "/tmp/archipelago-45u-maple.png" });
 
-// 45l. 出戰配置上限:9 顆寶石只能同時裝備 4 顆,第 5 顆被拒
+// 45v. 星穹島生成:星砂果凍 ×4 + 星穹守護者立於隕石坑,第三海倍率(hp 750×3.2、dmg 36×2.4)
+const astralIsle = await page.evaluate(() => {
+  const g = window.__game;
+  const guardian = g.enemies.find((e) => e.kind === "astralGuardian");
+  const stars = g.enemies.filter(
+    (e) => e.kind === "star" && Math.hypot(e.mesh.position.x - 3960, e.mesh.position.z - 210) < 54,
+  ).length;
+  return {
+    has: !!guardian,
+    y: guardian ? guardian.mesh.position.y : -99,
+    hp: guardian?.maxHp,
+    dmg: guardian?.dmg,
+    stars,
+  };
+});
+astralIsle.has && astralIsle.y > 0.5 && astralIsle.stars === 4
+  ? ok(`星穹島生成(星砂果凍×${astralIsle.stars} + 星穹守護者,隕石坑 y=${astralIsle.y.toFixed(1)})`)
+  : fail(`星穹島異常:${JSON.stringify(astralIsle)}`);
+astralIsle.hp === 2400 && astralIsle.dmg === 86
+  ? ok(`星穹守護者第三海強化(hp${astralIsle.hp}/dmg${astralIsle.dmg},基礎 750/36 × 3.2/2.4)`)
+  : fail(`星穹守護者數值異常:${JSON.stringify(astralIsle)}`);
+
+// 45w. 三委託辦妥後,鎮長汐婆給予「星穹的呼喚」+ HUD 追蹤
+await page.evaluate(() => {
+  const g = window.__game;
+  g.quests.complete("shadeHunt"); // 楓靈已於 45u 完成,補完剩下兩島委託
+  g.quests.complete("starHunt");
+  g.player.mesh.position.set(4000, 2, -38.5); // 鎮長汐婆旁
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const astralQuest = await page.evaluate(() => ({
+  state: window.__game.quests.get("astral"),
+  owned: window.__game.gems.astralOwned,
+  hudText: document.getElementById("hud-quest-list")?.textContent ?? "",
+}));
+astralQuest.state === "active" && !astralQuest.owned
+  ? ok("鎮長汐婆給予「星穹的呼喚」任務(尚未發石)")
+  : fail(`星穹任務接取異常:${JSON.stringify(astralQuest)}`);
+astralQuest.hudText.includes("星穹的呼喚")
+  ? ok("HUD 顯示星穹的呼喚追蹤")
+  : fail(`HUD 無星穹追蹤:${astralQuest.hudText}`);
+
+// 45x. 擊敗星穹守護者(灼燒致死走主迴圈掉落結算)→ 星芒石掉落 → 磁吸拾取 → 自動出戰
+await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.equipped = ["flame"]; // 騰出出戰空位,讓星芒石能自動出戰
+  g.gems.ensureSlots();
+  const guardian = g.enemies.find((e) => e.kind === "astralGuardian");
+  const gp = guardian.mesh.position;
+  g.player.mesh.position.set(gp.x, gp.y, gp.z + 2);
+  guardian.burn(3, 99999); // 主迴圈 tickBurn 致死 → spawnDrops 正規掉落流程
+});
+await page.waitForTimeout(1800);
+const astralGot = await page.evaluate(() => ({
+  owned: window.__game.gems.astralOwned,
+  equipped: window.__game.gems.isEquipped("astral"),
+  slot: window.__game.gems.slotOf("astral"),
+}));
+astralGot.owned
+  ? ok("星穹守護者掉落星芒石並拾取")
+  : fail(`星芒石未取得:${JSON.stringify(astralGot)}`);
+astralGot.equipped && astralGot.slot >= 0
+  ? ok(`星芒石自動出戰並綁定鍵位 ${astralGot.slot + 1}`)
+  : fail(`星芒石未出戰:${JSON.stringify(astralGot)}`);
+await page.screenshot({ path: "/tmp/archipelago-45x-astral-gem.png" });
+
+// 45y. 星芒斬:施放 → 靈力扣除 + 一次三道星光劍氣
+const astralCastBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.player.mp = g.player.stats.maxMP;
+  return { mp: g.player.mp, waves: g.shockwaves.length };
+});
+await castGem("astral");
+await page.waitForTimeout(200);
+const astralCastAfter = await page.evaluate(() => ({
+  mp: window.__game.player.mp,
+  waves: window.__game.shockwaves.length,
+}));
+astralCastAfter.mp <= astralCastBefore.mp - 15
+  ? ok(`星芒斬消耗靈力(${Math.round(astralCastBefore.mp)} → ${Math.round(astralCastAfter.mp)})`)
+  : fail(`星芒斬靈力未扣除:${astralCastBefore.mp} → ${astralCastAfter.mp}`);
+astralCastAfter.waves - astralCastBefore.waves >= 3
+  ? ok(`星芒斬一次射出三道星光劍氣(場上 +${astralCastAfter.waves - astralCastBefore.waves})`)
+  : fail(`星光劍氣數異常:${astralCastBefore.waves} → ${astralCastAfter.waves}`);
+await page.screenshot({ path: "/tmp/archipelago-45y-astral-cast.png" });
+
+// 45z. 持有星芒石後回報汐婆 → 「星穹的呼喚」完成 + 發獎(800 貝拉幣 + 大型結晶×3)
+const astralCoinsBefore = await page.evaluate(() => {
+  window.__game.player.mesh.position.set(4000, 2, -38.5); // 鎮長汐婆旁
+  return window.__game.inventory.coins;
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+for (let i = 0; i < 10; i++) {
+  const open = await page.evaluate(
+    () => document.getElementById("dialog")?.classList.contains("show") ?? false,
+  );
+  if (!open) break;
+  await page.keyboard.press("f");
+  await page.waitForTimeout(150);
+}
+const astralDone = await page.evaluate(() => ({
+  state: window.__game.quests.get("astral"),
+  coins: window.__game.inventory.coins,
+}));
+astralDone.state === "done" && astralDone.coins >= astralCoinsBefore + 800
+  ? ok(`「星穹的呼喚」完成(獲得 ${astralDone.coins - astralCoinsBefore} 貝拉幣)`)
+  : fail(`星穹任務未完成:${JSON.stringify({ astralCoinsBefore, astralDone })}`);
+
+// 45l. 出戰配置上限:10 顆寶石只能同時裝備 4 顆,第 5 顆被拒
 const capTest = await page.evaluate(() => {
   const g = window.__game;
   g.gems.equipped = [];

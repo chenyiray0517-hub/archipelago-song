@@ -68,6 +68,9 @@ import {
   LIFE_MP_COST,
   lifeDamage,
   lifeLeech,
+  ASTRAL_MP_COST,
+  ASTRAL_SPREAD,
+  astralDamage,
   MAX_EQUIPPED_GEMS,
   GEM_ORDER,
   GEM_SLOT_COUNT,
@@ -413,6 +416,12 @@ function main(): void {
     new Enemy("star", 4202, -170),
     new Enemy("star", 4258, -168),
     new Enemy("star", 4230, -140),
+    // 第三海・星穹島(中心 3960,210):星砂果凍 + 星穹守護者(掉星芒石)
+    new Enemy("star", 3940, 190),
+    new Enemy("star", 3982, 192),
+    new Enemy("star", 3936, 228),
+    new Enemy("star", 3984, 230),
+    new Enemy("astralGuardian", 3960, 204),
   ];
   for (const enemy of enemies) scene.add(enemy.mesh);
   // 多人:陣列索引作為跨端同步的穩定 id(各端以相同順序建立同一批敵人)
@@ -427,6 +436,7 @@ function main(): void {
   const magmaGuardian = enemies.find((e) => e.kind === "magmaGuardian") as Enemy;
   const coralGuardian = enemies.find((e) => e.kind === "coralGuardian") as Enemy;
   const lifeGuardian = enemies.find((e) => e.kind === "lifeGuardian") as Enemy;
+  const astralGuardian = enemies.find((e) => e.kind === "astralGuardian") as Enemy;
 
   let pickups: Pickup[] = [];
   let shockwaves: Shockwave[] = [];
@@ -447,6 +457,7 @@ function main(): void {
   let lavaGemDropSpawned = false;
   let aquaGemDropSpawned = false;
   let lifeGemDropSpawned = false;
+  let astralGemDropSpawned = false;
   let lavaTickT = 0;
   let diving = false;
   let voidDefeated = false;
@@ -1181,18 +1192,48 @@ function main(): void {
         "達成之後,再回來找我。",
       ];
     }, "talk", "sharky"),
-    // 第三海・望潮鎮:門戶城鎮的迎賓與指路(第三海為委託之海,無守護者)
+    // 第三海・望潮鎮:迎賓指路三委託島;三委託辦妥後給予「星穹的呼喚」,星穹守護者掉落星芒石
     new Npc("鎮長汐婆", THIRD_SEA.x, THIRD_SEA.z - 36, 0x6ab8a0, () => {
+      const qa = quests.get("astral");
       const allDone =
         quests.get("mapleHunt") === "done" &&
         quests.get("shadeHunt") === "done" &&
         quests.get("starHunt") === "done";
-      if (allDone)
+      if (qa === "done")
+        return [
+          "星穹島的星光又靜靜灑在海上了……",
+          "星芒石在你手中,連天上的星辰都會為你揮劍。",
+          "潮聲說,更遠的海之後還會再召喚你……",
+        ];
+      if (qa === "active" && gems.astralOwned) {
+        quests.complete("astral");
+        inventory.coins += 800;
+        inventory.crystals.large += 3;
+        audio.sfx("gem");
+        hud.showToast("任務完成:星穹的呼喚!獲得 800 貝拉幣 + 大型結晶×3");
+        doSave();
+        return [
+          "星芒石!你真的接下了星穹的呼喚……",
+          "謝禮:800 貝拉幣和三顆大型經驗結晶。",
+          "用技能鍵(數字 1–6)揮出星芒斬——三道星光劍氣,近身全中最是兇猛。",
+        ];
+      }
+      if (qa === "active")
+        return [
+          "星穹島在望潮鎮北方的外海,島頂有座隕石坑。",
+          "坑心盤踞著『星穹守護者』,星芒石就嵌在牠身上。",
+          "牠的星隕震爆又重又遠,看到蓄力就快躲開!",
+        ];
+      if (allDone) {
+        quests.accept("astral");
+        hud.showToast("接受任務:星穹的呼喚");
         return [
           "三座島的委託都辦妥了?你可是望潮鎮的大恩人!",
-          "潮聲說,更遠的海之後還會再召喚你……",
-          "想回去的話,在背包使用對應的海寶石就行。",
+          "……聽,潮聲變了。北方外海的『星穹島』醒了。",
+          "墜星鑿出的隕石坑裡,『星穹守護者』守著第十顆靈紋寶石——『星芒石』。",
+          "【任務】登上星穹島,擊敗星穹守護者,取得星芒石!",
         ];
+      }
       return [
         "歡迎來到第三海的門戶——望潮鎮!",
         "能遠渡滄海的,都是傳說級的冒險者。",
@@ -1546,6 +1587,7 @@ function main(): void {
     lavaOwned: gems.lavaOwned,
     aquaOwned: gems.aquaOwned,
     lifeOwned: gems.lifeOwned,
+    astralOwned: gems.astralOwned,
     fruits: {
       thunderOwned: fruits.thunderOwned,
       gravityOwned: fruits.gravityOwned,
@@ -1578,6 +1620,7 @@ function main(): void {
     gems.lavaOwned = saved.lavaOwned ?? false;
     gems.aquaOwned = saved.aquaOwned ?? false;
     gems.lifeOwned = saved.lifeOwned ?? false;
+    gems.astralOwned = saved.astralOwned ?? false;
     if (saved.fruits) {
       fruits.thunderOwned = saved.fruits.thunderOwned;
       fruits.gravityOwned = saved.fruits.gravityOwned;
@@ -1737,6 +1780,10 @@ function main(): void {
       lifeGemDropSpawned = true;
       drops.push(new Pickup("gem-life", x, z));
     }
+    if (enemy === astralGuardian && !gems.astralOwned && !astralGemDropSpawned) {
+      astralGemDropSpawned = true;
+      drops.push(new Pickup("gem-astral", x, z));
+    }
     if (enemy.kind === "slime") quests.slimeKills++;
     quests.addKill(enemy.kind);
     if (enemy.kind === "voidLord" || enemy.kind === "voidGuardian") {
@@ -1759,6 +1806,8 @@ function main(): void {
       drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "lifeGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "astralGuardian") {
+      drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "reef" || enemy.kind === "spore") {
       drops.push(new Pickup("medium", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "windGuardian") {
@@ -2383,6 +2432,31 @@ function main(): void {
         gemFx.push(lifeBeam);
       }
 
+      // 星芒石:星芒斬(扇形射出三道星光劍氣,近距可全中、遠距單發)
+      if (
+        gemCast("astral") &&
+        gems.isEquipped("astral") &&
+        !player.blocking &&
+        player.mp >= ASTRAL_MP_COST
+      ) {
+        player.mp -= ASTRAL_MP_COST;
+        audio.sfx("astral");
+        const dmg = astralDamage(player.stats.attrs.spirit, gems.levels.astral);
+        for (const off of [-ASTRAL_SPREAD, 0, ASTRAL_SPREAD]) {
+          const starWave = new Shockwave(player.mesh.position, player.facing + off, dmg, {
+            color: 0x9ab8ff,
+            lifetime: 0.55,
+            speed: 20,
+          });
+          scene.add(starWave.mesh);
+          shockwaves.push(starWave);
+        }
+        const front = player.mesh.position
+          .clone()
+          .add(new THREE.Vector3(Math.sin(player.facing), 1, Math.cos(player.facing)));
+        fx.burst(front, 0x9ab8ff, 14, 6);
+      }
+
       // 雷光果:Z 連鎖閃電(索敵最近敵人,向鄰近敵人跳躍,傷害遞減 + 麻痺)
       if (
         input.wasPressed("KeyZ") &&
@@ -2861,6 +2935,14 @@ function main(): void {
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【翠生石】!按 H 生命汲取,傷敵回血");
           doSave();
+        } else if (pickup.kind === "gem-astral") {
+          feed.push("✨ 獲得靈紋寶石【星芒石】");
+          gems.astralOwned = true;
+          acquireGem("astral");
+          hud.setGems(gems);
+          audio.sfx("gem");
+          hud.showToast("獲得靈紋寶石【星芒石】!用技能鍵(數字 1–6)扇形射出三道星光劍氣");
+          doSave();
         } else if (pickup.kind === "fruit-thunder") {
           feed.push("⚡ 獲得靈樹果實【雷光果】");
           fruits.thunderOwned = true;
@@ -2978,6 +3060,13 @@ function main(): void {
         gems.lifeOwned
           ? "靈脈的搏動:回靈脈島找守林人葉羅回報"
           : "靈脈的搏動:登上靈脈島,擊敗島心的靈脈守護者",
+      );
+    }
+    if (quests.get("astral") === "active") {
+      questLines.push(
+        gems.astralOwned
+          ? "星穹的呼喚:回望潮鎮找鎮長汐婆回報"
+          : "星穹的呼喚:望潮鎮北方的星穹島,擊敗隕石坑的星穹守護者",
       );
     }
     const huntTracks: { id: HuntId; title: string; npc: string }[] = [

@@ -11,7 +11,7 @@ interface Flora {
 const FLORA_DEFAULT: Flora = { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] };
 /** 這些「綠色島嶼」維持原本的程序化樹石(不用素材包模型,也不鋪裝飾)——Rai 指定。
  *  楓紅島也走程序化:素材包樹一律綠色,程序化樹才吃 treeColor 染成楓紅。 */
-const PROCEDURAL_ISLANDS = new Set(["曙光嶼", "翠風林島", "港口鎮", "靈脈島", "望潮鎮", "楓紅島"]);
+const PROCEDURAL_ISLANDS = new Set(["曙光嶼", "翠風林島", "港口鎮", "靈脈島", "望潮鎮", "楓紅島", "星穹島"]);
 const FLORA: Record<string, Flora> = {
   曙光嶼: { trees: ["common", "birch"], rock: "rock", decor: ["grass", "flowers", "bush"] },
   翠風林島: { trees: ["palm", "common"], rock: "rock_moss", decor: ["grass", "bush", "plant"] },
@@ -32,6 +32,7 @@ const FLORA: Record<string, Flora> = {
   楓紅島: { trees: ["common", "birch"], rock: "rock_moss", decor: ["grass", "flowers"] },
   幽影灣: { trees: ["willow", "dead"], rock: "rock_moss", decor: ["plant", "grass"] },
   星砂洲: { trees: ["palm"], rock: "rock", decor: ["grass_short"] },
+  星穹島: { trees: ["pine_snow"], rock: "rock_snow", decor: ["grass_short"] },
 };
 
 interface Hill {
@@ -376,6 +377,23 @@ export const ISLANDS: IslandDef[] = [
     dark: 0x6a9ab0,
     treeCount: 12,
     treeColor: 0x4a9a8a,
+  },
+  {
+    name: "星穹島", // 星穹守護者鎮守的隕星之島(望潮鎮北方外海,島心隕石坑,掉星芒石)
+    x: 3960,
+    z: 210,
+    r: 54,
+    hills: [
+      { x: 0, z: 0, r: 34, h: 15 },
+      { x: -22, z: 16, r: 18, h: 6 },
+      { x: 24, z: -14, r: 16, h: 5 },
+    ],
+    sand: 0xd8d8e8,
+    grass: 0x8a9ac8,
+    dark: 0x3a3a6a,
+    treeCount: 30,
+    treeColor: 0x6a7ac8,
+    crater: { x: 0, z: 0, r: 10, depth: 6 },
   },
 ];
 

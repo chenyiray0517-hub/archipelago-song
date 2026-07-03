@@ -22,17 +22,21 @@ export const AQUA_MP_COST = 16;
 export const AQUA_RANGE = 7;
 /** 翠生石生命汲取靈力消耗(第二海・靈脈島) */
 export const LIFE_MP_COST = 14;
+/** 星芒石星芒斬靈力消耗(第三海・星穹島) */
+export const ASTRAL_MP_COST = 16;
+/** 星芒斬扇形劍氣的張角(弧度;三道 = 面向 ±張角) */
+export const ASTRAL_SPREAD = 0.35;
 
 /** 可升階的寶石(潮汐石為被動解鎖,不升階) */
-export type UpgradableGem = "flame" | "wind" | "earth" | "frost" | "void" | "lava" | "aqua" | "life";
+export type UpgradableGem = "flame" | "wind" | "earth" | "frost" | "void" | "lava" | "aqua" | "life" | "astral";
 
 /** 所有靈紋寶石 key(含被動的風語石/潮汐石,皆佔出戰格) */
-export type GemKey = "flame" | "wind" | "earth" | "frost" | "tide" | "void" | "lava" | "aqua" | "life";
+export type GemKey = "flame" | "wind" | "earth" | "frost" | "tide" | "void" | "lava" | "aqua" | "life" | "astral";
 /** 寶石出戰格上限:同時只能裝備這麼多顆,唯有出戰中的寶石技能/被動才生效 */
 export const MAX_EQUIPPED_GEMS = 4;
 
 /** 主動施放(需綁定數字鍵位)的寶石;風語石/潮汐石為被動,不佔鍵位 */
-export const ACTIVE_GEMS: GemKey[] = ["flame", "earth", "frost", "void", "lava", "aqua", "life"];
+export const ACTIVE_GEMS: GemKey[] = ["flame", "earth", "frost", "void", "lava", "aqua", "life", "astral"];
 /** 是否為主動施放型寶石(可綁定 1–6 鍵位) */
 export function isActiveGem(key: GemKey): boolean {
   return ACTIVE_GEMS.includes(key);
@@ -51,6 +55,7 @@ export const GEM_ORDER: GemKey[] = [
   "lava",
   "aqua",
   "life",
+  "astral",
 ];
 
 /** 升階費用:1→2 與 2→3(貝拉幣) */
@@ -129,6 +134,11 @@ export function lifeLeech(level = 1): number {
   return 0.4 + 0.1 * (level - 1);
 }
 
+/** 星芒斬每道劍氣傷害(扇形三道:近距可全中、遠距單發,霰彈式取捨) */
+export function astralDamage(spirit: number, level = 1): number {
+  return Math.round((14 + spirit * 2) * levelScale(level) * 1.15);
+}
+
 /**
  * 靈紋寶石持有狀態。
  * 之後擴充為寶石盤(2 格起,可擴 4 格)時再泛化。
@@ -152,8 +162,10 @@ export class GemBag {
   aquaOwned = false;
   /** 翠生石:H 生命汲取(前方衝擊波傷害 + 吸血回血) */
   lifeOwned = false;
+  /** 星芒石:星芒斬(扇形三道星光劍氣) */
+  astralOwned = false;
   /** 各寶石升階等級(1–3;持有後才有意義) */
-  levels: Record<UpgradableGem, number> = { flame: 1, wind: 1, earth: 1, frost: 1, void: 1, lava: 1, aqua: 1, life: 1 };
+  levels: Record<UpgradableGem, number> = { flame: 1, wind: 1, earth: 1, frost: 1, void: 1, lava: 1, aqua: 1, life: 1, astral: 1 };
   /** 已出戰(裝備)的寶石,依裝備順序;上限 MAX_EQUIPPED_GEMS。只有出戰中的寶石技能/被動才生效 */
   equipped: GemKey[] = [];
   /** 技能鍵位:索引 i 對應數字鍵 i+1(1–6),存放綁定該鍵的主動寶石(null=空)。被動寶石不佔鍵位 */
@@ -171,6 +183,7 @@ export class GemBag {
       case "lava": return this.lavaOwned;
       case "aqua": return this.aquaOwned;
       case "life": return this.lifeOwned;
+      case "astral": return this.astralOwned;
       default: return false;
     }
   }

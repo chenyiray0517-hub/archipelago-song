@@ -78,6 +78,7 @@ export class ForgePanel {
       ["lava", "🌋 溶岩石(熔岩噴發威力與灼燒)", this.gems.lavaOwned],
       ["aqua", "💧 碧波石(碧波震盪威力與凍結)", this.gems.aquaOwned],
       ["life", "🌿 翠生石(生命汲取威力與吸血)", this.gems.lifeOwned],
+      ["astral", "✨ 星芒石(星芒斬威力)", this.gems.astralOwned],
     ];
     const gemRows = GEM_INFO.filter(([, , owned]) => owned)
       .map(([gem, label]) => {

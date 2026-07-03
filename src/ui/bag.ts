@@ -191,6 +191,7 @@ export class BagPanel {
       ["lava", "🌋", "溶岩石"],
       ["aqua", "💧", "碧波石"],
       ["life", "🌿", "翠生石"],
+      ["astral", "✨", "星芒石"],
     ];
     const gemFull = !this.gems.hasFreeSlot();
     const gemGrid = gemSlots

@@ -101,6 +101,7 @@ import { loadGame, saveGame, peekCharacterId, type SaveData } from "./systems/sa
 import { Inventory, type CrystalSize } from "./systems/stats";
 import { Hud } from "./ui/hud";
 import { MapOverlay } from "./ui/map";
+import { IslandView } from "./core/islandView";
 import { BagPanel } from "./ui/bag";
 import { DialogBox } from "./ui/dialog";
 import { ShopPanel } from "./ui/shop";
@@ -1367,6 +1368,15 @@ function main(): void {
   const map = new MapOverlay();
   let shownIslandName: string | null = null;
 
+  // 島嶼上帝視角:點地圖島嶼進入;單機全世界暫停、多人只凍結本機玩家
+  const islandView = new IslandView();
+  map.onInspect = (isl) => {
+    map.close();
+    islandView.enter(isl);
+    audio.sfx("ui");
+    hud.showToast(`上帝視角觀看「${isl.name}」:拖曳環繞・滾輪縮放・WASD 平移・M 回地圖・ESC 返回`);
+  };
+
   /** 顯示死亡畫面(海灘 + 當前海域已啟用的重生點供選擇) */
   const showDeathScreen = (): void => {
     const options: { id: string; label: string }[] = [];
@@ -1986,6 +1996,8 @@ function main(): void {
         net,
         chat,
         map,
+        islandView,
+        camera,
         get remotePlayers() {
           return remotePlayers;
         },
@@ -1994,11 +2006,14 @@ function main(): void {
   }
 
   const clock = new THREE.Clock();
+  let oceanTime = 0; // 海浪相位(上帝視角暫停時凍結,故不用 clock 絕對時間)
   renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.05);
-    const elapsed = clock.getElapsedTime();
-    // hit-stop 頓幀中世界凍結,鏡頭與粒子照常更新
-    const worldDt = fx.frozen ? 0 : dt;
+    // hit-stop 頓幀中世界凍結,鏡頭與粒子照常更新。
+    // 上帝視角檢視中:單機全世界暫停(含日夜/海浪/NPC);多人共享世界照跑,只凍結本機玩家。
+    const viewPaused = islandView.active && !net.connected;
+    const worldDt = fx.frozen || viewPaused ? 0 : dt;
+    const ambientDt = viewPaused ? 0 : dt;
 
     // 多人階段 3a:連線且非房主時,敵人切成「房主權威傀儡」——本機不跑 FSM,
     // 受擊只記帳(pendingNetDamage)等下方送房主結算。單機/房主則照常權威模擬。
@@ -2007,13 +2022,14 @@ function main(): void {
     for (const enemy of enemies) enemy.remote = clientRemote;
 
     // 日夜與天氣(影響光照/天色/海況/航速/配樂)
-    const env = sky.update(dt, player.mesh.position, diving);
+    const env = sky.update(ambientDt, player.mesh.position, diving);
     // 海面網格跟著玩家所在海域走(三海相距甚遠,共用同一張海面)
     const playerSea = seaOf(player.mesh.position.x);
     if (playerSea === 3) ocean.position.set(THIRD_SEA.x, 0, THIRD_SEA.z);
     else if (playerSea === 2) ocean.position.set(SECOND_SEA.x, 0, SECOND_SEA.z);
     else ocean.position.set(75, 0, 55);
-    updateOcean(ocean, elapsed, env.waveScale);
+    oceanTime += ambientDt;
+    updateOcean(ocean, oceanTime, env.waveScale);
     audio.setRain(env.raining && !diving);
     if (env.thunder) {
       audio.sfx("thunder");
@@ -2030,17 +2046,30 @@ function main(): void {
     input.suspended = chat.isTyping;
     if (chat.isTyping) input.clearKeys();
 
-    if (input.wasPressed("Tab")) {
-      audio.sfx("ui");
-      bag.toggle();
-    }
-    if (input.wasPressed("Escape")) {
-      audio.sfx("ui");
-      settings.toggle();
-    }
-    if (input.wasPressed("KeyM")) {
-      audio.sfx("ui");
-      map.toggle();
+    if (islandView.active) {
+      // 上帝視角中:M 回地圖繼續選島、ESC 直接返回遊戲;其餘介面鍵不作用
+      if (player.isDead) islandView.exit(); // 多人時可能被打死,退出以顯示死亡畫面
+      else if (input.wasPressed("KeyM")) {
+        audio.sfx("ui");
+        islandView.exit();
+        map.toggle();
+      } else if (input.wasPressed("Escape")) {
+        audio.sfx("ui");
+        islandView.exit();
+      }
+    } else {
+      if (input.wasPressed("Tab")) {
+        audio.sfx("ui");
+        bag.toggle();
+      }
+      if (input.wasPressed("Escape")) {
+        audio.sfx("ui");
+        settings.toggle();
+      }
+      if (input.wasPressed("KeyM")) {
+        audio.sfx("ui");
+        map.toggle();
+      }
     }
 
     // 進入新島嶼時顯示島名大字(離島回外海後再進同島會再次顯示);地圖開啟時即時重繪
@@ -2060,12 +2089,12 @@ function main(): void {
     // NPC:待機動畫 + 對話範圍偵測;F 開啟/推進對話
     let nearbyNpc: Npc | null = null;
     for (const npc of npcs) {
-      if (npc.update(dt, player.mesh.position)) nearbyNpc = npc;
+      if (npc.update(ambientDt, player.mesh.position)) nearbyNpc = npc;
     }
     // 重生石碑:水晶動畫 + 設置範圍偵測
     let nearbyShrine: Shrine | null = null;
     for (const shrine of shrines) {
-      if (shrine.update(dt, player.mesh.position)) nearbyShrine = shrine;
+      if (shrine.update(ambientDt, player.mesh.position)) nearbyShrine = shrine;
     }
     // 船隻互動:岸上靠近小船 F 出海;航行中近岸 F 上岸;遺跡上方 F 潛入
     const nearBoat =
@@ -2080,7 +2109,9 @@ function main(): void {
       Math.hypot(boat.mesh.position.x - SUNKEN_CITY.x, boat.mesh.position.z - SUNKEN_CITY.z) <
         SUNKEN_CITY.r;
 
-    if (diving) hud.setTalkPrompt(true, "按 F 浮上水面");
+    if (islandView.active)
+      hud.setTalkPrompt(true, "上帝視角:拖曳環繞・滾輪縮放・WASD 平移・M 回地圖・ESC 返回");
+    else if (diving) hud.setTalkPrompt(true, "按 F 浮上水面");
     else if (nearCity) hud.setTalkPrompt(true, "按 F 潛入沉沒古城");
     else if (sailing && landingSpot) hud.setTalkPrompt(true, "按 F 上岸");
     else if (nearBoat) hud.setTalkPrompt(true, "按 F 出海");
@@ -2101,7 +2132,7 @@ function main(): void {
             : "按 F 對話",
       );
 
-    if (input.wasPressed("KeyF")) {
+    if (input.wasPressed("KeyF") && !islandView.active) {
       if (shop.isOpen) {
         shop.close();
       } else if (forge.isOpen) {
@@ -2147,7 +2178,8 @@ function main(): void {
 
     // 航行模式:船開、人站甲板;否則船停泊隨浪起伏
     if (sailing) {
-      boat.sail(worldDt, input, env.boatFactor);
+      // 上帝視角中 WASD 是平移鏡頭,不能開船(多人時世界照跑,故傳 0 而非 worldDt)
+      boat.sail(islandView.active ? 0 : worldDt, input, env.boatFactor);
       player.mesh.position.copy(boat.mesh.position);
       player.mesh.position.y += 0.85;
       player.facing = boat.heading;
@@ -2163,7 +2195,8 @@ function main(): void {
       !dialog.isOpen &&
       !shop.isOpen &&
       !forge.isOpen &&
-      !settings.isOpen
+      !settings.isOpen &&
+      !islandView.active
     ) {
       const { attacked, spin, chargeReady, jumped, dodged } = player.update(worldDt, input, camYaw);
       if (jumped) audio.sfx("jump");
@@ -2973,24 +3006,33 @@ function main(): void {
       return !collected;
     });
 
-    // 鏡頭:右鍵拖曳環繞 + 滾輪縮放,平滑跟隨 + 受擊震動
-    if (input.rightDown) {
-      camYaw -= input.dx * 0.005;
-      camPitch = THREE.MathUtils.clamp(camPitch + input.dy * 0.004, 0.05, 1.2);
-    }
-    camDist = THREE.MathUtils.clamp(camDist + input.wheel * 0.01, 6, 18);
+    if (islandView.active) {
+      // 上帝視角:環繞選定島嶼(拖曳/滾輪/WASD 由 islandView 處理),平滑飛向目標視角。
+      // fx.update 仍要呼叫(推進 hit-stop 計時,多人時世界照跑),只是不套震動位移。
+      fx.update(dt);
+      const v = islandView.update(dt, input);
+      camera.position.lerp(v.pos, 1 - Math.exp(-6 * dt));
+      camera.lookAt(v.target);
+    } else {
+      // 鏡頭:右鍵拖曳環繞 + 滾輪縮放,平滑跟隨 + 受擊震動
+      if (input.rightDown) {
+        camYaw -= input.dx * 0.005;
+        camPitch = THREE.MathUtils.clamp(camPitch + input.dy * 0.004, 0.05, 1.2);
+      }
+      camDist = THREE.MathUtils.clamp(camDist + input.wheel * 0.01, 6, 18);
 
-    const target = player.mesh.position.clone().add(new THREE.Vector3(0, 2, 0));
-    const desired = new THREE.Vector3(
-      target.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist,
-      target.y + Math.sin(camPitch) * camDist,
-      target.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist,
-    );
-    desired.y = Math.max(desired.y, groundHeight(desired.x, desired.z) + 0.6);
-    const followLerp = 1 - Math.exp(-12 * dt);
-    camera.position.lerp(desired, followLerp);
-    camera.position.add(fx.update(dt));
-    camera.lookAt(target);
+      const target = player.mesh.position.clone().add(new THREE.Vector3(0, 2, 0));
+      const desired = new THREE.Vector3(
+        target.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist,
+        target.y + Math.sin(camPitch) * camDist,
+        target.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist,
+      );
+      desired.y = Math.max(desired.y, groundHeight(desired.x, desired.z) + 0.6);
+      const followLerp = 1 - Math.exp(-12 * dt);
+      camera.position.lerp(desired, followLerp);
+      camera.position.add(fx.update(dt));
+      camera.lookAt(target);
+    }
 
     // 任務追蹤列
     const questLines: string[] = [];

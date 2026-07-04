@@ -2067,6 +2067,116 @@ const mapClosed = await page.evaluate(() => ({
   ? ok("再按 M 關閉地圖")
   : fail(`地圖未關閉:${JSON.stringify(mapClosed)}`);
 
+// ── 島嶼 3D 小模型地圖 + 上帝視角(點島觀看,單機全暫停)──────────────────
+// 重新開地圖:應以 3D 迷你場景呈現(stage 內有 WebGL canvas + 各島 DOM 標籤)
+await page.keyboard.press("m");
+await page.waitForTimeout(250);
+const map3d = await page.evaluate(() => {
+  const stage = document.getElementById("map-stage");
+  return {
+    isOpen: window.__game.map?.isOpen ?? false,
+    canvas: !!stage?.querySelector("canvas"),
+    labels: [...(stage?.querySelectorAll(".isl-label") ?? [])].map((el) => el.textContent),
+  };
+});
+map3d.isOpen && map3d.canvas && map3d.labels.includes("曙光嶼") && map3d.labels.includes("翠風林島")
+  ? ok(`地圖以 3D 迷你模型呈現(${map3d.labels.length} 座島 + 島名標籤)`)
+  : fail(`3D 地圖未就緒:${JSON.stringify(map3d)}`);
+await page.screenshot({ path: "/tmp/archipelago-map3d.png" });
+
+// 滑鼠實點島嶼:游標移到「曙光嶼」島名標籤上方(島身),hover 後點擊 → 進入上帝視角
+const clickAt = await page.evaluate(() => {
+  const stage = document.getElementById("map-stage");
+  const rect = stage.querySelector("canvas").getBoundingClientRect();
+  const label = [...stage.querySelectorAll(".isl-label")].find((el) => el.textContent === "曙光嶼");
+  return { x: rect.left + parseFloat(label.style.left), y: rect.top + parseFloat(label.style.top) - 26 };
+});
+await page.mouse.move(clickAt.x, clickAt.y);
+await page.waitForTimeout(200); // 等 render 針對游標位置算出 hover
+await page.mouse.click(clickAt.x, clickAt.y);
+await page.waitForTimeout(200);
+const inspecting = await page.evaluate(() => ({
+  active: window.__game.islandView.active,
+  island: window.__game.islandView.island?.name ?? null,
+  mapOpen: window.__game.map.isOpen,
+}));
+inspecting.active && inspecting.island === "曙光嶼" && !inspecting.mapOpen
+  ? ok("點擊地圖島嶼 → 關地圖進入該島上帝視角(曙光嶼)")
+  : fail(`點島未進入上帝視角:${JSON.stringify(inspecting)}`);
+
+// 鏡頭飛抵島嶼上空(高度遠高於跟隨鏡頭、位於島心附近)
+await page.waitForTimeout(900);
+const camPos = await page.evaluate(() => {
+  const c = window.__game.camera.position;
+  const isl = window.__game.islandView.island;
+  return { y: c.y, d: Math.hypot(c.x - isl.x, c.z - isl.z), r: isl.r };
+});
+camPos.y > 20 && camPos.d < camPos.r * 4
+  ? ok(`上帝視角鏡頭飛抵島上空(高度 ${camPos.y.toFixed(0)}、離島心 ${camPos.d.toFixed(0)})`)
+  : fail(`上帝視角鏡頭位置不對:${JSON.stringify(camPos)}`);
+await page.screenshot({ path: "/tmp/archipelago-godview.png" });
+
+// 單機:上帝視角中全世界暫停(敵人不動、日夜停走)
+const readFrozen = () => ({
+  time: window.__game.sky.time,
+  pos: window.__game.enemies.slice(0, 5).flatMap((e) => [e.mesh.position.x, e.mesh.position.z]),
+});
+const frozen1 = await page.evaluate(readFrozen);
+await page.waitForTimeout(700);
+const frozen2 = await page.evaluate(readFrozen);
+const frozenMoved = frozen1.pos.reduce((s, v, i) => s + Math.abs(v - frozen2.pos[i]), 0);
+frozen2.time === frozen1.time && frozenMoved < 1e-6
+  ? ok("單機上帝視角:世界全暫停(敵人/日夜凍結)")
+  : fail(`上帝視角世界未暫停:dTime=${frozen2.time - frozen1.time} moved=${frozenMoved}`);
+
+// 上帝視角中介面鍵不作用(Tab 不開背包)
+await page.keyboard.press("Tab");
+await page.waitForTimeout(120);
+const bagBlocked = await page.evaluate(() => window.__game.bag.isOpen);
+!bagBlocked ? ok("上帝視角中 Tab 不開背包") : fail("上帝視角中 Tab 打開了背包");
+
+// WASD 平移注視點(視角可移動)
+const pan1 = await page.evaluate(() => ({ x: window.__game.islandView.target.x, z: window.__game.islandView.target.z }));
+await page.keyboard.down("w");
+await page.waitForTimeout(400);
+await page.keyboard.up("w");
+const pan2 = await page.evaluate(() => ({ x: window.__game.islandView.target.x, z: window.__game.islandView.target.z }));
+Math.hypot(pan2.x - pan1.x, pan2.z - pan1.z) > 2
+  ? ok(`上帝視角 WASD 平移注視點(移動 ${Math.hypot(pan2.x - pan1.x, pan2.z - pan1.z).toFixed(1)})`)
+  : fail(`WASD 未平移:${JSON.stringify({ pan1, pan2 })}`);
+
+// M 返回地圖繼續選島
+await page.keyboard.press("m");
+await page.waitForTimeout(150);
+const backToMap = await page.evaluate(() => ({
+  active: window.__game.islandView.active,
+  mapOpen: window.__game.map.isOpen,
+}));
+!backToMap.active && backToMap.mapOpen
+  ? ok("上帝視角按 M 返回地圖")
+  : fail(`按 M 未返回地圖:${JSON.stringify(backToMap)}`);
+
+// 圖例點島同樣可進上帝視角;ESC 返回遊戲,世界恢復運轉且不誤開設定
+await page.evaluate(() => window.__game.map.inspect("翠風林島"));
+await page.waitForTimeout(150);
+const inspect2 = await page.evaluate(() => window.__game.islandView.island?.name ?? null);
+await page.keyboard.press("Escape");
+await page.waitForTimeout(150);
+const resumeTime = await page.evaluate(() => window.__game.sky.time);
+await page.waitForTimeout(400);
+const resumed = await page.evaluate(
+  (prev) => ({
+    active: window.__game.islandView.active,
+    mapOpen: window.__game.map.isOpen,
+    settings: window.__game.settings.isOpen,
+    timeMoved: window.__game.sky.time !== prev,
+  }),
+  resumeTime,
+);
+inspect2 === "翠風林島" && !resumed.active && !resumed.mapOpen && !resumed.settings && resumed.timeMoved
+  ? ok("圖例點島進上帝視角;ESC 返回遊戲、世界恢復(不誤開設定)")
+  : fail(`ESC 返回異常:${JSON.stringify({ inspect2, resumed })}`);
+
 // ── 角色外觀切換(可自由更換的多套 VRM)──────────────────────
 const roster = await page.evaluate(() => ({
   count: window.__game.characters?.length ?? 0,

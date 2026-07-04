@@ -625,6 +625,7 @@ function createIslandMesh(def: IslandDef): THREE.Group {
   const sand = new THREE.Color(def.sand);
   const grass = new THREE.Color(def.grass);
   const dark = new THREE.Color(def.dark);
+  const oceanColor = new THREE.Color(0x2a8fc8); // 與 ocean.ts 海面同色
   const c = new THREE.Color();
 
   for (let i = 0; i < position.count; i++) {
@@ -635,6 +636,9 @@ function createIslandMesh(def: IslandDef): THREE.Group {
     if (y < 0.8) c.copy(sand);
     else if (y < 1.8) c.lerpColors(sand, grass, (y - 0.8) / 1.0);
     else c.lerpColors(grass, dark, Math.min((y - 1.8) / 9, 1));
+    // 島半徑外的方形裙邊往海色漸變:近岸保留沙色淺灘,俯瞰(上帝視角/地圖)不見方形沙框
+    const d = Math.hypot(wx - def.x, wz - def.z);
+    if (d > def.r) c.lerp(oceanColor, Math.min((d - def.r) / 8, 1));
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
     colors[i * 3 + 2] = c.b;

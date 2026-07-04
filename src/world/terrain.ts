@@ -33,6 +33,11 @@ const FLORA: Record<string, Flora> = {
   幽影灣: { trees: ["willow", "dead"], rock: "rock_moss", decor: ["plant", "grass"] },
   星砂洲: { trees: ["palm"], rock: "rock", decor: ["grass_short"] },
   星穹島: { trees: ["pine_snow"], rock: "rock_snow", decor: ["grass_short"] },
+  祭壇島: { trees: ["willow", "birch"], rock: "rock_moss", decor: ["grass", "flowers"] },
+  // 靈脈試煉副本三環:由生機盎然(仿靈脈島)漸轉枯朽,呼應難度攀升
+  "試煉之環・壹": { trees: ["common", "willow"], rock: "rock_moss", decor: ["grass", "plant"] },
+  "試煉之環・貳": { trees: ["dead", "common"], rock: "rock", decor: ["grass_short"] },
+  "試煉之環・參": { trees: ["dead"], rock: "rock", decor: ["stump"] },
 };
 
 interface Hill {
@@ -55,6 +60,8 @@ export interface IslandDef {
   treeColor: number;
   /** 火山口:山頂往下挖的碗狀凹陷(熔岩池沉在裡面) */
   crater?: { x: number; z: number; r: number; depth: number };
+  /** 試煉副本島:不出現在群島地圖/上帝視角,只能靠祭壇奉獻傳送往返 */
+  dungeon?: boolean;
 }
 
 const COAST_FALLOFF = 14;
@@ -395,7 +402,87 @@ export const ISLANDS: IslandDef[] = [
     treeColor: 0x6a7ac8,
     crater: { x: 0, z: 0, r: 10, depth: 6 },
   },
+  {
+    name: "祭壇島", // 第三海西側:古老海祭壇,奉獻經驗結晶開啟靈脈試煉副本
+    x: 3760,
+    z: 120,
+    r: 50,
+    hills: [
+      { x: 0, z: 6, r: 30, h: 8 },
+      { x: -18, z: -14, r: 15, h: 4 },
+      { x: 20, z: -10, r: 14, h: 4 },
+    ],
+    sand: 0xd8d0c0,
+    grass: 0x7ab89a,
+    dark: 0x3a7a6a,
+    treeCount: 20,
+    treeColor: 0x3a8a6a,
+  },
+  // ── 靈脈試煉副本(遠海 z≈-3000,傳送進出、不開船;地圖/上帝視角不顯示)──
+  {
+    name: "試煉之環・壹",
+    x: 3820,
+    z: -3060,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 32, h: 11 },
+      { x: -20, z: 16, r: 16, h: 5 },
+      { x: 22, z: -12, r: 14, h: 4.5 },
+    ],
+    sand: 0xd8d098,
+    grass: 0x6ac84a,
+    dark: 0x2e8a3a,
+    treeCount: 30,
+    treeColor: 0x2a8a3a,
+    dungeon: true,
+  },
+  {
+    name: "試煉之環・貳",
+    x: 4020,
+    z: -2960,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 32, h: 12 },
+      { x: -20, z: 14, r: 16, h: 5 },
+      { x: 22, z: -14, r: 14, h: 4.5 },
+    ],
+    sand: 0xd0c088,
+    grass: 0xa8a83a,
+    dark: 0x6a6a22,
+    treeCount: 24,
+    treeColor: 0x8a8a2a,
+    dungeon: true,
+  },
+  {
+    name: "試煉之環・參",
+    x: 4220,
+    z: -3060,
+    r: 54,
+    hills: [
+      { x: 0, z: 0, r: 34, h: 13 },
+      { x: -22, z: 16, r: 16, h: 5 },
+      { x: 24, z: -12, r: 14, h: 4.5 },
+    ],
+    sand: 0xb89888,
+    grass: 0xa85a4a,
+    dark: 0x5a2a2a,
+    treeCount: 18,
+    treeColor: 0x8a3a3a,
+    dungeon: true,
+  },
 ];
+
+/** 祭壇島的海祭壇位置(F 奉獻開啟試煉副本) */
+export const ALTAR_SITE = { x: 3760, z: 114 };
+
+/** 靈脈試煉副本海域中心(海面網格跟隨用;三環皆在 700×700 海面覆蓋範圍內) */
+export const DUNGEON_SEA = { x: 4020, z: -3010 };
+/** 副本海域分界 z:低於此即身處試煉之地(主世界島嶼 z 皆在 ±300 內) */
+export const DUNGEON_BORDER_Z = -2000;
+/** 判定座標是否位於試煉副本海域 */
+export function inDungeonSea(z: number): boolean {
+  return z < DUNGEON_BORDER_Z;
+}
 
 /** 隱藏海域:潮汐石漂浮處(企劃書:潮汐石取得地點「隱藏海域」) */
 export const TIDE_SITE = { x: -60, z: -120 };
@@ -554,7 +641,56 @@ export function createWorld(): THREE.Group {
 
   group.add(createTown(SECOND_SEA.x)); // 港口鎮(第二海門戶)
   group.add(createTown(THIRD_SEA.x)); // 望潮鎮(第三海門戶,同款南灘小鎮)
+  group.add(createAltar()); // 祭壇島的海祭壇(奉獻開啟靈脈試煉)
   return group;
+}
+
+/** 海祭壇造景:圓形石台 + 環立石柱 + 中央懸浮供石(祭壇島,F 奉獻開啟試煉副本) */
+function createAltar(): THREE.Group {
+  const altar = new THREE.Group();
+  const { x: ax, z: az } = ALTAR_SITE;
+  const baseY = groundHeight(ax, az);
+  const stoneMat = toonMaterial(0x9aa8a0);
+  const darkMat = toonMaterial(0x5a6a66);
+
+  // 兩層圓形石台(站上去不擋路,不註冊障礙物)
+  const tierLow = new THREE.Mesh(new THREE.CylinderGeometry(6.4, 7, 0.5, 24), darkMat);
+  tierLow.position.set(ax, baseY + 0.25, az);
+  const tierHigh = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 5, 0.5, 24), stoneMat);
+  tierHigh.position.set(ax, baseY + 0.75, az);
+  tierLow.receiveShadow = tierHigh.receiveShadow = true;
+  altar.add(tierLow, tierHigh);
+
+  // 環立六根石柱(帶頂石;註冊碰撞)
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const px = ax + Math.cos(angle) * 5.6;
+    const pz = az + Math.sin(angle) * 5.6;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 3.4, 10), stoneMat);
+    pillar.position.set(px, baseY + 1.7, pz);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 1.2), darkMat);
+    cap.position.set(px, baseY + 3.5, pz);
+    pillar.castShadow = cap.castShadow = true;
+    altar.add(pillar, cap);
+    OBSTACLES.push({ x: px, z: pz, r: 0.7 });
+  }
+
+  // 中央供石座 + 懸浮的靈紋供石(發光,不參與描邊)
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 1.1, 10), darkMat);
+  pedestal.position.set(ax, baseY + 1.55, az);
+  pedestal.castShadow = true;
+  altar.add(pedestal);
+  addOutlines(altar);
+  const orb = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.55),
+    new THREE.MeshBasicMaterial({ color: 0x5ae07a, transparent: true, opacity: 0.85 }),
+  );
+  orb.name = "altar-orb";
+  orb.position.set(ax, baseY + 2.8, az);
+  orb.raycast = () => undefined;
+  altar.add(orb);
+  OBSTACLES.push({ x: ax, z: az, r: 0.8 }); // 供石座擋路,祭壇台面可自由走動
+  return altar;
 }
 
 /** 門戶城鎮造景:南灘小鎮(房屋群)+ 伸入海中的木棧碼頭(港口鎮/望潮鎮共用,cx = 島中心 x) */

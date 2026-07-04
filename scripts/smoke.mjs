@@ -109,7 +109,10 @@ for (let i = 0; i < 20 && !killed; i++) {
   await faceNearestEnemy();
   await page.mouse.click(640, 400);
   await page.waitForTimeout(450);
-  killed = await page.evaluate(() => window.__game.enemies.some((e) => e.isDead));
+  // 只看主世界敵人(副本敵人開場沉眠 = isDead,會誤判)
+  killed = await page.evaluate(() =>
+    window.__game.enemies.slice(0, window.__game.dungeon.start).some((e) => e.isDead),
+  );
 }
 killed ? ok("擊殺敵人") : fail("20 刀內未擊殺任何敵人");
 await page.screenshot({ path: "/tmp/archipelago-2-combat.png" });
@@ -880,7 +883,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 23 ? ok("任務 NPC 到位(共 23 位,含兩位引路人、兩位鎮長、兩島祭司/守林人與二、三海九位委託人)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 24 ? ok("任務 NPC 到位(共 24 位,含兩位引路人、兩位鎮長、兩島祭司/守林人、二、三海九位委託人與祭壇島司祭)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁
@@ -1133,7 +1136,8 @@ const sea2Islands = await page.evaluate(() => {
   const life = g.enemies.find((e) => e.kind === "lifeGuardian");
   return {
     reef: g.enemies.filter((e) => e.kind === "reef").length,
-    spore: g.enemies.filter((e) => e.kind === "spore").length,
+    // 副本三環也用孢子果凍,只計主世界(索引 < dungeon.start)的
+    spore: g.enemies.slice(0, g.dungeon.start).filter((e) => e.kind === "spore").length,
     coralY: coral ? coral.mesh.position.y : -99,
     lifeY: life ? life.mesh.position.y : -99,
   };
@@ -2222,6 +2226,184 @@ weaponInfo.sword && weaponInfo.shield
 weaponInfo.raw > 0 && Math.abs(weaponInfo.attack - weaponInfo.raw * 0.5) < 1e-3
   ? ok(`攻擊動作時間縮短 50%(${weaponInfo.raw.toFixed(2)}s → ${weaponInfo.attack.toFixed(2)}s)`)
   : fail(`攻擊動作未加速:${JSON.stringify(weaponInfo)}`);
+
+// ── 靈脈試煉副本(祭壇島奉獻 → 三環全清推進 → 通關獎勵 → 可重複刷)──────
+// 46a. 副本敵人開場沉眠:三環 48 隻全建好、全 isDead 且隱形
+const dgBoot = await page.evaluate(() => {
+  const g = window.__game;
+  const d = g.dungeon;
+  const mobs = g.enemies.slice(d.start);
+  return {
+    hasHook: !!d,
+    count: mobs.length,
+    rings: d.rings.length,
+    allDormant: mobs.every((e) => e.isDead && !e.mesh.visible),
+  };
+});
+dgBoot.hasHook && dgBoot.count === 48 && dgBoot.rings === 3 && dgBoot.allDormant
+  ? ok(`副本敵人開場沉眠(三環 ${dgBoot.count} 隻全隱形)`)
+  : fail(`副本沉眠異常:${JSON.stringify(dgBoot)}`);
+
+// 46b. 副本島不在群島地圖:inspect 副本島應被拒絕(玩家點擊走同條路徑)
+const dgInspect = await page.evaluate(() => window.__game.map.inspect("試煉之環・壹"));
+!dgInspect ? ok("群島地圖排除副本島(inspect 試煉之環被拒)") : fail("地圖不該能點進副本島");
+
+// 46c. 奉獻不足被拒:清空結晶與貝拉幣 → offer 不生效
+const dgPoor = await page.evaluate(() => {
+  const g = window.__game;
+  const backup = { ...g.inventory.crystals, coins: g.inventory.coins };
+  g.inventory.crystals.small = 0;
+  g.inventory.crystals.medium = 0;
+  g.inventory.crystals.large = 0;
+  g.inventory.coins = 0;
+  g.dungeon.offer();
+  const rejected = !g.dungeon.run;
+  Object.assign(g.inventory.crystals, backup);
+  g.inventory.coins = backup.coins;
+  return { rejected };
+});
+dgPoor.rejected ? ok("奉獻不足被祭壇拒絕(結晶/貝拉幣為 0)") : fail("奉獻不足仍開啟了副本");
+
+// 46d. 奉獻成功:自動先扣小結晶(小2+中5 → 扣小2中1)、扣 100 幣、傳送進第一環、16 隻復活
+const dgOffer = await page.evaluate(() => {
+  const g = window.__game;
+  g.inventory.crystals.small = 2;
+  g.inventory.crystals.medium = 5;
+  g.inventory.crystals.large = 0;
+  g.inventory.coins = 150;
+  g.dungeon.offer();
+  const ring1 = g.enemies.slice(g.dungeon.start, g.dungeon.start + g.dungeon.ringSize);
+  return {
+    run: g.dungeon.run,
+    small: g.inventory.crystals.small,
+    medium: g.inventory.crystals.medium,
+    coins: g.inventory.coins,
+    z: g.player.mesh.position.z,
+    alive: ring1.filter((e) => !e.isDead && e.mesh.visible).length,
+  };
+});
+dgOffer.run && dgOffer.small === 0 && dgOffer.medium === 4 && dgOffer.coins === 50
+  ? ok(`奉獻扣款正確(先扣小的:小 2→0、中 5→4,幣 150→${dgOffer.coins})`)
+  : fail(`奉獻扣款異常:${JSON.stringify(dgOffer)}`);
+dgOffer.z < -2000 && dgOffer.alive === 16
+  ? ok(`奉獻後傳送進第一環(z=${dgOffer.z.toFixed(0)}),16 隻眷屬復活`)
+  : fail(`進場異常:${JSON.stringify(dgOffer)}`);
+await page.waitForTimeout(400);
+await page.screenshot({ path: "/tmp/archipelago-46-dungeon-ring1.png" });
+
+// 46e. 三環難度倍率覆寫(不吃第三海自動 ×3.2/×2.4):
+// 壹=靈脈島同級(孢子 hp550/dmg56)、貳 +15%(633/64)、參 +25%(688/70;守護者 2250/88)
+const dgScale = await page.evaluate(() => {
+  const g = window.__game;
+  const d = g.dungeon;
+  const at = (ring, i) => g.enemies[d.start + ring * d.ringSize + i];
+  return {
+    r1: { hp: at(0, 0).maxHp, dmg: at(0, 0).dmg },
+    r2: { hp: at(1, 0).maxHp, dmg: at(1, 0).dmg },
+    r3: { hp: at(2, 0).maxHp, dmg: at(2, 0).dmg },
+    boss3: { hp: at(2, 15).maxHp, dmg: at(2, 15).dmg, kind: at(2, 15).kind },
+  };
+});
+dgScale.r1.hp === 550 && dgScale.r1.dmg === 56 &&
+dgScale.r2.hp === 633 && dgScale.r2.dmg === 64 &&
+dgScale.r3.hp === 688 && dgScale.r3.dmg === 70 &&
+dgScale.boss3.kind === "lifeGuardian" && dgScale.boss3.hp === 2250 && dgScale.boss3.dmg === 88
+  ? ok("三環難度倍率正確(壹 550/56、貳 +15% 633/64、參 +25% 688/70,守護者 2250/88)")
+  : fail(`副本倍率異常:${JSON.stringify(dgScale)}`);
+
+// 46f. 副本中按 M 不開群島地圖
+await page.keyboard.press("m");
+await page.waitForTimeout(150);
+const dgMap = await page.evaluate(() => window.__game.map.isOpen);
+!dgMap ? ok("副本中按 M 不開群島地圖") : fail("副本中不該能開地圖");
+if (dgMap) await page.keyboard.press("m");
+
+// 46g. 全清第一環 16 隻 → 傳送門開啟;站到門邊按 F → 傳送至第二環
+await page.evaluate(() => {
+  const g = window.__game;
+  for (let i = g.dungeon.start; i < g.dungeon.start + g.dungeon.ringSize; i++)
+    g.enemies[i].takeDamage(999999);
+});
+await page.waitForTimeout(500);
+const dgRing1Clear = await page.evaluate(() => window.__game.dungeon.portals);
+dgRing1Clear[0] && !dgRing1Clear[1]
+  ? ok("第一環全清,傳送門開啟(僅該環)")
+  : fail(`傳送門狀態異常:${JSON.stringify(dgRing1Clear)}`);
+await page.evaluate(() => {
+  const g = window.__game;
+  const r = g.dungeon.rings[0];
+  g.player.mesh.position.set(r.cx, 3, r.cz + 22); // 站到傳送門邊
+});
+await page.waitForTimeout(200);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const dgRing2Pos = await page.evaluate(() => {
+  const g = window.__game;
+  const r = g.dungeon.rings[1];
+  const p = g.player.mesh.position;
+  return { dist: Math.hypot(p.x - r.cx, p.z - r.cz) };
+});
+dgRing2Pos.dist < 60
+  ? ok(`傳送門 F 前往第二環(離環心 ${dgRing2Pos.dist.toFixed(0)})`)
+  : fail(`未傳送至第二環:${JSON.stringify(dgRing2Pos)}`);
+
+// 46h. 全清二、三環 → 通關獎勵 1000 幣 + 大型結晶×5,返回傳送門開啟;按 F 回祭壇島
+const dgBefore = await page.evaluate(() => ({
+  coins: window.__game.inventory.coins,
+  large: window.__game.inventory.crystals.large,
+}));
+await page.evaluate(() => {
+  const g = window.__game;
+  for (let i = g.dungeon.start + g.dungeon.ringSize; i < g.dungeon.start + g.dungeon.ringSize * 3; i++)
+    g.enemies[i].takeDamage(999999);
+});
+await page.waitForTimeout(500);
+const dgClear = await page.evaluate((before) => {
+  const g = window.__game;
+  return {
+    portals: g.dungeon.portals,
+    coinGain: g.inventory.coins - before.coins,
+    largeGain: g.inventory.crystals.large - before.large,
+  };
+}, dgBefore);
+dgClear.portals[1] && dgClear.portals[2] && dgClear.coinGain === 1000 && dgClear.largeGain === 5
+  ? ok(`三環通關獎勵發放(+${dgClear.coinGain} 貝拉幣、大型結晶 +${dgClear.largeGain})`)
+  : fail(`通關獎勵異常:${JSON.stringify(dgClear)}`);
+await page.evaluate(() => {
+  const g = window.__game;
+  const r = g.dungeon.rings[2];
+  g.player.mesh.position.set(r.cx, 3, r.cz + 22); // 站到返回傳送門邊
+});
+await page.waitForTimeout(200);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const dgReturn = await page.evaluate(() => {
+  const g = window.__game;
+  const p = g.player.mesh.position;
+  return { z: p.z, dist: Math.hypot(p.x - g.dungeon.altar.x, p.z - g.dungeon.altar.z) };
+});
+dgReturn.z > -2000 && dgReturn.dist < 20
+  ? ok(`返回傳送門 F 回到祭壇島(離祭壇 ${dgReturn.dist.toFixed(0)})`)
+  : fail(`未返回祭壇島:${JSON.stringify(dgReturn)}`);
+await page.screenshot({ path: "/tmp/archipelago-46-altar.png" });
+
+// 46i. 可重複刷:再次奉獻 → 48 隻整批復活、傳送門全部關閉
+const dgAgain = await page.evaluate(() => {
+  const g = window.__game;
+  g.inventory.crystals.small = 3;
+  g.inventory.coins += 100;
+  g.dungeon.offer();
+  const mobs = g.enemies.slice(g.dungeon.start);
+  return {
+    run: g.dungeon.run,
+    allAlive: mobs.every((e) => !e.isDead && e.mesh.visible),
+    portals: g.dungeon.portals,
+    z: g.player.mesh.position.z,
+  };
+});
+dgAgain.run && dgAgain.allAlive && dgAgain.portals.every((p) => !p) && dgAgain.z < -2000
+  ? ok("再次奉獻可重複刷(48 隻整批復活、傳送門重置)")
+  : fail(`重複刷異常:${JSON.stringify(dgAgain)}`);
 
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");

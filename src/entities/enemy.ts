@@ -138,6 +138,16 @@ const SECOND_SEA_DMG_MUL = 2;
 const THIRD_SEA_HP_MUL = 3.2;
 const THIRD_SEA_DMG_MUL = 2.4;
 
+/** 生成時的覆寫選項(試煉副本用):強度倍率取代海域自動倍率、死亡不重生 */
+export interface EnemyOverrides {
+  /** 血量倍率(覆寫 seaOf 自動判定的區域倍率) */
+  hpMul?: number;
+  /** 傷害倍率(覆寫 seaOf 自動判定的區域倍率) */
+  dmgMul?: number;
+  /** 死亡後不自動重生(副本內擊殺不重生,重開副本時整批 reviveNow) */
+  noRespawn?: boolean;
+}
+
 const CONFIGS: Record<EnemyKind, EnemyConfig> = {
   slime: { hp: 30, dmg: 8, speed: 3.4, scale: 1, color: 0x52c878 },
   elite: { hp: 120, dmg: 16, speed: 2.8, scale: 1.9, color: 0xe8884a },
@@ -320,13 +330,17 @@ export class Enemy {
   private specialRingMat: THREE.MeshBasicMaterial | null = null;
   private specialRingT = 0;
 
-  constructor(kind: EnemyKind, x: number, z: number) {
+  /** 死亡後不自動重生(副本敵人;由 reviveNow 整批復活) */
+  private readonly noRespawn: boolean;
+
+  constructor(kind: EnemyKind, x: number, z: number, overrides?: EnemyOverrides) {
     this.kind = kind;
     this.config = CONFIGS[kind];
-    // 第二海敵人大幅強化:依生成座標套區域倍率
+    this.noRespawn = overrides?.noRespawn ?? false;
+    // 第二海敵人大幅強化:依生成座標套區域倍率(副本敵人由 overrides 指定,不吃海域自動倍率)
     const sea = seaOf(x);
-    const hpMul = sea === 3 ? THIRD_SEA_HP_MUL : sea === 2 ? SECOND_SEA_HP_MUL : 1;
-    const dmgMul = sea === 3 ? THIRD_SEA_DMG_MUL : sea === 2 ? SECOND_SEA_DMG_MUL : 1;
+    const hpMul = overrides?.hpMul ?? (sea === 3 ? THIRD_SEA_HP_MUL : sea === 2 ? SECOND_SEA_HP_MUL : 1);
+    const dmgMul = overrides?.dmgMul ?? (sea === 3 ? THIRD_SEA_DMG_MUL : sea === 2 ? SECOND_SEA_DMG_MUL : 1);
     this.maxHp = Math.round(this.config.hp * hpMul);
     this.dmg = Math.round(this.config.dmg * dmgMul);
     this.hp = this.maxHp;
@@ -509,6 +523,7 @@ export class Enemy {
    */
   update(dt: number, playerPos: THREE.Vector3, playerDead: boolean): number {
     if (this.state === "dead") {
+      if (this.noRespawn) return 0; // 副本敵人不自動重生,等 reviveNow 整批復活
       this.respawnT -= dt;
       if (this.respawnT <= 0) this.revive();
       return 0;
@@ -994,6 +1009,22 @@ export class Enemy {
     this.netYaw = yaw;
     this.drawHpBar();
     return false;
+  }
+
+  /** 沉眠:直接進入死亡隱形狀態(副本敵人開場即沉眠,奉獻開副本時才復活) */
+  lieDormant(): void {
+    this.hp = 0;
+    this.state = "dead";
+    this.mesh.visible = false;
+    this.hpBar.visible = false;
+    this.specialPhase = "";
+    this.specialEvent = null;
+    this.hideRing();
+  }
+
+  /** 立即復活(重開副本時整批喚醒;一般敵人的自動重生走私有 revive) */
+  reviveNow(): void {
+    this.revive();
   }
 
   private revive(): void {

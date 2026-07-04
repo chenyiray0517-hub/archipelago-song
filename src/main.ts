@@ -29,6 +29,9 @@ import {
   islandAt,
   THUNDER_FRUIT_SITE,
   GRAVITY_FRUIT_SITE,
+  ALTAR_SITE,
+  DUNGEON_SEA,
+  inDungeonSea,
   OBSTACLES,
   resolveObstacles,
 } from "./world/terrain";
@@ -424,9 +427,126 @@ function main(): void {
     new Enemy("star", 3984, 230),
     new Enemy("astralGuardian", 3960, 204),
   ];
+
+  // ── 靈脈試煉副本:三環各 15 隻孢子果凍 + 1 隻靈脈守護者(共 48 隻)──
+  // 開場即建好並沉眠(多人 netIndex 依陣列順序,不能動態插入),奉獻開副本時整批復活。
+  // 難度:壹 = 第二海靈脈島(hp×2.5/dmg×2),貳/參在此基礎 +15%/+25%(覆寫,不吃海域自動倍率)。
+  const DUNGEON_RINGS = [
+    { cx: 3820, cz: -3060, hpMul: 2.5, dmgMul: 2 },
+    { cx: 4020, cz: -2960, hpMul: 2.5 * 1.15, dmgMul: 2 * 1.15 },
+    { cx: 4220, cz: -3060, hpMul: 2.5 * 1.25, dmgMul: 2 * 1.25 },
+  ];
+  const DUNGEON_MOBS = 15;
+  /** 每環敵人數(15 小怪 + 1 守護者);全清才開下一環傳送門 */
+  const RING_SIZE = DUNGEON_MOBS + 1;
+  const dungeonStart = enemies.length;
+  for (const ring of DUNGEON_RINGS) {
+    const opts = { hpMul: ring.hpMul, dmgMul: ring.dmgMul, noRespawn: true };
+    for (let i = 0; i < DUNGEON_MOBS; i++) {
+      // 固定環狀佈點(三圈半徑交錯),各端順序與座標一致
+      const angle = (i / DUNGEON_MOBS) * Math.PI * 2;
+      const radius = 13 + (i % 3) * 9;
+      enemies.push(
+        new Enemy("spore", ring.cx + Math.cos(angle) * radius, ring.cz + Math.sin(angle) * radius, opts),
+      );
+    }
+    enemies.push(new Enemy("lifeGuardian", ring.cx, ring.cz, opts));
+  }
+
   for (const enemy of enemies) scene.add(enemy.mesh);
   // 多人:陣列索引作為跨端同步的穩定 id(各端以相同順序建立同一批敵人)
   enemies.forEach((enemy, i) => (enemy.netIndex = i));
+  // 副本敵人平時沉眠(死亡隱形);奉獻開副本時 reviveNow 整批喚醒
+  for (let i = dungeonStart; i < enemies.length; i++) enemies[i].lieDormant();
+
+  // ── 靈脈試煉副本:進度狀態 + 傳送門 + 奉獻/傳送 ──────────────────
+  const ALTAR_CRYSTAL_COST = 3;
+  const ALTAR_COIN_COST = 100;
+  /** 是否有進行中(或已通關待重開)的試煉;奉獻時重置 */
+  let dungeonRun = false;
+  /** 各環傳送門是否開通(該環 16 隻全清) */
+  const ringPortalOpen = [false, false, false];
+  /** 各環出口傳送門(常駐建好,開通才顯示):壹/貳 → 下一環,參 → 返回祭壇島 */
+  const ringPortals: THREE.Group[] = DUNGEON_RINGS.map((ring, k) => {
+    const color = [0x5ae07a, 0xd8c84a, 0xff7a5a][k];
+    const portal = new THREE.Group();
+    const frame = new THREE.Mesh(
+      new THREE.TorusGeometry(2.1, 0.26, 10, 36),
+      new THREE.MeshBasicMaterial({ color }),
+    );
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.9, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+    );
+    portal.add(frame, disc);
+    const pz = ring.cz + 22; // 立在環心南側,避開守護者
+    portal.position.set(ring.cx, groundHeight(ring.cx, pz) + 2.4, pz);
+    portal.visible = false;
+    scene.add(portal);
+    return portal;
+  });
+
+  /** 祭壇中央的懸浮供石(createWorld 建立;主迴圈做旋轉/浮動動畫) */
+  const altarOrb = scene.getObjectByName("altar-orb");
+  const altarOrbBaseY = altarOrb?.position.y ?? 0;
+
+  const crystalTotal = (): number =>
+    inventory.crystals.small + inventory.crystals.medium + inventory.crystals.large;
+
+  /** 傳送至第 k 環的南岸(進場點在小怪環外緣,留反應距離) */
+  function enterRing(k: number): void {
+    const ring = DUNGEON_RINGS[k];
+    const z = ring.cz + 38;
+    player.mesh.position.set(ring.cx, groundHeight(ring.cx, z), z);
+    audio.sfx("shrineTravel");
+    fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0x5ae07a, 16, 6);
+  }
+
+  /** 從第三環的傳送門返回祭壇島(祭壇正前方) */
+  function returnToAltar(): void {
+    const z = ALTAR_SITE.z - 8;
+    player.mesh.position.set(ALTAR_SITE.x, groundHeight(ALTAR_SITE.x, z), z);
+    audio.sfx("shrineTravel");
+    fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1.2), 0x7fe8e8, 16, 6);
+    hud.showToast("踏出試煉之門,回到祭壇島");
+  }
+
+  /**
+   * 祭壇奉獻:任意尺寸經驗結晶共 3 顆(自動先扣小的)+ 100 貝拉幣。
+   * 成功則(重)開試煉:整批復活副本敵人、關閉全部傳送門、傳送至第一環;可重複刷。
+   */
+  function offerAtAltar(): void {
+    if (player.isDead) return;
+    if (net.connected) {
+      hud.showToast("靈脈試煉為單人挑戰,多人連線時無法開啟");
+      return;
+    }
+    if (crystalTotal() < ALTAR_CRYSTAL_COST || inventory.coins < ALTAR_COIN_COST) {
+      audio.sfx("ui");
+      hud.showToast(`奉獻不足:需經驗結晶×${ALTAR_CRYSTAL_COST}(任意尺寸)+ ${ALTAR_COIN_COST} 貝拉幣`);
+      return;
+    }
+    let need = ALTAR_CRYSTAL_COST;
+    for (const size of ["small", "medium", "large"] as const) {
+      const used = Math.min(need, inventory.crystals[size]);
+      inventory.crystals[size] -= used;
+      need -= used;
+    }
+    inventory.coins -= ALTAR_COIN_COST;
+    dungeonRun = true;
+    ringPortalOpen.fill(false);
+    for (const portal of ringPortals) portal.visible = false;
+    for (let i = dungeonStart; i < enemies.length; i++) enemies[i].reviveNow();
+    if (bag.isOpen) bag.toggle();
+    map.close();
+    sailing = false;
+    if (diving) setDiving(false);
+    enterRing(0);
+    audio.sfx("gem");
+    feed.push("⚔️ 靈脈試煉開啟!");
+    hud.showToast("祭壇接受了奉獻……全清一環的 16 隻眷屬,傳送門便會開啟!");
+    doSave();
+  }
   // 各島頭目首殺掉落對應靈紋寶石
   const gemGuardian = enemies[12];
   const windGuardian = enemies.find((e) => e.kind === "windGuardian") as Enemy;
@@ -1240,9 +1360,25 @@ function main(): void {
         "能遠渡滄海的,都是傳說級的冒險者。",
         "東北的『楓紅島』、西南的『幽影灣』、東南的『星砂洲』,",
         "各有居民貼出了清剿委託,去幫幫他們吧!",
+        "對了,西邊的『祭壇島』沉睡著古老的海祭壇——",
+        "聽說向它奉獻經驗結晶,能開啟兇險的『靈脈試煉』,勇者可以去試試。",
         "想回第一、二海?在背包使用對應的海寶石就行。",
       ];
     }, "talk", "anne"),
+    // 第三海・祭壇島:司祭(解說靈脈試煉的奉獻與規則)
+    new Npc("司祭潮音", ALTAR_SITE.x + 7, ALTAR_SITE.z - 5, 0x5ae07a, () => {
+      if (dungeonRun && ringPortalOpen[2])
+        return [
+          "你走完了三環試煉……靈脈的湧動都為你歡呼!",
+          "祭壇隨時歡迎再次奉獻——每一次試煉,眷屬都會重新湧現。",
+        ];
+      return [
+        "旅人,這座石壇是沉睡的海祭壇——『靈脈試煉』的入口。",
+        `向祭壇奉獻任意尺寸的經驗結晶 ${ALTAR_CRYSTAL_COST} 顆(會先取小的)與 ${ALTAR_COIN_COST} 貝拉幣,試煉之門便會開啟。`,
+        "試煉共三環,一環比一環兇猛;把一環的 16 隻靈脈眷屬全數擊倒,傳送門才會開啟。",
+        "走完三環,祭壇會賜下 1000 貝拉幣與五顆大型經驗結晶——想再挑戰,隨時再來奉獻。",
+      ];
+    }),
     // 第三海・楓紅島:打怪委託(楓靈果凍)
     makeHuntNpc({
       name: "楓園主楓伯",
@@ -1674,6 +1810,11 @@ function main(): void {
     player.hp = player.stats.maxHP;
     player.mp = player.stats.maxMP;
     player.mesh.position.set(saved.pos[0], groundHeight(saved.pos[0], saved.pos[1]), saved.pos[1]);
+    // 試煉副本進度不隨存檔保留:上次存檔停在副本裡就送回祭壇島(避免困在沉眠的空島)
+    if (inDungeonSea(saved.pos[1])) {
+      const az = ALTAR_SITE.z - 8;
+      player.mesh.position.set(ALTAR_SITE.x, groundHeight(ALTAR_SITE.x, az), az);
+    }
     if (saved.boatPos) boat.place(saved.boatPos[0], saved.boatPos[1]);
     if (saved.sailing) sailing = true;
     hud.showToast("讀取存檔完成");
@@ -1998,6 +2139,23 @@ function main(): void {
         map,
         islandView,
         camera,
+        // 靈脈試煉副本(祭壇奉獻/逐環進度;smoke 測試據此驗證)
+        dungeon: {
+          get run() {
+            return dungeonRun;
+          },
+          get portals() {
+            return [...ringPortalOpen];
+          },
+          start: dungeonStart,
+          ringSize: RING_SIZE,
+          rings: DUNGEON_RINGS,
+          altar: ALTAR_SITE,
+          offer: offerAtAltar,
+          enterRing,
+          crystalCost: ALTAR_CRYSTAL_COST,
+          coinCost: ALTAR_COIN_COST,
+        },
         get remotePlayers() {
           return remotePlayers;
         },
@@ -2023,9 +2181,10 @@ function main(): void {
 
     // 日夜與天氣(影響光照/天色/海況/航速/配樂)
     const env = sky.update(ambientDt, player.mesh.position, diving);
-    // 海面網格跟著玩家所在海域走(三海相距甚遠,共用同一張海面)
+    // 海面網格跟著玩家所在海域走(三海與試煉副本海域相距甚遠,共用同一張海面)
     const playerSea = seaOf(player.mesh.position.x);
-    if (playerSea === 3) ocean.position.set(THIRD_SEA.x, 0, THIRD_SEA.z);
+    if (inDungeonSea(player.mesh.position.z)) ocean.position.set(DUNGEON_SEA.x, 0, DUNGEON_SEA.z);
+    else if (playerSea === 3) ocean.position.set(THIRD_SEA.x, 0, THIRD_SEA.z);
     else if (playerSea === 2) ocean.position.set(SECOND_SEA.x, 0, SECOND_SEA.z);
     else ocean.position.set(75, 0, 55);
     oceanTime += ambientDt;
@@ -2068,7 +2227,9 @@ function main(): void {
       }
       if (input.wasPressed("KeyM")) {
         audio.sfx("ui");
-        map.toggle();
+        // 試煉副本中不開地圖(副本島不在群島地圖上,玩家標記會飄出畫面)
+        if (inDungeonSea(player.mesh.position.z)) hud.showToast("試煉之地看不見群島的星圖……");
+        else map.toggle();
       }
     }
 
@@ -2080,7 +2241,10 @@ function main(): void {
         shownIslandName = islName;
         if (islName) {
           const sea = seaOf(player.mesh.position.x);
-          hud.showIslandTitle(islName, sea === 3 ? "第三海" : sea === 2 ? "第二海" : "第一海");
+          hud.showIslandTitle(
+            islName,
+            isl?.dungeon ? "靈脈試煉" : sea === 3 ? "第三海" : sea === 2 ? "第二海" : "第一海",
+          );
         }
       }
       map.render(player.mesh.position.x, player.mesh.position.z);
@@ -2108,6 +2272,23 @@ function main(): void {
       gems.isEquipped("tide") &&
       Math.hypot(boat.mesh.position.x - SUNKEN_CITY.x, boat.mesh.position.z - SUNKEN_CITY.z) <
         SUNKEN_CITY.r;
+    // 靈脈試煉:祭壇奉獻範圍 / 已開通傳送門範圍
+    const nearAltar =
+      !sailing &&
+      !diving &&
+      !player.isDead &&
+      Math.hypot(player.mesh.position.x - ALTAR_SITE.x, player.mesh.position.z - ALTAR_SITE.z) < 5;
+    let nearPortal = -1;
+    if (!sailing && !player.isDead) {
+      for (let k = 0; k < ringPortals.length; k++) {
+        if (!ringPortalOpen[k]) continue;
+        const pp = ringPortals[k].position;
+        if (Math.hypot(player.mesh.position.x - pp.x, player.mesh.position.z - pp.z) < 4) {
+          nearPortal = k;
+          break;
+        }
+      }
+    }
 
     if (islandView.active)
       hud.setTalkPrompt(true, "上帝視角:拖曳環繞・滾輪縮放・WASD 平移・M 回地圖・ESC 返回");
@@ -2115,6 +2296,13 @@ function main(): void {
     else if (nearCity) hud.setTalkPrompt(true, "按 F 潛入沉沒古城");
     else if (sailing && landingSpot) hud.setTalkPrompt(true, "按 F 上岸");
     else if (nearBoat) hud.setTalkPrompt(true, "按 F 出海");
+    else if (nearPortal >= 0)
+      hud.setTalkPrompt(true, nearPortal === 2 ? "按 F 返回祭壇島" : "按 F 前往下一環");
+    else if (nearAltar && !dialog.isOpen)
+      hud.setTalkPrompt(
+        true,
+        `按 F 奉獻開啟靈脈試煉(經驗結晶×${ALTAR_CRYSTAL_COST} + ${ALTAR_COIN_COST} 貝拉幣)`,
+      );
     else if (nearbyShrine && !nearbyShrine.active && !sailing && !player.isDead && !dialog.isOpen)
       hud.setTalkPrompt(true, "按 F 設置重生點");
     else
@@ -2163,6 +2351,14 @@ function main(): void {
         player.blocking = false;
         audio.sfx("ui");
         hud.showToast("出海!W 前進、A/D 轉向,近岸按 F 上岸");
+      } else if (nearPortal >= 0) {
+        if (nearPortal === 2) returnToAltar();
+        else {
+          enterRing(nearPortal + 1);
+          hud.showToast(`踏入試煉之環・${nearPortal === 0 ? "貳" : "參"}——眷屬更加兇猛,小心!`);
+        }
+      } else if (nearAltar && !player.isDead) {
+        offerAtAltar();
       } else if (nearbyShrine && !nearbyShrine.active && !player.isDead) {
         activateShrine(nearbyShrine);
       } else if (nearbyNpc && !player.isDead) {
@@ -2731,6 +2927,44 @@ function main(): void {
       }
     }
 
+    // ── 靈脈試煉:逐環全清偵測(16 隻全倒才開傳送門;第三環全清發通關獎勵)──
+    if (dungeonRun && !net.connected) {
+      for (let k = 0; k < DUNGEON_RINGS.length; k++) {
+        if (ringPortalOpen[k]) continue;
+        let allDead = true;
+        for (let i = dungeonStart + k * RING_SIZE; i < dungeonStart + (k + 1) * RING_SIZE; i++) {
+          if (!enemies[i].isDead) {
+            allDead = false;
+            break;
+          }
+        }
+        if (!allDead) continue;
+        ringPortalOpen[k] = true;
+        ringPortals[k].visible = true;
+        audio.sfx("victory");
+        const pp = ringPortals[k].position;
+        fx.burst(pp.clone(), 0x5ae07a, 20, 8);
+        if (k < 2) {
+          hud.showToast(`試煉之環・${k === 0 ? "壹" : "貳"} 全清!通往下一環的傳送門開啟`);
+        } else {
+          inventory.coins += 1000;
+          inventory.crystals.large += 5;
+          feed.push("🏆 靈脈試煉通關!獲得 1000 貝拉幣");
+          feed.push("💎 獲得大型經驗結晶 ×5");
+          hud.showToast("靈脈試煉通關!獲得 1000 貝拉幣 + 大型結晶×5,返回的傳送門已開啟");
+          doSave();
+        }
+      }
+    }
+    // 傳送門緩慢自旋(開通時才顯示);祭壇供石懸浮旋轉
+    for (const portal of ringPortals) {
+      if (portal.visible) portal.rotation.y += ambientDt * 0.9;
+    }
+    if (altarOrb) {
+      altarOrb.rotation.y += ambientDt * 1.2;
+      altarOrb.position.y = altarOrbBaseY + Math.sin(oceanTime * 2) * 0.15;
+    }
+
     // 玩家灼燒 DoT 結算(頭目熔核震爆點燃;每 0.5 秒跳一次)
     const playerBurn = player.tickBurn(worldDt);
     if (playerBurn > 0 && !player.isDead) {
@@ -3133,6 +3367,30 @@ function main(): void {
         progress >= HUNTS[track.id].target
           ? `${track.title}:回報${track.npc}`
           : `${track.title}:${progress}/${HUNTS[track.id].target}`,
+      );
+    }
+    // 靈脈試煉:身在副本時顯示當前環的清剿進度
+    if (dungeonRun && inDungeonSea(player.mesh.position.z)) {
+      let ringIdx = 0;
+      let bestDist = Infinity;
+      DUNGEON_RINGS.forEach((ring, k) => {
+        const d = Math.hypot(player.mesh.position.x - ring.cx, player.mesh.position.z - ring.cz);
+        if (d < bestDist) {
+          bestDist = d;
+          ringIdx = k;
+        }
+      });
+      let deadCount = 0;
+      for (let i = dungeonStart + ringIdx * RING_SIZE; i < dungeonStart + (ringIdx + 1) * RING_SIZE; i++) {
+        if (enemies[i].isDead) deadCount++;
+      }
+      const ringName = ["壹", "貳", "參"][ringIdx];
+      questLines.push(
+        deadCount >= RING_SIZE
+          ? ringIdx === 2
+            ? "靈脈試煉:通關!返回傳送門已開啟"
+            : `靈脈試煉・${ringName}:全清!前往下一環`
+          : `靈脈試煉・${ringName}:${deadCount}/${RING_SIZE}`,
       );
     }
     hud.setQuests(questLines);

@@ -14,7 +14,7 @@
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # tsc 嚴格檢查 + vite build(兩者都過才算綠)
-npm run smoke    # Playwright 端到端煙霧測試 179 項(需先開 dev server,需本機 Chrome)
+npm run smoke    # Playwright 端到端煙霧測試 191 項(需先開 dev server,需本機 Chrome)
 npm run server   # 多人連線伺服器(WebSocket 轉發站,埠 8787;多人/部署才需要)
 node scripts/mp-check.mjs   # 多人連線驗證 25 項(需先開 server + dev server)
 ```
@@ -38,7 +38,7 @@ src/
 │   ├── toon.ts          # cel-shading 材質 + 描邊(所有新模型都要用 toonMaterial + addOutlines)
 │   └── fx.ts            # 打擊感:hit-stop 頓幀/鏡頭震動/粒子爆裂
 ├── world/
-│   ├── terrain.ts       # ★ ISLANDS 配置驅動多島地形;groundHeight 同時管視覺與碰撞;FLORA 依生態散布樹/石/裝飾;第二海(x>1100)/第三海(x>3100)靠海寶石往返
+│   ├── terrain.ts       # ★ ISLANDS 配置驅動多島地形;groundHeight 同時管視覺與碰撞;FLORA 依生態散布樹/石/裝飾;第二海(x>1100)/第三海(x>3100)靠海寶石往返;試煉副本島(dungeon 旗標,z<-2000)靠祭壇島奉獻傳送、不上地圖
 │   ├── sceneryModels.ts # 載入 public/models 的 CC0 自然素材→轉 toon+描邊+正規化高度→pickModel 供 terrain 散布;載入失敗回退
 │   ├── ocean.ts         # CPU 頂點波浪(振幅吃天氣倍率)
 │   └── sky.ts           # 日夜循環(6 分鐘/天)+ 天氣狀態機(晴/雨/風暴)+ 雨絲 + 閃電
@@ -61,7 +61,7 @@ scripts/smoke.mjs        # ★ 150 項端到端測試,改任何功能後必跑
 
 ## 不可違反的慣例
 
-1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 179 項)。新功能要加對應 smoke 步驟。
+1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 191 項)。新功能要加對應 smoke 步驟。
 2. **存檔相容**:`save.ts` 的 SaveData 加欄位一律 optional + 讀檔給預設值,不要破壞玩家舊存檔;結構大改才升版本號。
 3. **回饋三件套**:任何新的傷害來源接 `floats.spawn`(跳字)、新的拾取接 `feed.push`(中央提示)、新的動作配 `audio.sfx`(每種動作不同音效)——Rai 明確要求。
 4. **新敵人至少四段動作**(移動/蓄力/攻擊/死亡),新模型必過 `toonMaterial` + `addOutlines` + castShadow。
@@ -83,7 +83,8 @@ smoke 測試靠它讀狀態與快轉(授予寶石、傳送、強制天氣)。新
 
 - 模型是程式組裝幾何體(無骨骼動畫);升級路線:glTF 資產 + AnimationMixer。
 - 音樂是 WebAudio 程式編曲;換錄音資產時只動 `audio.ts` 內部(TRACKS/scheduleBar)。
-- 效能:目前全場景常駐(91 隻敵人 + 三海 19 島),要擴更多島嶼時做分區載入;海面網格只有一張,依玩家所在海域移動。
+- 效能:目前全場景常駐(139 隻敵人(含 48 隻沉眠副本敵人)+ 23 島(含祭壇島與三座副本島)),要擴更多島嶼時做分區載入;海面網格只有一張,依玩家所在海域(含副本海域)移動。
+- 靈脈試煉副本(祭壇島奉獻開啟)為單機內容:多人連線時祭壇停用;副本進度不入存檔,重整後回祭壇島重新奉獻。
 - 多人連線六階段已完成(共享世界 + 各自成長 + 互動細節 + 斷線重連/插值緩衝 + 公開部署);伺服器是純轉發站、無防作弊(2~4 熟人共玩)。
 - 未做:本地化、手把支援、原生打包上架(網頁版已上 gh-pages;Steam 走 Tauri)。
 - 詳細歷程與每輪驗證紀錄:`PROGRESS.md`(由新到舊);玩家視角功能清單:`README.md`。

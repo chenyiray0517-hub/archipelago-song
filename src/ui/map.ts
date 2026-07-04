@@ -152,9 +152,9 @@ export class MapOverlay {
     this.root.classList.remove("show");
   }
 
-  /** 依島名觸發點擊島嶼的同一條路徑(dev 測試 / 圖例點擊共用);找不到回 false */
+  /** 依島名觸發點擊島嶼的同一條路徑(dev 測試 / 圖例點擊共用);找不到或為副本島回 false */
   inspect(name: string): boolean {
-    const isl = ISLANDS.find((i) => i.name === name);
+    const isl = ISLANDS.find((i) => i.name === name && !i.dungeon);
     if (!isl || !this.onInspect) return false;
     this.onInspect(isl);
     return true;
@@ -165,7 +165,8 @@ export class MapOverlay {
     const cached = this.seaScenes.get(sea);
     if (cached) return cached;
 
-    const isls = ISLANDS.filter((i) => seaOf(i.x) === sea);
+    // 試煉副本島不在群島地圖上(z 遠在主世界外,納入會把佈局擠成一團,也不該能點進上帝視角)
+    const isls = ISLANDS.filter((i) => seaOf(i.x) === sea && !i.dungeon);
     const minX = Math.min(...isls.map((i) => i.x - i.r));
     const maxX = Math.max(...isls.map((i) => i.x + i.r));
     const minZ = Math.min(...isls.map((i) => i.z - i.r));

@@ -67,6 +67,10 @@ const MODELS: Record<string, ModelSpec> = {
   Birb: { file: "Birb", targetH: 1.7 },
   // 第三海·星穹島:星穹守護者(素材包 20 隻已用罄,複用 Ghost + 星藍自發光與虛空守護者區隔)
   AstralGhost: { file: "Ghost", targetH: 1.7, tint: 0xc4d8ff, emissive: 0x4a66d8, emissiveIntensity: 0.55 },
+  // 第三海·三委託島守護者:複用既有模型 + tint/自發光區隔本尊
+  MapleKing: { file: "MushroomKing", targetH: 1.9, tint: 0xe8926a, emissive: 0xb03a18, emissiveIntensity: 0.35 },
+  ShadeGhost: { file: "Ghost", targetH: 1.7, tint: 0x9a7ae8, emissive: 0x4a1a8a, emissiveIntensity: 0.5 },
+  StarYeti: { file: "Yeti", targetH: 1.8, tint: 0xe8e4c8, emissive: 0x2a8aa0, emissiveIntensity: 0.4 },
 };
 
 const prototypes = new Map<string, EnemyModelProto>();

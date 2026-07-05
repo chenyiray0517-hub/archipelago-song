@@ -1591,6 +1591,51 @@ astralIsle.hp === 2400 && astralIsle.dmg === 86
   ? ok(`星穹守護者第三海強化(hp${astralIsle.hp}/dmg${astralIsle.dmg},基礎 750/36 × 3.2/2.4)`)
   : fail(`星穹守護者數值異常:${JSON.stringify(astralIsle)}`);
 
+// 45v2. 三委託島守護者:楓魂/幽影/星砂守護者各鎮守島心,第三海倍率 + 專屬特殊技
+const sea3Guardians = await page.evaluate(() => {
+  const g = window.__game;
+  const pick = (kind) => {
+    const e = g.enemies.find((en) => en.kind === kind);
+    return e ? { y: e.mesh.position.y, hp: e.maxHp, dmg: e.dmg, special: e.special?.name ?? "" } : null;
+  };
+  return {
+    maple: pick("mapleGuardian"),
+    shade: pick("shadeGuardian"),
+    star: pick("starGuardian"),
+  };
+});
+sea3Guardians.maple?.y > 0.5 && sea3Guardians.shade?.y > 0.5 && sea3Guardians.star?.y > 0.5
+  ? ok("三委託島守護者生成(楓魂/幽影/星砂各鎮守島心)")
+  : fail(`三委託島守護者生成異常:${JSON.stringify(sea3Guardians)}`);
+sea3Guardians.maple?.hp === 2208 && sea3Guardians.maple?.dmg === 82 &&
+sea3Guardians.shade?.hp === 2272 && sea3Guardians.shade?.dmg === 84 &&
+sea3Guardians.star?.hp === 2240 && sea3Guardians.star?.dmg === 82
+  ? ok(`三委託島守護者第三海強化(hp ${sea3Guardians.maple.hp}/${sea3Guardians.shade.hp}/${sea3Guardians.star.hp},基礎 690/710/700 × 3.2)`)
+  : fail(`三委託島守護者數值異常:${JSON.stringify(sea3Guardians)}`);
+sea3Guardians.maple?.special === "楓火焚風" && sea3Guardians.shade?.special === "幽影汲取" && sea3Guardians.star?.special === "星砂風暴"
+  ? ok("三委託島守護者特殊技(楓火焚風/幽影汲取/星砂風暴)")
+  : fail(`守護者特殊技異常:${JSON.stringify(sea3Guardians)}`);
+
+// 45v3. 擊敗幽影守護者(灼燒致死走主迴圈掉落結算)→ 大結晶×2 + 貝拉幣×2 磁吸拾取
+const shadeBossBefore = await page.evaluate(() => {
+  const g = window.__game;
+  const guardian = g.enemies.find((e) => e.kind === "shadeGuardian");
+  const gp = guardian.mesh.position;
+  g.player.mesh.position.set(gp.x, gp.y, gp.z + 2);
+  guardian.burn(3, 99999); // 主迴圈 tickBurn 致死 → spawnDrops 正規掉落流程
+  return { large: g.inventory.crystals.large, coins: g.inventory.coins };
+});
+await page.waitForTimeout(1800);
+const shadeBossAfter = await page.evaluate(() => ({
+  large: window.__game.inventory.crystals.large,
+  coins: window.__game.inventory.coins,
+  dead: window.__game.enemies.find((e) => e.kind === "shadeGuardian").isDead,
+}));
+shadeBossAfter.dead && shadeBossAfter.large >= shadeBossBefore.large + 2 && shadeBossAfter.coins >= shadeBossBefore.coins + 2
+  ? ok(`幽影守護者擊殺掉落(大結晶+${shadeBossAfter.large - shadeBossBefore.large}、貝拉幣+${shadeBossAfter.coins - shadeBossBefore.coins})`)
+  : fail(`幽影守護者掉落異常:${JSON.stringify({ shadeBossBefore, shadeBossAfter })}`);
+await page.screenshot({ path: "/tmp/archipelago-45v3-shade-boss.png" });
+
 // 45w. 三委託辦妥後,鎮長汐婆給予「星穹的呼喚」+ HUD 追蹤
 await page.evaluate(() => {
   const g = window.__game;

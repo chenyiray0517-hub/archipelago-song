@@ -402,24 +402,27 @@ function main(): void {
     new Enemy("solar", 2232, -38),
     new Enemy("solar", 2288, -38),
     new Enemy("solar", 2260, -14),
-    // 第三海・楓紅島(中心 4200,150):楓靈果凍(委託清剿,無守護者)
+    // 第三海・楓紅島(中心 4200,150):楓靈果凍(委託清剿)+ 楓魂守護者
     new Enemy("maple", 4180, 130),
     new Enemy("maple", 4222, 134),
     new Enemy("maple", 4166, 158),
     new Enemy("maple", 4234, 166),
     new Enemy("maple", 4196, 190),
-    // 第三海・幽影灣(中心 3780,-130):幽影果凍
+    new Enemy("mapleGuardian", 4200, 152),
+    // 第三海・幽影灣(中心 3780,-130):幽影果凍(委託清剿)+ 幽影守護者
     new Enemy("shade", 3760, -158),
     new Enemy("shade", 3814, -152),
     new Enemy("shade", 3746, -128),
     new Enemy("shade", 3812, -108),
     new Enemy("shade", 3776, -100),
-    // 第三海・星砂洲(中心 4230,-170):星砂果凍
+    new Enemy("shadeGuardian", 3780, -130),
+    // 第三海・星砂洲(中心 4230,-170):星砂果凍(委託清剿)+ 星砂守護者
     new Enemy("star", 4212, -192),
     new Enemy("star", 4248, -190),
     new Enemy("star", 4202, -170),
     new Enemy("star", 4258, -168),
     new Enemy("star", 4230, -140),
+    new Enemy("starGuardian", 4230, -170),
     // 第三海・星穹島(中心 3960,210):星砂果凍 + 星穹守護者(掉星芒石)
     new Enemy("star", 3940, 190),
     new Enemy("star", 3982, 192),
@@ -1959,6 +1962,8 @@ function main(): void {
       drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "astralGuardian") {
       drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
+    } else if (enemy.kind === "mapleGuardian" || enemy.kind === "shadeGuardian" || enemy.kind === "starGuardian") {
+      drops.push(new Pickup("large", x, z), new Pickup("large", x, z), new Pickup("coin", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "reef" || enemy.kind === "spore") {
       drops.push(new Pickup("medium", x, z), new Pickup("coin", x, z));
     } else if (enemy.kind === "windGuardian") {

@@ -2459,6 +2459,37 @@ const dgMap = await page.evaluate(() => window.__game.map.isOpen);
 !dgMap ? ok("副本中按 M 不開群島地圖") : fail("副本中不該能開地圖");
 if (dgMap) await page.keyboard.press("m");
 
+// 46f2. 副本全島仇恨:站島邊,同環最遠的眷屬(遠超一般索敵 12)也進 chase;
+// 不同環(第二環)的眷屬不受影響、維持 patrol
+await page.evaluate(() => {
+  const g = window.__game;
+  const r1 = g.dungeon.rings[0];
+  g.player.mesh.position.set(r1.cx + 46, 2, r1.cz); // 第一環島緣
+});
+await page.waitForTimeout(700);
+const dgAggro = await page.evaluate(() => {
+  const g = window.__game;
+  const d = g.dungeon;
+  const p = g.player.mesh.position;
+  const ring1 = g.enemies.slice(d.start, d.start + d.ringSize);
+  let far = ring1[0];
+  let farDist = 0;
+  for (const e of ring1) {
+    const dist = Math.hypot(e.mesh.position.x - p.x, e.mesh.position.z - p.z);
+    if (dist > farDist) {
+      farDist = dist;
+      far = e;
+    }
+  }
+  return { farDist, farState: far.state, ring2State: g.enemies[d.start + d.ringSize].state };
+});
+dgAggro.farDist > 12 && (dgAggro.farState === "chase" || dgAggro.farState === "windup")
+  ? ok(`副本全島仇恨:最遠眷屬(${dgAggro.farDist.toFixed(0)} 單位外)進入追擊`)
+  : fail(`全島仇恨異常:${JSON.stringify(dgAggro)}`);
+dgAggro.ring2State === "patrol"
+  ? ok("不同環的眷屬不跨島追擊(第二環維持巡邏)")
+  : fail(`第二環眷屬不該被仇恨:${dgAggro.ring2State}`);
+
 // 46g. 全清第一環 16 隻 → 傳送門開啟;站到門邊按 F → 傳送至第二環
 await page.evaluate(() => {
   const g = window.__game;

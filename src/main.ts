@@ -456,7 +456,9 @@ function main(): void {
   const RING_SIZE = DUNGEON_MOBS + 1;
   const dungeonStart = enemies.length;
   for (const ring of DUNGEON_RINGS) {
-    const opts = { hpMul: ring.hpMul, dmgMul: ring.dmgMul, noRespawn: true };
+    // 全島仇恨:同環敵人不論多遠都撲向玩家(島半徑 52+佈點 31 → 95 蓋滿全島);
+    // 環心相距 ~224,跨環最近也有 ~139,不會追到別的環
+    const opts = { hpMul: ring.hpMul, dmgMul: ring.dmgMul, noRespawn: true, chaseRange: 95, leashRange: 110 };
     for (let i = 0; i < DUNGEON_MOBS; i++) {
       // 固定環狀佈點(三圈半徑交錯),各端順序與座標一致
       const angle = (i / DUNGEON_MOBS) * Math.PI * 2;

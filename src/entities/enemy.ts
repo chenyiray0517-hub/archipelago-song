@@ -155,6 +155,10 @@ export interface EnemyOverrides {
   dmgMul?: number;
   /** 死亡後不自動重生(副本內擊殺不重生,重開副本時整批 reviveNow) */
   noRespawn?: boolean;
+  /** 索敵範圍覆寫(副本敵人全島仇恨;預設 CHASE_RANGE) */
+  chaseRange?: number;
+  /** 脫戰範圍覆寫(離家超過此距離放棄追擊;預設 LEASH_RANGE,須大於 chaseRange) */
+  leashRange?: number;
 }
 
 const CONFIGS: Record<EnemyKind, EnemyConfig> = {
@@ -347,11 +351,16 @@ export class Enemy {
 
   /** 死亡後不自動重生(副本敵人;由 reviveNow 整批復活) */
   private readonly noRespawn: boolean;
+  /** 索敵/脫戰範圍(副本敵人覆寫為全島仇恨;一般敵人用預設常數) */
+  private readonly chaseRange: number;
+  private readonly leashRange: number;
 
   constructor(kind: EnemyKind, x: number, z: number, overrides?: EnemyOverrides) {
     this.kind = kind;
     this.config = CONFIGS[kind];
     this.noRespawn = overrides?.noRespawn ?? false;
+    this.chaseRange = overrides?.chaseRange ?? CHASE_RANGE;
+    this.leashRange = overrides?.leashRange ?? LEASH_RANGE;
     // 第二海敵人大幅強化:依生成座標套區域倍率(副本敵人由 overrides 指定,不吃海域自動倍率)
     const sea = seaOf(x);
     const hpMul = overrides?.hpMul ?? (sea === 3 ? THIRD_SEA_HP_MUL : sea === 2 ? SECOND_SEA_HP_MUL : 1);
@@ -693,13 +702,13 @@ export class Enemy {
         // patrol / chase 決策
         if (playerDead) {
           this.state = "patrol";
-        } else if (distToHome > LEASH_RANGE) {
+        } else if (distToHome > this.leashRange) {
           this.state = "patrol";
           this.waypoint.copy(this.home);
         } else if (
           this.special &&
           this.specialCd <= 0 &&
-          distToPlayer <= CHASE_RANGE &&
+          distToPlayer <= this.chaseRange &&
           distToPlayer <= this.special.radius + 2
         ) {
           // 頭目特殊技能:鎖定開始蓄力
@@ -710,7 +719,7 @@ export class Enemy {
           this.stateT = WINDUP_TIME;
           this.attackCd = 1.8;
           break;
-        } else if (distToPlayer <= CHASE_RANGE) {
+        } else if (distToPlayer <= this.chaseRange) {
           this.state = "chase";
         } else {
           this.state = "patrol";

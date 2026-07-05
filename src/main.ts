@@ -119,7 +119,7 @@ import { MapOverlay } from "./ui/map";
 import { IslandView } from "./core/islandView";
 import { BagPanel } from "./ui/bag";
 import { DialogBox } from "./ui/dialog";
-import { ShopPanel } from "./ui/shop";
+import { ShopPanel, type ShopMerchant } from "./ui/shop";
 import { ForgePanel } from "./ui/forge";
 import { SettingsPanel } from "./ui/settings";
 import { FloatingTextManager, PickupFeed } from "./ui/floating";
@@ -1109,9 +1109,12 @@ function main(): void {
         "東方外海有座『熔砂島』,熱砂底下埋著遠古的岩漿。",
         "島心的『熔岩守護者』守著第七顆靈紋寶石——『溶岩石』。",
         "【任務】登上熔砂島,擊敗熔岩守護者,取得溶岩石!",
+        "南灘的商人珍珠賣的裝備,比第一海的貨色硬朗得多,先去補一身吧。",
         "想回第一海?在背包使用【第一海寶石】就行。",
       ];
     }, "talk", "barbarossa"),
+    // 第二海・港口鎮:商人珍珠(販售 tier 2 裝備;位置同圓圓的南灘攤位)
+    new Npc("商人珍珠", SECOND_SEA.x + 7, -46, 0xd88aa0, () => [], "shop", "mako"),
     // 第二海・珊瑚礁島:給予「礁海的低語」,珊瑚守護者掉落碧波石
     new Npc("珊瑚祭司娜瑪", 1768, -92, 0x3aa6c0, () => {
       const qa = quests.get("aqua");
@@ -1385,9 +1388,12 @@ function main(): void {
         "各有居民貼出了清剿委託,去幫幫他們吧!",
         "對了,西邊的『祭壇島』沉睡著古老的海祭壇——",
         "聽說向它奉獻經驗結晶,能開啟兇險的『靈脈試煉』,勇者可以去試試。",
+        "南灘的商人星塵藏著全群島最好的裝備,價錢也最傳說——值得。",
         "想回第一、二海?在背包使用對應的海寶石就行。",
       ];
     }, "talk", "anne"),
+    // 第三海・望潮鎮:商人星塵(販售 tier 3 裝備;位置同圓圓的南灘攤位)
+    new Npc("商人星塵", THIRD_SEA.x + 7, -46, 0x8a7ae0, () => [], "shop", "henry"),
     // 第三海・祭壇島:司祭(解說靈脈試煉的奉獻與規則)
     new Npc("司祭潮音", ALTAR_SITE.x + 7, ALTAR_SITE.z - 5, 0x5ae07a, () => {
       if (dungeonRun && ringPortalOpen[2])
@@ -1695,6 +1701,12 @@ function main(): void {
     doSave();
   }
 
+  // 三位商人共用同一面板:依 NPC 名稱切換招牌與裝備貨架(未列名者回退圓圓)
+  const SHOP_MERCHANTS: Record<string, ShopMerchant> = {
+    商人圓圓: { title: "商人圓圓的雜貨攤", tier: 1 },
+    商人珍珠: { title: "商人珍珠的裝備舖", tier: 2 },
+    商人星塵: { title: "商人星塵的星輝寶匣", tier: 3 },
+  };
   const shop = new ShopPanel(inventory, equipment, () => {
     audio.sfx("coin");
     doSave();
@@ -2406,7 +2418,7 @@ function main(): void {
         activateShrine(nearbyShrine);
       } else if (nearbyNpc && !player.isDead) {
         audio.sfx("ui");
-        if (nearbyNpc.role === "shop") shop.open();
+        if (nearbyNpc.role === "shop") shop.open(SHOP_MERCHANTS[nearbyNpc.name]);
         else if (nearbyNpc.role === "forge") forge.open();
         else dialog.open(nearbyNpc.name, nearbyNpc.getLines());
       }

@@ -348,6 +348,83 @@ await page.waitForTimeout(200);
 const shopClosed = await page.evaluate(() => !window.__game.shop.isOpen);
 shopClosed ? ok("商店關閉") : fail("商店未關閉");
 
+// 12b. 三位商人分櫃販售:圓圓只賣 tier1;珍珠(港口鎮)賣 tier2;星塵(望潮鎮)賣 tier3
+// 重開圓圓貨架:不該出現第二海裝備
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const tier1Shop = await page.evaluate(() => ({
+  tier: window.__game.shop.tier,
+  hasT2: !!document.querySelector('button[data-buyequip="corahelm"]'),
+  hasT1: !!document.querySelector('button[data-buyequip="cap"]'),
+}));
+tier1Shop.tier === 1 && tier1Shop.hasT1 && !tier1Shop.hasT2
+  ? ok("圓圓貨架僅 tier1(無第二海裝備)")
+  : fail(`圓圓貨架異常:${JSON.stringify(tier1Shop)}`);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+
+// 港口鎮・商人珍珠:F 開店 → 招牌/貨架 tier2 → 買熔岩重鎧
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(2007, 2, -47.5);
+  window.__game.inventory.coins = 20000;
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const tier2Shop = await page.evaluate(() => ({
+  open: window.__game.shop.isOpen,
+  tier: window.__game.shop.tier,
+  title: document.querySelector("#shop h3")?.textContent ?? "",
+  hasT1: !!document.querySelector('button[data-buyequip="cap"]'),
+}));
+tier2Shop.open && tier2Shop.tier === 2 && tier2Shop.title.includes("珍珠") && !tier2Shop.hasT1
+  ? ok(`商人珍珠開店(${tier2Shop.title},貨架僅 tier2)`)
+  : fail(`珍珠商店異常:${JSON.stringify(tier2Shop)}`);
+await page.click('button[data-buyequip="lavaplate"]');
+await page.waitForTimeout(200);
+const tier2Buy = await page.evaluate(() => ({
+  owned: window.__game.equipment.owned.includes("lavaplate"),
+  coins: window.__game.inventory.coins,
+}));
+tier2Buy.owned && tier2Buy.coins === 20000 - 3200
+  ? ok(`購買熔岩重鎧成功(🪙 20000 → ${tier2Buy.coins})`)
+  : fail(`珍珠購買異常:${JSON.stringify(tier2Buy)}`);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+
+// 望潮鎮・商人星塵:F 開店 → 貨架 tier3 → 買星輝冠冕
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(4007, 2, -47.5);
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const tier3Shop = await page.evaluate(() => ({
+  open: window.__game.shop.isOpen,
+  tier: window.__game.shop.tier,
+  title: document.querySelector("#shop h3")?.textContent ?? "",
+  hasT2: !!document.querySelector('button[data-buyequip="lavaplate"]'),
+}));
+tier3Shop.open && tier3Shop.tier === 3 && tier3Shop.title.includes("星塵") && !tier3Shop.hasT2
+  ? ok(`商人星塵開店(${tier3Shop.title},貨架僅 tier3)`)
+  : fail(`星塵商店異常:${JSON.stringify(tier3Shop)}`);
+await page.click('button[data-buyequip="starcrown"]');
+await page.waitForTimeout(200);
+const tier3Buy = await page.evaluate(() => ({
+  owned: window.__game.equipment.owned.includes("starcrown"),
+  coins: window.__game.inventory.coins,
+}));
+tier3Buy.owned && tier3Buy.coins === 20000 - 3200 - 5000
+  ? ok(`購買星輝冠冕成功(🪙 ${tier3Buy.coins + 5000} → ${tier3Buy.coins})`)
+  : fail(`星塵購買異常:${JSON.stringify(tier3Buy)}`);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+// 回到第一島出發點,恢復後續測試前提
+await page.evaluate(() => {
+  window.__game.player.mesh.position.set(7, 1, -49.5);
+});
+await page.waitForTimeout(300);
+
 // 13. R 喝藥水:扣血後使用 → 回血 + 藥水歸零
 const potionTest = await page.evaluate(() => {
   const p = window.__game.player;
@@ -883,7 +960,7 @@ Math.hypot(respawned.bx - -150, respawned.bz - 62) < 6
 
 // 40. 島嶼清剿任務:四座外島各有任務 NPC;接取 → 擊殺進度 → 回報領貝拉幣+結晶
 const npcCount = await page.evaluate(() => window.__game.npcs.length);
-npcCount === 24 ? ok("任務 NPC 到位(共 24 位,含兩位引路人、兩位鎮長、兩島祭司/守林人、二、三海九位委託人與祭壇島司祭)") : fail(`NPC 數量異常:${npcCount}`);
+npcCount === 26 ? ok("任務 NPC 到位(共 26 位,含兩位引路人、兩位鎮長、三位商人、兩島祭司/守林人、二、三海九位委託人與祭壇島司祭)") : fail(`NPC 數量異常:${npcCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(160, 1, 64); // 翠風林島獵人小藤旁

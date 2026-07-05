@@ -26,12 +26,22 @@ const GOODS: ShopItem[] = [
   { id: "medium", name: "中型經驗結晶", desc: "50 EXP", price: 120 },
 ];
 
+/** 商人設定:招牌 + 販售的裝備階級(藥水/結晶三家都賣) */
+export interface ShopMerchant {
+  title: string;
+  tier: 1 | 2 | 3;
+}
+
+const DEFAULT_MERCHANT: ShopMerchant = { title: "商人圓圓的雜貨攤", tier: 1 };
+
 /**
  * 商店面板:用貝拉幣購買藥水與經驗結晶(企劃書 4:商人販售結晶)。
+ * 同一面板供三位商人共用,open 時傳入 ShopMerchant 切換招牌與裝備貨架。
  */
 export class ShopPanel {
   private root: HTMLElement;
   private visible = false;
+  private merchant: ShopMerchant = DEFAULT_MERCHANT;
 
   constructor(
     private inventory: Inventory,
@@ -50,7 +60,13 @@ export class ShopPanel {
     return this.visible;
   }
 
-  open(): void {
+  /** 目前開啟的商人裝備階級(smoke 測試用) */
+  get tier(): 1 | 2 | 3 {
+    return this.merchant.tier;
+  }
+
+  open(merchant: ShopMerchant = DEFAULT_MERCHANT): void {
+    this.merchant = merchant;
     this.visible = true;
     this.root.classList.add("show");
     this.render();
@@ -70,7 +86,7 @@ export class ShopPanel {
       </div>`;
     }).join("");
 
-    const equipRows = EQUIPMENT.filter((def) => !this.equipment.has(def.id))
+    const equipRows = EQUIPMENT.filter((def) => (def.tier ?? 1) === this.merchant.tier && !this.equipment.has(def.id))
       .map(
         (def) => `<div class="item">
           <span>${def.name} <span class="desc">${def.desc}</span></span>
@@ -80,7 +96,7 @@ export class ShopPanel {
       .join("");
 
     this.root.innerHTML = `
-      <h3>商人圓圓的雜貨攤</h3>
+      <h3>${this.merchant.title}</h3>
       <div class="coins">持有 🪙 ${this.inventory.coins}｜🧪 ${this.inventory.potions}</div>
       ${rows}
       <h3 style="margin-top:14px;">裝備</h3>

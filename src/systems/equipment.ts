@@ -16,9 +16,11 @@ export interface EquipDef {
   desc: string;
   price: number;
   bonus: Partial<EquipBonus>;
+  /** 販售階級:省略 = 1(商人圓圓);2 = 第二海商人珍珠;3 = 第三海商人星塵 */
+  tier?: 2 | 3;
 }
 
-/** 裝備目錄(商人圓圓販售) */
+/** 裝備目錄(依 tier 分屬三位商人販售) */
 export const EQUIPMENT: EquipDef[] = [
   { id: "cap", name: "皮帽", slot: "head", desc: "防禦 +2", price: 80, bonus: { def: 2 } },
   { id: "helm", name: "鐵盔", slot: "head", desc: "防禦 +5", price: 300, bonus: { def: 5 } },
@@ -37,6 +39,18 @@ export const EQUIPMENT: EquipDef[] = [
   { id: "gauntlet", name: "猛擊護手", slot: "trinket", desc: "攻擊 +9、敏捷 +3", price: 1100, bonus: { atk: 9, agi: 3 } },
   { id: "amulet", name: "潮汐護符", slot: "trinket", desc: "生命 +40、靈力 +30", price: 900, bonus: { hp: 40, mp: 30 } },
   { id: "treepend", name: "世界樹墜飾", slot: "trinket", desc: "全能力 +3、生命 +30", price: 1600, bonus: { atk: 3, def: 3, hp: 30, mp: 15, agi: 3 } },
+  // ── 第二海裝備(港口鎮・商人珍珠;敵人 hp×2.5/dmg×2 帶)──
+  { id: "corahelm", name: "熔鱗盔", slot: "head", desc: "防禦 +14、靈力 +20", price: 2200, bonus: { def: 14, mp: 20 }, tier: 2 },
+  { id: "lavaplate", name: "熔岩重鎧", slot: "chest", desc: "防禦 +18、生命 +120", price: 3200, bonus: { def: 18, hp: 120 }, tier: 2 },
+  { id: "tideboots", name: "潮行靴", slot: "boots", desc: "敏捷 +12、防禦 +7", price: 2200, bonus: { agi: 12, def: 7 }, tier: 2 },
+  { id: "seaheart", name: "深海之心", slot: "trinket", desc: "生命 +90、靈力 +50", price: 2600, bonus: { hp: 90, mp: 50 }, tier: 2 },
+  { id: "corefist", name: "熔核護手", slot: "trinket", desc: "攻擊 +14、敏捷 +5", price: 2800, bonus: { atk: 14, agi: 5 }, tier: 2 },
+  // ── 第三海裝備(望潮鎮・商人星塵;敵人 hp×3.2/dmg×2.4 帶)──
+  { id: "starcrown", name: "星輝冠冕", slot: "head", desc: "防禦 +20、靈力 +40", price: 5000, bonus: { def: 20, mp: 40 }, tier: 3 },
+  { id: "astralmail", name: "星穹聖鎧", slot: "chest", desc: "防禦 +26、生命 +200", price: 7500, bonus: { def: 26, hp: 200 }, tier: 3 },
+  { id: "meteorboots", name: "流星之靴", slot: "boots", desc: "敏捷 +18、防禦 +10", price: 5000, bonus: { agi: 18, def: 10 }, tier: 3 },
+  { id: "starcore", name: "星核墜飾", slot: "trinket", desc: "攻擊 +20、敏捷 +8", price: 6500, bonus: { atk: 20, agi: 8 }, tier: 3 },
+  { id: "tidecharm", name: "望潮護符", slot: "trinket", desc: "全能力 +8、生命 +60", price: 8800, bonus: { atk: 8, def: 8, hp: 60, mp: 40, agi: 8 }, tier: 3 },
 ];
 
 export function equipDefOf(id: string): EquipDef | undefined {

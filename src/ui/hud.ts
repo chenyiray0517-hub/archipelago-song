@@ -128,6 +128,8 @@ export class Hud {
       aqua: "💧 碧波震盪(16 靈力,凍結)",
       life: "🌿 生命汲取(14 靈力,吸血)",
       astral: "✨ 星芒斬(16 靈力,三道星光)",
+      maple: "🍁 楓刃旋舞(15 靈力,六道楓刃灼燒)",
+      shadow: "🌑 幽影迴環(14 靈力,傷敵吸血)",
     };
     const parts: string[] = [];
     // 主動:依鍵位 1–6 順序列出,前綴對應數字鍵
@@ -149,6 +151,7 @@ export class Hud {
     const parts: string[] = [];
     if (fruits.isEquipped("thunder")) parts.push("⚡ 雷光果｜Z 連鎖閃電(16 靈力,麻痺)");
     if (fruits.isEquipped("gravity")) parts.push("🌀 引力果｜T 引力漩渦(18 靈力,聚怪)");
+    if (fruits.isEquipped("starfall")) parts.push("🌠 星辰果｜G 星隕雨(20 靈力,多目標)");
     const el = this.byId("hud-fruit");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");

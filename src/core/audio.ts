@@ -30,6 +30,9 @@ export type SfxName =
   | "aqua"
   | "life"
   | "astral"
+  | "maple"
+  | "shadow"
+  | "starfall"
   | "shrine"
   | "seaTravel"
   | "shrineTravel";
@@ -315,6 +318,24 @@ export class AudioEngine {
         this.tone("sine", 880, 1760, 0.24, 0.26);
         this.tone("sine", 1318.5, 2637, 0.2, 0.18, 0.06);
         this.noiseBurst("highpass", 2400, 5600, 0.18, 0.12);
+        break;
+      case "maple":
+        // 楓刃旋舞:旋刃風切掃頻 + 楓火劈啪
+        this.noiseBurst("bandpass", 900, 2600, 0.3, 0.22);
+        this.tone("sawtooth", 320, 780, 0.26, 0.12);
+        this.noiseBurst("highpass", 3000, 5000, 0.16, 0.1);
+        break;
+      case "shadow":
+        // 幽影迴環:暗影低鳴下沉 + 氣息噪音
+        this.tone("sine", 480, 110, 0.4, 0.3);
+        this.tone("triangle", 220, 90, 0.36, 0.18, 0.05);
+        this.noiseBurst("lowpass", 900, 160, 0.4, 0.18);
+        break;
+      case "starfall":
+        // 星隕雨:星光急墜滑音 + 落地悶響
+        this.tone("sine", 2200, 480, 0.32, 0.24);
+        this.tone("sine", 2960, 640, 0.28, 0.16, 0.08);
+        this.noiseBurst("lowpass", 700, 120, 0.42, 0.26);
         break;
       case "shrine":
         [659.25, 987.77, 1318.5].forEach((freq, i) =>

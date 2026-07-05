@@ -79,6 +79,8 @@ export class ForgePanel {
       ["aqua", "💧 碧波石(碧波震盪威力與凍結)", this.gems.aquaOwned],
       ["life", "🌿 翠生石(生命汲取威力與吸血)", this.gems.lifeOwned],
       ["astral", "✨ 星芒石(星芒斬威力)", this.gems.astralOwned],
+      ["maple", "🍁 楓燃石(楓刃旋舞威力與灼燒)", this.gems.mapleOwned],
+      ["shadow", "🌑 幽影石(幽影迴環威力與範圍)", this.gems.shadowOwned],
     ];
     const gemRows = GEM_INFO.filter(([, , owned]) => owned)
       .map(([gem, label]) => {
@@ -97,6 +99,7 @@ export class ForgePanel {
     const FRUIT_INFO: Array<[UpgradableFruit, string, boolean]> = [
       ["thunder", "⚡ 雷光果(連鎖閃電威力與跳數)", this.fruits.thunderOwned],
       ["gravity", "🌀 引力果(漩渦威力與範圍)", this.fruits.gravityOwned],
+      ["starfall", "🌠 星辰果(星隕雨威力與落數)", this.fruits.starfallOwned],
     ];
     const fruitRows = FRUIT_INFO.filter(([, , owned]) => owned)
       .map(([fruit, label]) => {

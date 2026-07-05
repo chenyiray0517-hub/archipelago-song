@@ -192,6 +192,8 @@ export class BagPanel {
       ["aqua", "💧", "碧波石"],
       ["life", "🌿", "翠生石"],
       ["astral", "✨", "星芒石"],
+      ["maple", "🍁", "楓燃石"],
+      ["shadow", "🌑", "幽影石"],
     ];
     const gemFull = !this.gems.hasFreeSlot();
     const gemGrid = gemSlots
@@ -218,6 +220,7 @@ export class BagPanel {
     const fruitSlots: Array<[FruitKey, string, string]> = [
       ["thunder", "⚡", "雷光果"],
       ["gravity", "🌀", "引力果"],
+      ["starfall", "🌠", "星辰果"],
     ];
     const fruitFull = !this.fruits.hasFreeSlot();
     const fruitGrid = fruitSlots

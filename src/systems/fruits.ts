@@ -7,6 +7,8 @@
 export const THUNDER_MP_COST = 16;
 /** 引力果引力漩渦靈力消耗 */
 export const GRAVITY_MP_COST = 18;
+/** 星辰果星隕雨靈力消耗 */
+export const STARFALL_MP_COST = 20;
 
 /** 連鎖閃電:主目標索敵範圍 */
 export const THUNDER_RANGE = 16;
@@ -20,15 +22,18 @@ export const VORTEX_FORWARD = 8;
 /** 引力漩渦:每次傷害結算間隔(秒) */
 export const VORTEX_TICK = 0.3;
 
+/** 星隕雨:索敵範圍(以玩家為中心) */
+export const STARFALL_RANGE = 14;
+
 /** 可升階的果實 */
-export type UpgradableFruit = "thunder" | "gravity";
+export type UpgradableFruit = "thunder" | "gravity" | "starfall";
 
 /** 所有靈樹果實 key */
-export type FruitKey = "thunder" | "gravity";
-/** 果實出戰格上限:唯有出戰中的果實技能才生效 */
-export const MAX_EQUIPPED_FRUITS = 2;
+export type FruitKey = "thunder" | "gravity" | "starfall";
+/** 果實出戰格上限:唯有出戰中的果實技能才生效(隨果實總數擴為 3,維持全數可出戰) */
+export const MAX_EQUIPPED_FRUITS = 3;
 /** 果實標準排序(背包顯示與舊存檔遷移預設裝備皆依此序) */
-export const FRUIT_ORDER: FruitKey[] = ["thunder", "gravity"];
+export const FRUIT_ORDER: FruitKey[] = ["thunder", "gravity", "starfall"];
 
 /** 升階費用:1→2 與 2→3(貝拉幣;比寶石貴一階,定位後期) */
 export const FRUIT_UPGRADE_COSTS = [500, 1100];
@@ -69,20 +74,36 @@ export function vortexDuration(level = 1): number {
   return 1 + 0.5 * level;
 }
 
+/** 星隕雨每發星隕傷害 */
+export function starfallDamage(spirit: number, level = 1): number {
+  return Math.round((22 + spirit * 2) * levelScale(level));
+}
+
+/** 星隕雨同時落下的星隕數(含主目標,3/4/5;每個目標各一發) */
+export function starfallCount(level = 1): number {
+  return 2 + level;
+}
+
 /** 靈樹果實持有狀態(與 GemBag 平行) */
 export class FruitBag {
   /** 雷光果:Z 連鎖閃電(索敵 + 跳躍 + 麻痺) */
   thunderOwned = false;
   /** 引力果:T 引力漩渦(吸引聚怪 + 持續傷害) */
   gravityOwned = false;
+  /** 星辰果:G 星隕雨(索敵多目標,各落一道星隕) */
+  starfallOwned = false;
   /** 各果實升階等級(1–3;持有後才有意義) */
-  levels: Record<UpgradableFruit, number> = { thunder: 1, gravity: 1 };
+  levels: Record<UpgradableFruit, number> = { thunder: 1, gravity: 1, starfall: 1 };
   /** 已出戰(裝備)的果實,依裝備順序;上限 MAX_EQUIPPED_FRUITS */
   equipped: FruitKey[] = [];
 
   /** 是否持有指定果實 */
   ownedOf(key: FruitKey): boolean {
-    return key === "thunder" ? this.thunderOwned : this.gravityOwned;
+    switch (key) {
+      case "thunder": return this.thunderOwned;
+      case "gravity": return this.gravityOwned;
+      case "starfall": return this.starfallOwned;
+    }
   }
 
   /** 是否已出戰 */

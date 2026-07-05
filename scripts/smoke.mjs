@@ -1636,6 +1636,102 @@ shadeBossAfter.dead && shadeBossAfter.large >= shadeBossBefore.large + 2 && shad
   : fail(`幽影守護者掉落異常:${JSON.stringify({ shadeBossBefore, shadeBossAfter })}`);
 await page.screenshot({ path: "/tmp/archipelago-45v3-shade-boss.png" });
 
+// 45v4. 幽影守護者掉落【幽影石】(45v3 擊殺時已磁吸拾取)→ 施放幽影迴環:靈力扣除 + 傷敵吸血
+const shadowOwned = await page.evaluate(() => window.__game.gems.shadowOwned);
+shadowOwned ? ok("幽影守護者掉落幽影石並拾取") : fail("幽影石未取得");
+const shadowCastBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.equipped = ["shadow"];
+  g.gems.ensureSlots();
+  g.player.mp = g.player.stats.maxMP;
+  g.player.hp = Math.round(g.player.stats.maxHP * 0.5); // 壓低血量以驗吸血
+  // 傳送到一隻活著的幽影果凍旁(迴環半徑內)
+  const mob = g.enemies.find((e) => e.kind === "shade" && !e.isDead);
+  const mp2 = mob.mesh.position;
+  g.player.mesh.position.set(mp2.x + 2, mp2.y, mp2.z);
+  return { mp: g.player.mp, hp: g.player.hp, mobHp: mob.hp, mobIdx: mob.netIndex };
+});
+await castGem("shadow");
+await page.waitForTimeout(300);
+const shadowCastAfter = await page.evaluate((idx) => {
+  const g = window.__game;
+  const mob = g.enemies[idx];
+  return { mp: g.player.mp, hp: g.player.hp, mobHp: mob.hp, dead: mob.isDead };
+}, shadowCastBefore.mobIdx);
+// 靈力在等待期間會自然回復,扣除量以「≥ 消耗 -1」判定
+shadowCastBefore.mp - shadowCastAfter.mp >= 13 && (shadowCastAfter.mobHp < shadowCastBefore.mobHp || shadowCastAfter.dead)
+  ? ok(`幽影迴環施放(靈力 -14,幽影果凍 ${shadowCastBefore.mobHp}→${shadowCastAfter.dead ? "擊殺" : shadowCastAfter.mobHp})`)
+  : fail(`幽影迴環異常:${JSON.stringify({ shadowCastBefore, shadowCastAfter })}`);
+shadowCastAfter.hp > shadowCastBefore.hp
+  ? ok(`幽影迴環吸血回復(HP ${shadowCastBefore.hp}→${shadowCastAfter.hp})`)
+  : fail(`幽影迴環未吸血:${JSON.stringify({ shadowCastBefore, shadowCastAfter })}`);
+// 回滿血再去打下一位守護者(半血站在頭目旁等掉落會被打死,卡住後續測試)
+await page.evaluate(() => {
+  window.__game.player.hp = window.__game.player.stats.maxHP;
+});
+
+// 45v5. 擊敗楓魂守護者 →【楓燃石】掉落拾取 → 施放楓刃旋舞:靈力扣除 + 六道劍氣
+await page.evaluate(() => {
+  const g = window.__game;
+  g.player.hp = g.player.stats.maxHP;
+  const guardian = g.enemies.find((e) => e.kind === "mapleGuardian");
+  const gp = guardian.mesh.position;
+  g.player.mesh.position.set(gp.x, gp.y, gp.z + 2);
+  guardian.burn(3, 99999);
+});
+await page.waitForTimeout(1800);
+const mapleOwned = await page.evaluate(() => window.__game.gems.mapleOwned);
+mapleOwned ? ok("楓魂守護者掉落楓燃石並拾取") : fail("楓燃石未取得");
+const mapleCastBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.equipped = ["maple"];
+  g.gems.ensureSlots();
+  g.player.mp = g.player.stats.maxMP;
+  return { mp: g.player.mp, waves: g.shockwaves.length };
+});
+await castGem("maple");
+const mapleCastAfter = await page.evaluate(() => ({
+  mp: window.__game.player.mp,
+  waves: window.__game.shockwaves.length,
+}));
+mapleCastBefore.mp - mapleCastAfter.mp >= 14 && mapleCastAfter.waves >= mapleCastBefore.waves + 6
+  ? ok(`楓刃旋舞施放(靈力 -15,全方位六道楓刃 +${mapleCastAfter.waves - mapleCastBefore.waves})`)
+  : fail(`楓刃旋舞異常:${JSON.stringify({ mapleCastBefore, mapleCastAfter })}`);
+
+// 45v6. 擊敗星砂守護者 → 靈樹果實【星辰果】掉落拾取 → G 星隕雨:靈力扣除 + 命中周圍敵人
+await page.evaluate(() => {
+  const g = window.__game;
+  g.player.hp = g.player.stats.maxHP;
+  const guardian = g.enemies.find((e) => e.kind === "starGuardian");
+  const gp = guardian.mesh.position;
+  g.player.mesh.position.set(gp.x, gp.y, gp.z + 2);
+  guardian.burn(3, 99999);
+});
+await page.waitForTimeout(1800);
+const starfallOwned = await page.evaluate(() => window.__game.fruits.starfallOwned);
+starfallOwned ? ok("星砂守護者掉落星辰果並拾取") : fail("星辰果未取得");
+const starfallCastBefore = await page.evaluate(() => {
+  const g = window.__game;
+  g.fruits.equipped = ["starfall"];
+  g.player.mp = g.player.stats.maxMP;
+  // 傳送到一隻活著的星砂果凍旁(索敵範圍 14 內)
+  const mob = g.enemies.find((e) => e.kind === "star" && !e.isDead);
+  const mp2 = mob.mesh.position;
+  g.player.mesh.position.set(mp2.x + 3, mp2.y, mp2.z);
+  return { mp: g.player.mp, mobHp: mob.hp, mobIdx: mob.netIndex };
+});
+await page.keyboard.press("g");
+await page.waitForTimeout(300);
+const starfallCastAfter = await page.evaluate((idx) => {
+  const g = window.__game;
+  const mob = g.enemies[idx];
+  return { mp: g.player.mp, hit: mob.hp < mob.maxHp || mob.isDead };
+}, starfallCastBefore.mobIdx);
+starfallCastBefore.mp - starfallCastAfter.mp >= 19 && starfallCastAfter.hit
+  ? ok("星隕雨施放(靈力 -20,星隕命中周圍敵人)")
+  : fail(`星隕雨異常:${JSON.stringify({ starfallCastBefore, starfallCastAfter })}`);
+await page.screenshot({ path: "/tmp/archipelago-45v6-starfall.png" });
+
 // 45w. 三委託辦妥後,鎮長汐婆給予「星穹的呼喚」+ HUD 追蹤
 await page.evaluate(() => {
   const g = window.__game;

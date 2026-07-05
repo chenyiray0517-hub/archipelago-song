@@ -74,6 +74,14 @@ import {
   ASTRAL_MP_COST,
   ASTRAL_SPREAD,
   astralDamage,
+  MAPLE_MP_COST,
+  MAPLE_WAVES,
+  mapleDamage,
+  mapleBurnDps,
+  SHADOW_MP_COST,
+  SHADOW_LEECH,
+  shadowDamage,
+  shadowRange,
   MAX_EQUIPPED_GEMS,
   GEM_ORDER,
   GEM_SLOT_COUNT,
@@ -94,6 +102,10 @@ import {
   vortexDamage,
   vortexRadius,
   vortexDuration,
+  STARFALL_MP_COST,
+  STARFALL_RANGE,
+  starfallDamage,
+  starfallCount,
   MAX_EQUIPPED_FRUITS,
   FRUIT_ORDER,
   type FruitKey,
@@ -561,6 +573,9 @@ function main(): void {
   const coralGuardian = enemies.find((e) => e.kind === "coralGuardian") as Enemy;
   const lifeGuardian = enemies.find((e) => e.kind === "lifeGuardian") as Enemy;
   const astralGuardian = enemies.find((e) => e.kind === "astralGuardian") as Enemy;
+  const mapleGuardian = enemies.find((e) => e.kind === "mapleGuardian") as Enemy;
+  const shadeGuardian = enemies.find((e) => e.kind === "shadeGuardian") as Enemy;
+  const starGuardian = enemies.find((e) => e.kind === "starGuardian") as Enemy;
 
   let pickups: Pickup[] = [];
   let shockwaves: Shockwave[] = [];
@@ -582,6 +597,9 @@ function main(): void {
   let aquaGemDropSpawned = false;
   let lifeGemDropSpawned = false;
   let astralGemDropSpawned = false;
+  let mapleGemDropSpawned = false;
+  let shadowGemDropSpawned = false;
+  let starfallFruitDropSpawned = false;
   let lavaTickT = 0;
   let diving = false;
   let voidDefeated = false;
@@ -1737,9 +1755,12 @@ function main(): void {
     aquaOwned: gems.aquaOwned,
     lifeOwned: gems.lifeOwned,
     astralOwned: gems.astralOwned,
+    mapleOwned: gems.mapleOwned,
+    shadowOwned: gems.shadowOwned,
     fruits: {
       thunderOwned: fruits.thunderOwned,
       gravityOwned: fruits.gravityOwned,
+      starfallOwned: fruits.starfallOwned,
       levels: { ...fruits.levels },
     },
     gemsEquipped: [...gems.equipped],
@@ -1770,9 +1791,12 @@ function main(): void {
     gems.aquaOwned = saved.aquaOwned ?? false;
     gems.lifeOwned = saved.lifeOwned ?? false;
     gems.astralOwned = saved.astralOwned ?? false;
+    gems.mapleOwned = saved.mapleOwned ?? false;
+    gems.shadowOwned = saved.shadowOwned ?? false;
     if (saved.fruits) {
       fruits.thunderOwned = saved.fruits.thunderOwned;
       fruits.gravityOwned = saved.fruits.gravityOwned;
+      fruits.starfallOwned = saved.fruits.starfallOwned ?? false;
       Object.assign(fruits.levels, saved.fruits.levels);
     }
     // 出戰配置:有存檔則沿用(過濾掉未持有的);舊檔無此欄位 → 依標準序自動裝備前 N 顆持有的
@@ -1937,6 +1961,18 @@ function main(): void {
     if (enemy === astralGuardian && !gems.astralOwned && !astralGemDropSpawned) {
       astralGemDropSpawned = true;
       drops.push(new Pickup("gem-astral", x, z));
+    }
+    if (enemy === mapleGuardian && !gems.mapleOwned && !mapleGemDropSpawned) {
+      mapleGemDropSpawned = true;
+      drops.push(new Pickup("gem-maple", x, z));
+    }
+    if (enemy === shadeGuardian && !gems.shadowOwned && !shadowGemDropSpawned) {
+      shadowGemDropSpawned = true;
+      drops.push(new Pickup("gem-shadow", x, z));
+    }
+    if (enemy === starGuardian && !fruits.starfallOwned && !starfallFruitDropSpawned) {
+      starfallFruitDropSpawned = true;
+      drops.push(new Pickup("fruit-starfall", x, z));
     }
     if (enemy.kind === "slime") quests.slimeKills++;
     quests.addKill(enemy.kind);
@@ -2581,7 +2617,7 @@ function main(): void {
           player.mesh.position,
           player.facing,
           lavaDamage(player.stats.attrs.spirit, gems.levels.lava),
-          { color: 0xff4a1c, lifetime: 0.5, speed: 17, burns: true },
+          { color: 0xff4a1c, lifetime: 0.5, speed: 17, burns: true, burnDps: lavaBurnDps(gems.levels.lava) },
         );
         scene.add(lavaWave.mesh);
         shockwaves.push(lavaWave);
@@ -2691,6 +2727,72 @@ function main(): void {
         fx.burst(front, 0x9ab8ff, 14, 6);
       }
 
+      // 楓燃石:楓刃旋舞(以自身為中心全方位射出六道楓紅劍氣,命中附加灼燒)
+      if (
+        gemCast("maple") &&
+        gems.isEquipped("maple") &&
+        !player.blocking &&
+        player.mp >= MAPLE_MP_COST
+      ) {
+        player.mp -= MAPLE_MP_COST;
+        audio.sfx("maple");
+        fx.shake(0.25, 0.2);
+        const dmg = mapleDamage(player.stats.attrs.spirit, gems.levels.maple);
+        const burnDps = mapleBurnDps(gems.levels.maple);
+        for (let i = 0; i < MAPLE_WAVES; i++) {
+          const dir = player.facing + (i / MAPLE_WAVES) * Math.PI * 2;
+          const bladeWave = new Shockwave(player.mesh.position, dir, dmg, {
+            color: 0xe8622c,
+            lifetime: 0.5,
+            speed: 18,
+            burns: true,
+            burnDps,
+          });
+          scene.add(bladeWave.mesh);
+          shockwaves.push(bladeWave);
+        }
+        fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 1), 0xe8622c, 18, 6);
+      }
+
+      // 幽影石:幽影迴環(自身周圍暗影領域 AoE,每命中一敵吸血回復自身)
+      if (
+        gemCast("shadow") &&
+        gems.isEquipped("shadow") &&
+        !player.blocking &&
+        player.mp >= SHADOW_MP_COST
+      ) {
+        player.mp -= SHADOW_MP_COST;
+        audio.sfx("shadow");
+        fx.shake(0.25, 0.2);
+        const dmg = shadowDamage(player.stats.attrs.spirit, gems.levels.shadow);
+        const range = shadowRange(gems.levels.shadow);
+        const shadowBurst = new GroundBurst(player.mesh.position.x, player.mesh.position.z, {
+          ringColor: 0x5a2aa0,
+          shardColor: 0x9a6ae8,
+          radius: range,
+          shardKind: "drop",
+          shardCount: 16,
+        });
+        scene.add(shadowBurst.object);
+        gemFx.push(shadowBurst);
+        for (const enemy of enemies) {
+          if (enemy.isDead) continue;
+          const toEnemy = new THREE.Vector3().subVectors(enemy.mesh.position, player.mesh.position);
+          toEnemy.y = 0;
+          if (toEnemy.length() > range) continue;
+          hitEnemy(enemy, dmg, toEnemy);
+          if (player.hp < player.stats.maxHP) {
+            const heal = Math.max(1, Math.round(dmg * SHADOW_LEECH));
+            player.hp = Math.min(player.stats.maxHP, player.hp + heal);
+            floats.spawn(
+              player.mesh.position.clone().setY(player.mesh.position.y + 2.6),
+              `+${heal}`,
+              "#b48ae8",
+            );
+          }
+        }
+      }
+
       // 雷光果:Z 連鎖閃電(索敵最近敵人,向鄰近敵人跳躍,傷害遞減 + 麻痺)
       if (
         input.wasPressed("KeyZ") &&
@@ -2780,6 +2882,44 @@ function main(): void {
         scene.add(vortex.mesh);
         vortexes.push(vortex);
         fx.burst(new THREE.Vector3(vx, groundHeight(vx, vz) + 1, vz), 0xb060ff, 14, 6);
+      }
+
+      // 星辰果:G 星隕雨(索敵範圍內由近到遠最多 N 個敵人,各落一道星隕;無目標不施放)
+      if (
+        input.wasPressed("KeyG") &&
+        fruits.isEquipped("starfall") &&
+        !player.blocking &&
+        player.mp >= STARFALL_MP_COST
+      ) {
+        const inRange = enemies.filter(
+          (e) => !e.isDead && e.mesh.position.distanceTo(player.mesh.position) <= STARFALL_RANGE,
+        );
+        inRange.sort(
+          (a, b) =>
+            a.mesh.position.distanceTo(player.mesh.position) -
+            b.mesh.position.distanceTo(player.mesh.position),
+        );
+        const targets = inRange.slice(0, starfallCount(fruits.levels.starfall));
+        if (targets.length > 0) {
+          player.mp -= STARFALL_MP_COST;
+          audio.sfx("starfall");
+          fx.shake(0.3, 0.24);
+          const dmg = starfallDamage(player.stats.attrs.spirit, fruits.levels.starfall);
+          for (const target of targets) {
+            const tp = target.mesh.position.clone();
+            const impact = new GroundBurst(tp.x, tp.z, {
+              ringColor: 0xffe08a,
+              shardColor: 0xfff4c8,
+              radius: 3,
+              shardKind: "drop",
+              shardCount: 10,
+            });
+            scene.add(impact.object);
+            gemFx.push(impact);
+            fx.burst(tp.clone().setY(tp.y + 2.5), 0xffe08a, 14, 6);
+            hitEnemy(target, dmg, new THREE.Vector3().subVectors(tp, player.mesh.position));
+          }
+        }
       }
     }
 
@@ -3024,7 +3164,7 @@ function main(): void {
         toEnemy.y = 0;
         const died = enemy.takeDamage(wave.damage, toEnemy);
         if (wave.freezes && !died) enemy.freeze(freezeDuration(gems.levels.frost));
-        if (wave.burns && !died) enemy.burn(LAVA_BURN_DURATION, lavaBurnDps(gems.levels.lava));
+        if (wave.burns && !died) enemy.burn(LAVA_BURN_DURATION, wave.burnDps);
         if (wave.leech > 0 && player.hp < player.stats.maxHP) {
           const heal = Math.max(1, Math.round(wave.damage * wave.leech));
           player.hp = Math.min(player.stats.maxHP, player.hp + heal);
@@ -3214,6 +3354,30 @@ function main(): void {
           hud.setGems(gems);
           audio.sfx("gem");
           hud.showToast("獲得靈紋寶石【星芒石】!用技能鍵(數字 1–6)扇形射出三道星光劍氣");
+          doSave();
+        } else if (pickup.kind === "gem-maple") {
+          feed.push("🍁 獲得靈紋寶石【楓燃石】");
+          gems.mapleOwned = true;
+          acquireGem("maple");
+          hud.setGems(gems);
+          audio.sfx("gem");
+          hud.showToast("獲得靈紋寶石【楓燃石】!用技能鍵(數字 1–6)全方位射出六道楓刃(灼燒)");
+          doSave();
+        } else if (pickup.kind === "gem-shadow") {
+          feed.push("🌑 獲得靈紋寶石【幽影石】");
+          gems.shadowOwned = true;
+          acquireGem("shadow");
+          hud.setGems(gems);
+          audio.sfx("gem");
+          hud.showToast("獲得靈紋寶石【幽影石】!用技能鍵(數字 1–6)展開幽影迴環,傷敵吸血");
+          doSave();
+        } else if (pickup.kind === "fruit-starfall") {
+          feed.push("🌠 獲得靈樹果實【星辰果】");
+          fruits.starfallOwned = true;
+          acquireFruit("starfall");
+          hud.setFruits(fruits);
+          audio.sfx("gem");
+          hud.showToast("獲得靈樹果實【星辰果】!按 G 召落星隕雨轟擊周圍敵人");
           doSave();
         } else if (pickup.kind === "fruit-thunder") {
           feed.push("⚡ 獲得靈樹果實【雷光果】");

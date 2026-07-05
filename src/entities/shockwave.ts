@@ -17,8 +17,10 @@ export class Shockwave {
   readonly damage: number;
   /** 命中時是否冰凍敵人(霜語晶冰箭) */
   readonly freezes: boolean;
-  /** 命中時是否點燃敵人(溶岩石熔岩噴發) */
+  /** 命中時是否點燃敵人(溶岩石熔岩噴發/楓燃石楓刃旋舞) */
   readonly burns: boolean;
+  /** 灼燒每秒傷害(burns 時生效;由施放端依寶石與升階帶入) */
+  readonly burnDps: number;
   /** 命中時回復玩家的吸血比率(0 = 無;翠生石生命汲取) */
   readonly leech: number;
 
@@ -44,12 +46,14 @@ export class Shockwave {
       speed?: number;
       freezes?: boolean;
       burns?: boolean;
+      burnDps?: number;
       leech?: number;
     } = {},
   ) {
     this.damage = damage;
     this.freezes = options.freezes ?? false;
     this.burns = options.burns ?? false;
+    this.burnDps = options.burnDps ?? 0;
     this.leech = options.leech ?? 0;
     this.lifetime = options.lifetime ?? 0.9;
     this.speed = options.speed ?? 22;

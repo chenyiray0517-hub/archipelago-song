@@ -42,10 +42,16 @@ export interface SaveData {
   lifeOwned?: boolean;
   /** 星芒石持有狀態(第三海・星穹島取得) */
   astralOwned?: boolean;
-  /** 靈樹果實持有狀態與升階(雷光果/引力果) */
+  /** 楓燃石持有狀態(第三海・楓紅島,楓魂守護者掉落) */
+  mapleOwned?: boolean;
+  /** 幽影石持有狀態(第三海・幽影灣,幽影守護者掉落) */
+  shadowOwned?: boolean;
+  /** 靈樹果實持有狀態與升階(雷光果/引力果/星辰果) */
   fruits?: {
     thunderOwned: boolean;
     gravityOwned: boolean;
+    /** 星辰果(第三海・星砂洲,星砂守護者掉落;舊檔無此欄位) */
+    starfallOwned?: boolean;
     levels: Record<UpgradableFruit, number>;
   };
   /** 出戰中的靈紋寶石(上限 4;舊檔無此欄位時依持有順序遷移) */

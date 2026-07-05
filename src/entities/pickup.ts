@@ -16,8 +16,11 @@ export type PickupKind =
   | "gem-aqua"
   | "gem-life"
   | "gem-astral"
+  | "gem-maple"
+  | "gem-shadow"
   | "fruit-thunder"
-  | "fruit-gravity";
+  | "fruit-gravity"
+  | "fruit-starfall";
 
 const MAGNET_RANGE = 6;
 const COLLECT_RANGE = 0.9;
@@ -57,7 +60,9 @@ export class Pickup {
       kind === "gem-lava" ||
       kind === "gem-aqua" ||
       kind === "gem-life" ||
-      kind === "gem-astral"
+      kind === "gem-astral" ||
+      kind === "gem-maple" ||
+      kind === "gem-shadow"
     ) {
       // 靈紋寶石:大顆八面體,強烈發光
       const GEM_COLORS = {
@@ -71,17 +76,20 @@ export class Pickup {
         "gem-aqua": 0x3ad8d8,
         "gem-life": 0x5ae85a,
         "gem-astral": 0x9ab8ff,
+        "gem-maple": 0xe8622c,
+        "gem-shadow": 0x7a4ae0,
       } as const;
       const gemColor = GEM_COLORS[kind];
       this.mesh = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.75),
         toonMaterial(gemColor, { emissive: gemColor, emissiveIntensity: 0.9 }),
       );
-    } else if (kind === "fruit-thunder" || kind === "fruit-gravity") {
+    } else if (kind === "fruit-thunder" || kind === "fruit-gravity" || kind === "fruit-starfall") {
       // 靈樹果實:渾圓發光的莓果(刻意有別於寶石的八面體)
       const FRUIT_COLORS = {
         "fruit-thunder": 0xfff060,
         "fruit-gravity": 0xb060ff,
+        "fruit-starfall": 0xffe08a,
       } as const;
       const fruitColor = FRUIT_COLORS[kind];
       this.mesh = new THREE.Mesh(

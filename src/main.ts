@@ -554,6 +554,12 @@ function main(): void {
     ringPortalOpen.fill(false);
     for (const portal of ringPortals) portal.visible = false;
     for (let i = dungeonStart; i < enemies.length; i++) enemies[i].reviveNow();
+    // 副本重生點隨每次奉獻重置(副本進度不保留;shrines 於後方宣告,此函式僅於執行期呼叫)
+    for (const shrine of shrines) {
+      if (!shrine.active || !inDungeonSea(shrine.def.z)) continue;
+      shrine.setActive(false);
+      shrineActiveIds.splice(shrineActiveIds.indexOf(shrine.def.id), 1);
+    }
     if (bag.isOpen) bag.toggle();
     map.close();
     sailing = false;
@@ -1476,24 +1482,28 @@ function main(): void {
   for (const shrine of shrines) scene.add(shrine.mesh);
   const shrineActiveIds: string[] = [];
 
-  /** 某重生點 id 屬於哪片海域(依石碑座標) */
-  const seaOfShrine = (id: string): 1 | 2 | 3 => {
+  /** 重生點分區:三海各自一區、試煉副本自成一區(4);上限/死亡選單/背包傳送互不跨區 */
+  const shrineZoneOf = (x: number, z: number): 1 | 2 | 3 | 4 => (inDungeonSea(z) ? 4 : seaOf(x));
+
+  /** 某重生點 id 屬於哪個分區(依石碑座標) */
+  const seaOfShrine = (id: string): 1 | 2 | 3 | 4 => {
     const s = shrines.find((sh) => sh.def.id === id);
-    return s ? seaOf(s.def.x) : 1;
+    return s ? shrineZoneOf(s.def.x, s.def.z) : 1;
   };
 
   const activateShrine = (shrine: Shrine): void => {
-    const sea = seaOf(shrine.def.x);
+    const sea = shrineZoneOf(shrine.def.x, shrine.def.z);
     // 同海域超過上限則替換該海最早設置的(跨海不互相影響)
+    const zoneName = sea === 4 ? "試煉" : "本海";
     const sameSeaIds = shrineActiveIds.filter((id) => seaOfShrine(id) === sea);
-    let note = `(本海 ${Math.min(sameSeaIds.length + 1, MAX_ACTIVE_SHRINES)}/${MAX_ACTIVE_SHRINES})`;
+    let note = `(${zoneName} ${Math.min(sameSeaIds.length + 1, MAX_ACTIVE_SHRINES)}/${MAX_ACTIVE_SHRINES})`;
     if (sameSeaIds.length >= MAX_ACTIVE_SHRINES) {
       const oldestId = sameSeaIds[0];
       shrineActiveIds.splice(shrineActiveIds.indexOf(oldestId), 1);
       const oldest = shrines.find((s) => s.def.id === oldestId);
       if (oldest) {
         oldest.setActive(false);
-        note = `(已替換本海【${oldest.def.island}】)`;
+        note = `(已替換${zoneName}【${oldest.def.island}】)`;
       }
     }
     shrineActiveIds.push(shrine.def.id);
@@ -1545,7 +1555,7 @@ function main(): void {
   /** 顯示死亡畫面(海灘 + 當前海域已啟用的重生點供選擇) */
   const showDeathScreen = (): void => {
     const options: { id: string; label: string }[] = [];
-    const sea = seaOf(player.mesh.position.x);
+    const sea = shrineZoneOf(player.mesh.position.x, player.mesh.position.z);
     for (const id of shrineActiveIds) {
       if (seaOfShrine(id) !== sea) continue; // 只列當前海域的重生點
       const shrine = shrines.find((s) => s.def.id === id);
@@ -1620,9 +1630,9 @@ function main(): void {
     },
     (sea) => travelTo(sea),
     () =>
-      // 背包傳送清單只列出「當前所在海域」的重生點(跨海要用海寶石)
+      // 背包傳送清單只列出「當前所在分區」的重生點(跨海要用海寶石;副本自成一區)
       shrineActiveIds
-        .filter((id) => seaOfShrine(id) === seaOf(player.mesh.position.x))
+        .filter((id) => seaOfShrine(id) === shrineZoneOf(player.mesh.position.x, player.mesh.position.z))
         .map((id) => ({
           id,
           island: shrines.find((s) => s.def.id === id)?.def.island ?? id,
@@ -1759,7 +1769,8 @@ function main(): void {
     voidDefeated,
     gemLevels: { ...gems.levels },
     equipment: equipment.serialize(),
-    shrines: [...shrineActiveIds],
+    // 試煉副本的重生點不入存檔(副本進度不保留,每次奉獻重置)
+    shrines: shrineActiveIds.filter((id) => seaOfShrine(id) !== 4),
     seaGems: {
       first: inventory.firstSeaGem,
       second: inventory.secondSeaGem,

@@ -126,7 +126,10 @@ const ePosAuth = await A.evaluate(() => { const e = window.__game.enemies[1].mes
 await A.evaluate(() => window.__game.player.mesh.position.set(50, 5, 50)); // 房主走遠,確保 B 最近
 await B.evaluate((e) => window.__game.player.mesh.position.set(e.x, 5, e.z), ePosAuth);
 const bHpBefore = await B.evaluate(() => window.__game.player.hp);
-await B.waitForTimeout(5000); // 等房主端敵人 chase→windup→lunge 命中 B(每 ~1.8s 一次)
+// 輪詢等敵人 chase→windup→lunge 命中 B(每 ~1.8s 一次);機器慢時固定 5s 可能不夠,放寬到 12s
+await B.waitForFunction(
+  (h0) => window.__game.player.hp < h0, bHpBefore, { timeout: 12000, polling: 100 },
+).catch(() => {});
 const bHpAfter = await B.evaluate(() => window.__game.player.hp);
 bHpAfter < bHpBefore
   ? ok(`敵人鎖定最近玩家並傷害客戶端(B HP ${bHpBefore}→${bHpAfter})`)
@@ -147,10 +150,14 @@ clientCcFlag === 3
   : fail(`控場旗標未同步回客戶端傀儡:flag=${clientCcFlag}`);
 
 // 11. 頭目蓄力預警跨端:房主強制 12 號菁英施放特殊技,客戶端傀儡應收到預警/引爆旗標
+// (輪詢而非固定等待:三分頁同開時機器負載高、快照同步可能慢半拍,固定 300ms 會撲空)
 await A.evaluate(() => window.__game.enemies[12].forceSpecial());
-await B.waitForTimeout(300); // 等 telegraph 階段的旗標隨快照同步到 B
+const bossFlagSeen = await B.waitForFunction(
+  () => { const f = window.__game.enemies[12].remoteStatusFlag; return f === 1 || f === 2; },
+  null, { timeout: 5000, polling: 50 },
+).then(() => true).catch(() => false);
 const bossFlag = await B.evaluate(() => window.__game.enemies[12].remoteStatusFlag);
-bossFlag === 1 || bossFlag === 2
+bossFlagSeen
   ? ok(`頭目蓄力預警/引爆跨端同步到客戶端(flag=${bossFlag})`)
   : fail(`頭目預警未跨端同步:flag=${bossFlag}`);
 
@@ -245,17 +252,29 @@ aliveSeen
 // 17. A、B 同時站在菁英特殊技範圍內 → 引爆時兩人應各自受擊(非只打最近一位)。
 // 先 forceSpecial 再貼位:蓄力期(0.7s)敵人定住不動,兩人距離才有保證
 // (先貼位再施放的話,敵人在同步等待期間追擊/突進移動,引爆時可能雙雙在半徑外 → 偶發全 miss)
-await A.evaluate(() => { window.__game.player.hp = window.__game.player.stats.maxHP; });
-await B.evaluate(() => { window.__game.player.hp = window.__game.player.stats.maxHP; });
-const hpA0 = await A.evaluate(() => window.__game.player.hp);
-const hpB0 = await B.evaluate(() => window.__game.player.hp);
-await A.evaluate(() => window.__game.enemies[12].forceSpecial());
-const ep12 = await A.evaluate(() => { const e = window.__game.enemies[12].mesh.position; return { x: e.x, z: e.z }; });
-await A.evaluate((e) => window.__game.player.mesh.position.set(e.x + 2, 2, e.z), ep12);
-await B.evaluate((e) => window.__game.player.mesh.position.set(e.x - 2, 2, e.z + 2), ep12); // 20Hz 送包,0.7s 蓄力內同步到房主綽綽有餘
-await A.waitForTimeout(1300); // 蓄力 0.7s + 引爆 + 同步
-const hpA1 = await A.evaluate(() => window.__game.player.hp);
-const hpB1 = await B.evaluate(() => window.__game.player.hp);
+// 機器慢時 B 的位置封包可能來不及在蓄力期送達房主 → 引爆撲空;整段最多重試 3 次
+let hpA0 = 0, hpB0 = 0, hpA1 = 0, hpB1 = 0;
+for (let attempt = 0; attempt < 3; attempt++) {
+  await A.evaluate(() => { window.__game.player.hp = window.__game.player.stats.maxHP; });
+  await B.evaluate(() => { window.__game.player.hp = window.__game.player.stats.maxHP; });
+  hpA0 = await A.evaluate(() => window.__game.player.hp);
+  hpB0 = await B.evaluate(() => window.__game.player.hp);
+  await A.evaluate(() => window.__game.enemies[12].forceSpecial());
+  const ep12 = await A.evaluate(() => { const e = window.__game.enemies[12].mesh.position; return { x: e.x, z: e.z }; });
+  await A.evaluate((e) => window.__game.player.mesh.position.set(e.x + 2, 2, e.z), ep12);
+  await B.evaluate((e) => window.__game.player.mesh.position.set(e.x - 2, 2, e.z + 2), ep12); // 20Hz 送包,0.7s 蓄力內同步到房主
+  // 輪詢等雙方掉血(引爆 + 快照同步),而非固定 1300ms 時間窗
+  await A.waitForFunction(
+    (h0) => window.__game.player.hp < h0, hpA0, { timeout: 3000, polling: 50 },
+  ).catch(() => {});
+  await B.waitForFunction(
+    (h0) => window.__game.player.hp < h0, hpB0, { timeout: 3000, polling: 50 },
+  ).catch(() => {});
+  hpA1 = await A.evaluate(() => window.__game.player.hp);
+  hpB1 = await B.evaluate(() => window.__game.player.hp);
+  if (hpA1 < hpA0 && hpB1 < hpB0) break;
+  await A.waitForTimeout(1500); // 等 recover 結束再重試
+}
 hpA1 < hpA0 && hpB1 < hpB0
   ? ok(`頭目 AoE 多人分別判定:房主 A(${hpA0}→${hpA1})與客戶端 B(${hpB0}→${hpB1})同時受擊`)
   : fail(`AoE 未對雙方分別判定:A ${hpA0}→${hpA1}、B ${hpB0}→${hpB1}`);

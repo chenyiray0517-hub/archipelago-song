@@ -893,7 +893,7 @@ dayState.mode === "day" && !dayState.rain
 
 // 38. 重生點:每島一座石碑;F 設置(上限 2,第三座替換最早的)
 const shrineCount = await page.evaluate(() => window.__game.shrines.length);
-shrineCount === 17 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7 + 第三海 5,共 17 座)") : fail(`石碑數量異常:${shrineCount}`);
+shrineCount === 20 ? ok("每座島各一座重生石碑(第一海 5 + 第二海 7 + 第三海 5 + 試煉副本 3,共 20 座)") : fail(`石碑數量異常:${shrineCount}`);
 
 await page.evaluate(() => {
   window.__game.player.mesh.position.set(-9, 1, -46); // 曙光嶼石碑旁
@@ -2566,6 +2566,64 @@ dgAggro.farDist > 12 && (dgAggro.farState === "chase" || dgAggro.farState === "w
 dgAggro.ring2State === "patrol"
   ? ok("不同環的眷屬不跨島追擊(第二環維持巡邏)")
   : fail(`第二環眷屬不該被仇恨:${dgAggro.ring2State}`);
+
+// 46f3. 副本重生點:F 啟用試煉之環・壹石碑(不入存檔)→ 死亡選單列出 → 原地復活 → 再奉獻重置
+await page.evaluate(() => {
+  const g = window.__game;
+  g.player.hp = g.player.stats.maxHP;
+  g.player.mesh.position.set(3806, 3, -3024); // 石碑前一步
+});
+await page.waitForTimeout(400);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const trialShrine = await page.evaluate(() => ({
+  ids: window.__game.shrineIds,
+  saved: JSON.parse(localStorage.getItem("archipelago-save-v1") ?? "{}").shrines ?? [],
+}));
+trialShrine.ids.includes("trial1") && !trialShrine.saved.includes("trial1")
+  ? ok("F 啟用試煉之環・壹重生點(且不寫入存檔)")
+  : fail(`副本重生點異常:${JSON.stringify(trialShrine)}`);
+
+// 死亡需走傷害管線才會觸發死亡畫面:hp 壓 1 後站到環心,讓守護者/眷屬打死
+await page.evaluate(() => {
+  const g = window.__game;
+  g.player.hp = 1;
+  g.player.mesh.position.set(3820, 3, -3060);
+});
+let dgDead = false;
+for (let i = 0; i < 24 && !dgDead; i++) {
+  await page.waitForTimeout(500);
+  dgDead = await page.evaluate(
+    () => document.getElementById("death")?.classList.contains("show") ?? false,
+  );
+}
+const dgBtns = await page.evaluate(() =>
+  [...document.querySelectorAll("#death button")].map((b) => b.dataset.respawn),
+);
+dgDead && dgBtns.includes("trial1") && !dgBtns.includes("watch")
+  ? ok(`副本死亡選單含試煉重生點、不混第三海石碑(${dgBtns.join("/")})`)
+  : fail(`副本死亡選單異常:${JSON.stringify({ dgDead, dgBtns })}`);
+await page.click('#death button[data-respawn="trial1"]');
+await page.waitForTimeout(400);
+const dgRespawn = await page.evaluate(() => ({
+  x: window.__game.player.mesh.position.x,
+  z: window.__game.player.mesh.position.z,
+  hp: window.__game.player.hp,
+}));
+Math.hypot(dgRespawn.x - 3806, dgRespawn.z - -3024) < 4 && dgRespawn.hp > 0
+  ? ok(`在試煉之環・壹重生點復活(${dgRespawn.x.toFixed(0)},${dgRespawn.z.toFixed(0)})`)
+  : fail(`副本重生異常:${JSON.stringify(dgRespawn)}`);
+
+await page.evaluate(() => {
+  const g = window.__game;
+  g.inventory.crystals.small = 3;
+  g.inventory.coins = Math.max(g.inventory.coins, 200);
+  g.player.hp = g.player.stats.maxHP;
+  g.dungeon.offer(); // 再次奉獻:副本重生點應重置
+});
+await page.waitForTimeout(300);
+const trialReset = await page.evaluate(() => window.__game.shrineIds.includes("trial1"));
+!trialReset ? ok("再次奉獻後副本重生點重置") : fail("副本重生點未隨奉獻重置");
 
 // 46g. 全清第一環 16 隻 → 傳送門開啟;站到門邊按 F → 傳送至第二環
 await page.evaluate(() => {

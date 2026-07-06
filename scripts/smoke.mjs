@@ -787,6 +787,27 @@ const bagGems = await page.evaluate(() => {
 bagGems.hasPanel && bagGems.slots >= 6
   ? ok(`背包寶石盤顯示(${bagGems.slots} 格)`)
   : fail(`寶石盤異常:${JSON.stringify(bagGems)}`);
+
+// 31b. 專屬圖示:寶石盤/果實格全用程式繪製圖示(canvas data URL),不再用 emoji
+const bagIcons = await page.evaluate(() => {
+  const bag = document.getElementById("bag");
+  const icons = [...(bag?.querySelectorAll("img.px-icon") ?? [])];
+  const ids = new Set(icons.map((i) => i.dataset.icon));
+  const slotText = [...(bag?.querySelectorAll(".gem-slot") ?? [])]
+    .map((el) => el.textContent ?? "")
+    .join("")
+    .replace(/[✅]/gu, ""); // 出戰勾勾非物品圖示,排除
+  return {
+    count: icons.length,
+    hasFlame: ids.has("flame"),
+    hasThunder: ids.has("thunder"),
+    allDrawn: icons.every((i) => i.src.startsWith("data:image/png")),
+    emojiLeft: /[\u{1F300}-\u{1FAFF}]/u.test(slotText),
+  };
+});
+bagIcons.count >= 15 && bagIcons.hasFlame && bagIcons.hasThunder && bagIcons.allDrawn && !bagIcons.emojiLeft
+  ? ok(`寶石/果實皆為程式繪製專屬圖示(${bagIcons.count} 張,無 emoji)`)
+  : fail(`圖示異常:${JSON.stringify(bagIcons)}`);
 await page.screenshot({ path: "/tmp/archipelago-17-gembag.png" });
 await page.keyboard.press("Tab");
 await page.waitForTimeout(200);
@@ -805,6 +826,13 @@ await page.evaluate(() => {
 await page.waitForTimeout(400);
 await page.keyboard.press("f"); // 開商店
 await page.waitForTimeout(300);
+// 32b. 商店貨架每件裝備前有專屬圖示
+const shopIcons = await page.evaluate(
+  () => document.querySelectorAll("#shop img.px-icon").length,
+);
+shopIcons >= 8
+  ? ok(`商店貨架裝備皆有專屬圖示(${shopIcons} 張)`)
+  : fail(`商店圖示數異常:${shopIcons}`);
 await page.click('button[data-buyequip="helm"]');
 await page.waitForTimeout(200);
 const boughtHelm = await page.evaluate(() => window.__game.equipment.has("helm"));
@@ -837,6 +865,13 @@ await page.evaluate(() => {
 await page.waitForTimeout(400);
 await page.keyboard.press("f");
 await page.waitForTimeout(300);
+// 34b. 鍛造坊寶石/果實列表有專屬圖示
+const forgeIcons = await page.evaluate(
+  () => document.querySelectorAll("#forge img.px-icon").length,
+);
+forgeIcons >= 1
+  ? ok(`鍛造坊升階列表有專屬圖示(${forgeIcons} 張)`)
+  : fail(`鍛造坊圖示數異常:${forgeIcons}`);
 const coinsBeforeUp = await page.evaluate(() => window.__game.inventory.coins);
 await page.click('button[data-gemup="flame"]');
 await page.waitForTimeout(200);

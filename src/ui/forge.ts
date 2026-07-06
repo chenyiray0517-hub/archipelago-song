@@ -11,6 +11,7 @@ import {
   type FruitBag,
   type UpgradableFruit,
 } from "../systems/fruits";
+import { iconImg } from "./icons";
 
 const FORGE_CSS = `
 #forge { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 380px; background: rgba(26, 16, 10, 0.95); border: 1px solid rgba(255,170,80,0.3); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
@@ -70,17 +71,17 @@ export class ForgePanel {
     const cost = maxed ? 0 : UPGRADE_COSTS[level];
 
     const GEM_INFO: Array<[UpgradableGem, string, boolean]> = [
-      ["flame", "🔥 焰心石(火焰斬威力)", this.gems.flameOwned],
-      ["wind", "🌪️ 風語石(滑翔/三段跳)", this.gems.windOwned],
-      ["earth", "🪨 地殼石(地震波威力與範圍)", this.gems.earthOwned],
-      ["frost", "❄️ 霜語晶(冰箭威力與凍結時間)", this.gems.frostOwned],
-      ["void", "🌀 虛空石(瞬移距離)", this.gems.voidOwned],
-      ["lava", "🌋 溶岩石(熔岩噴發威力與灼燒)", this.gems.lavaOwned],
-      ["aqua", "💧 碧波石(碧波震盪威力與凍結)", this.gems.aquaOwned],
-      ["life", "🌿 翠生石(生命汲取威力與吸血)", this.gems.lifeOwned],
-      ["astral", "✨ 星芒石(星芒斬威力)", this.gems.astralOwned],
-      ["maple", "🍁 楓燃石(楓刃旋舞威力與灼燒)", this.gems.mapleOwned],
-      ["shadow", "🌑 幽影石(幽影迴環威力與範圍)", this.gems.shadowOwned],
+      ["flame", "焰心石(火焰斬威力)", this.gems.flameOwned],
+      ["wind", "風語石(滑翔/三段跳)", this.gems.windOwned],
+      ["earth", "地殼石(地震波威力與範圍)", this.gems.earthOwned],
+      ["frost", "霜語晶(冰箭威力與凍結時間)", this.gems.frostOwned],
+      ["void", "虛空石(瞬移距離)", this.gems.voidOwned],
+      ["lava", "溶岩石(熔岩噴發威力與灼燒)", this.gems.lavaOwned],
+      ["aqua", "碧波石(碧波震盪威力與凍結)", this.gems.aquaOwned],
+      ["life", "翠生石(生命汲取威力與吸血)", this.gems.lifeOwned],
+      ["astral", "星芒石(星芒斬威力)", this.gems.astralOwned],
+      ["maple", "楓燃石(楓刃旋舞威力與灼燒)", this.gems.mapleOwned],
+      ["shadow", "幽影石(幽影迴環威力與範圍)", this.gems.shadowOwned],
     ];
     const gemRows = GEM_INFO.filter(([, , owned]) => owned)
       .map(([gem, label]) => {
@@ -88,7 +89,7 @@ export class ForgePanel {
         const gemMaxed = lv >= GEM_MAX_LEVEL;
         const gemCost = gemMaxed ? 0 : GEM_UPGRADE_COSTS[lv - 1];
         return `<div class="info" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span>${label} Lv.${lv}</span>
+          <span>${iconImg(gem, 16)} ${label} Lv.${lv}</span>
           <button data-gemup="${gem}" ${gemMaxed || this.inventory.coins < gemCost ? "disabled" : ""}>
             ${gemMaxed ? "已滿階" : `升階(🪙 ${gemCost})`}
           </button>
@@ -97,9 +98,9 @@ export class ForgePanel {
       .join("");
 
     const FRUIT_INFO: Array<[UpgradableFruit, string, boolean]> = [
-      ["thunder", "⚡ 雷光果(連鎖閃電威力與跳數)", this.fruits.thunderOwned],
-      ["gravity", "🌀 引力果(漩渦威力與範圍)", this.fruits.gravityOwned],
-      ["starfall", "🌠 星辰果(星隕雨威力與落數)", this.fruits.starfallOwned],
+      ["thunder", "雷光果(連鎖閃電威力與跳數)", this.fruits.thunderOwned],
+      ["gravity", "引力果(漩渦威力與範圍)", this.fruits.gravityOwned],
+      ["starfall", "星辰果(星隕雨威力與落數)", this.fruits.starfallOwned],
     ];
     const fruitRows = FRUIT_INFO.filter(([, , owned]) => owned)
       .map(([fruit, label]) => {
@@ -107,7 +108,7 @@ export class ForgePanel {
         const fruitMaxed = lv >= FRUIT_MAX_LEVEL;
         const fruitCost = fruitMaxed ? 0 : FRUIT_UPGRADE_COSTS[lv - 1];
         return `<div class="info" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span>${label} Lv.${lv}</span>
+          <span>${iconImg(fruit, 16)} ${label} Lv.${lv}</span>
           <button data-fruitup="${fruit}" ${fruitMaxed || this.inventory.coins < fruitCost ? "disabled" : ""}>
             ${fruitMaxed ? "已滿階" : `升階(🪙 ${fruitCost})`}
           </button>

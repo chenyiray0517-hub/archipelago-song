@@ -9,6 +9,7 @@ import { MAX_EQUIPPED_GEMS, GEM_SLOT_COUNT, isActiveGem, type GemBag, type GemKe
 import { MAX_EQUIPPED_FRUITS, type FruitBag, type FruitKey } from "../systems/fruits";
 import { equipDefOf, type EquipmentState, type EquipSlot } from "../systems/equipment";
 import { PlayerPortrait } from "./playerPortrait";
+import { iconImg } from "./icons";
 
 const BAG_CSS = `
 #bag { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 920px; max-width: 94vw; max-height: 84vh; overflow-y: auto; overscroll-behavior: contain; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 20px 24px; display: none; z-index: 10; }
@@ -67,25 +68,6 @@ const ATTR_LABEL: Record<AttributeKey, string> = {
   spirit: "靈能(靈力上限 +5)",
   agi: "敏捷(速度 +1%)",
   vit: "體魄(防禦 +2)",
-};
-
-/** 各件裝備的 emoji 圖示(依 id) */
-const EQUIP_ICON: Record<string, string> = {
-  cap: "🧢",
-  helm: "⛑️",
-  crown: "👑",
-  vest: "🦺",
-  plate: "🛡️",
-  scalemail: "🐉",
-  sandals: "👡",
-  greaves: "🥾",
-  windboots: "🌬️",
-  badge: "🎖️",
-  locket: "💗",
-  ring: "💍",
-  gauntlet: "🥊",
-  amulet: "🔱",
-  treepend: "🌳",
 };
 
 /** 能力分配列用的精簡圖示與短名(完整說明放 title 提示) */
@@ -181,23 +163,24 @@ export class BagPanel {
       })
       .join("");
 
-    const gemSlots: Array<[GemKey, string, string]> = [
-      ["flame", "🔥", "焰心石"],
-      ["wind", "🌪️", "風語石"],
-      ["earth", "🪨", "地殼石"],
-      ["frost", "❄️", "霜語晶"],
-      ["tide", "🌊", "潮汐石"],
-      ["void", "🌀", "虛空石"],
-      ["lava", "🌋", "溶岩石"],
-      ["aqua", "💧", "碧波石"],
-      ["life", "🌿", "翠生石"],
-      ["astral", "✨", "星芒石"],
-      ["maple", "🍁", "楓燃石"],
-      ["shadow", "🌑", "幽影石"],
+    const gemSlots: Array<[GemKey, string]> = [
+      ["flame", "焰心石"],
+      ["wind", "風語石"],
+      ["earth", "地殼石"],
+      ["frost", "霜語晶"],
+      ["tide", "潮汐石"],
+      ["void", "虛空石"],
+      ["lava", "溶岩石"],
+      ["aqua", "碧波石"],
+      ["life", "翠生石"],
+      ["astral", "星芒石"],
+      ["maple", "楓燃石"],
+      ["shadow", "幽影石"],
     ];
     const gemFull = !this.gems.hasFreeSlot();
     const gemGrid = gemSlots
-      .map(([key, icon, name]) => {
+      .map(([key, name]) => {
+        const icon = iconImg(key, 26);
         const owned = this.gems.ownedOf(key);
         if (!owned)
           return `<div class="gem-slot off">${icon}<br/>${name}<br/><span class='muted'>未取得</span></div>`;
@@ -217,14 +200,15 @@ export class BagPanel {
       })
       .join("");
 
-    const fruitSlots: Array<[FruitKey, string, string]> = [
-      ["thunder", "⚡", "雷光果"],
-      ["gravity", "🌀", "引力果"],
-      ["starfall", "🌠", "星辰果"],
+    const fruitSlots: Array<[FruitKey, string]> = [
+      ["thunder", "雷光果"],
+      ["gravity", "引力果"],
+      ["starfall", "星辰果"],
     ];
     const fruitFull = !this.fruits.hasFreeSlot();
     const fruitGrid = fruitSlots
-      .map(([key, icon, name]) => {
+      .map(([key, name]) => {
+        const icon = iconImg(key, 26);
         const owned = this.fruits.ownedOf(key);
         if (!owned)
           return `<div class="gem-slot off">${icon}<br/>${name}<br/><span class='muted'>未取得</span></div>`;
@@ -238,17 +222,17 @@ export class BagPanel {
     const seaGemRows: string[] = [];
     if (this.inventory.firstSeaGem)
       seaGemRows.push(`<div class="item">
-        <span>🔱 第一海寶石 <span class="muted">(傳送至第一海・曙光嶼)</span></span>
+        <span>${iconImg("sea1", 18)} 第一海寶石 <span class="muted">(傳送至第一海・曙光嶼)</span></span>
         <button data-sea="1">使用</button>
       </div>`);
     if (this.inventory.secondSeaGem)
       seaGemRows.push(`<div class="item">
-        <span>🌐 第二海寶石 <span class="muted">(傳送至第二海・港口鎮)</span></span>
+        <span>${iconImg("sea2", 18)} 第二海寶石 <span class="muted">(傳送至第二海・港口鎮)</span></span>
         <button data-sea="2">使用</button>
       </div>`);
     if (this.inventory.thirdSeaGem)
       seaGemRows.push(`<div class="item">
-        <span>🌊 第三海寶石 <span class="muted">(傳送至第三海・望潮鎮)</span></span>
+        <span>${iconImg("sea3", 18)} 第三海寶石 <span class="muted">(傳送至第三海・望潮鎮)</span></span>
         <button data-sea="3">使用</button>
       </div>`);
 
@@ -257,9 +241,8 @@ export class BagPanel {
         const def = equipDefOf(id);
         if (!def) return "";
         const slot = this.equipment.slotOf(id);
-        const icon = EQUIP_ICON[id] ?? "🎽";
         return `<div class="item">
-          <span><span class="eq-icon">${icon}</span>${slot ? "✅ " : ""}${def.name} <span class="muted">(${def.desc})</span></span>
+          <span><span class="eq-icon">${iconImg(id, 18)}</span>${slot ? "✅ " : ""}${def.name} <span class="muted">(${def.desc})</span></span>
           ${
             slot
               ? `<button data-unequip="${slot}">卸下</button>`

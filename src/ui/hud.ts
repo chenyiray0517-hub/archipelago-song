@@ -2,6 +2,7 @@ import type { Player } from "../entities/player";
 import type { Inventory } from "../systems/stats";
 import type { GemBag } from "../systems/gems";
 import type { FruitBag } from "../systems/fruits";
+import { iconImg } from "./icons";
 
 const HUD_CSS = `
 #hud { position: fixed; inset: 0; pointer-events: none; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #fff; }
@@ -71,7 +72,7 @@ export class Hud {
         <div class="row"><span>EXP</span><span id="hud-crystal">💎 0</span></div>
         <div class="bar xp"><div id="hud-xp"></div></div>
         <div class="row"><span>🧪 <span id="hud-potion">0</span>(R 使用)</span><span id="hud-env">☀️</span></div>
-        <div class="gem-row" id="hud-gem">🔥 焰心石｜E 火焰斬(10 靈力)</div>
+        <div class="gem-row" id="hud-gem"></div>
         <div class="fruit-row" id="hud-fruit"></div>
       </div>
       <div class="quests" id="hud-quests"><div class="title">任務</div><div id="hud-quest-list"></div></div>
@@ -120,16 +121,16 @@ export class Hud {
     const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥"];
     // 主動寶石技能說明(鍵位由 gems.slots 決定,顯示對應數字)
     const ACTIVE: Record<string, string> = {
-      flame: "🔥 火焰斬(10 靈力)",
-      earth: "🪨 地震波(15 靈力)",
-      frost: "❄️ 冰箭(12 靈力)／海上可行走",
-      void: "🌀 瞬移(8 靈力)",
-      lava: "🌋 熔岩噴發(14 靈力,灼燒)",
-      aqua: "💧 碧波震盪(16 靈力,凍結)",
-      life: "🌿 生命汲取(14 靈力,吸血)",
-      astral: "✨ 星芒斬(16 靈力,三道星光)",
-      maple: "🍁 楓刃旋舞(15 靈力,六道楓刃灼燒)",
-      shadow: "🌑 幽影迴環(14 靈力,傷敵吸血)",
+      flame: `${iconImg("flame", 15)} 火焰斬(10 靈力)`,
+      earth: `${iconImg("earth", 15)} 地震波(15 靈力)`,
+      frost: `${iconImg("frost", 15)} 冰箭(12 靈力)／海上可行走`,
+      void: `${iconImg("void", 15)} 瞬移(8 靈力)`,
+      lava: `${iconImg("lava", 15)} 熔岩噴發(14 靈力,灼燒)`,
+      aqua: `${iconImg("aqua", 15)} 碧波震盪(16 靈力,凍結)`,
+      life: `${iconImg("life", 15)} 生命汲取(14 靈力,吸血)`,
+      astral: `${iconImg("astral", 15)} 星芒斬(16 靈力,三道星光)`,
+      maple: `${iconImg("maple", 15)} 楓刃旋舞(15 靈力,六道楓刃灼燒)`,
+      shadow: `${iconImg("shadow", 15)} 幽影迴環(14 靈力,傷敵吸血)`,
     };
     const parts: string[] = [];
     // 主動:依鍵位 1–6 順序列出,前綴對應數字鍵
@@ -139,8 +140,8 @@ export class Hud {
       if (label) parts.push(`${CIRCLED[i] ?? `[${i + 1}]`} ${label}`);
     }
     // 被動:不佔鍵位
-    if (gems.isEquipped("wind")) parts.push("🌪️ 風語石｜二段跳/按住空白鍵滑翔(被動)");
-    if (gems.isEquipped("tide")) parts.push("🌊 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)");
+    if (gems.isEquipped("wind")) parts.push(`${iconImg("wind", 15)} 風語石｜二段跳/按住空白鍵滑翔(被動)`);
+    if (gems.isEquipped("tide")) parts.push(`${iconImg("tide", 15)} 潮汐石｜可潛入沉沒古城(船開到遺跡按 F)`);
     const el = this.byId("hud-gem");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");
@@ -149,9 +150,9 @@ export class Hud {
   /** 更新靈樹果實技能列(只顯示出戰中的果實) */
   setFruits(fruits: FruitBag): void {
     const parts: string[] = [];
-    if (fruits.isEquipped("thunder")) parts.push("⚡ 雷光果｜Z 連鎖閃電(16 靈力,麻痺)");
-    if (fruits.isEquipped("gravity")) parts.push("🌀 引力果｜T 引力漩渦(18 靈力,聚怪)");
-    if (fruits.isEquipped("starfall")) parts.push("🌠 星辰果｜G 星隕雨(20 靈力,多目標)");
+    if (fruits.isEquipped("thunder")) parts.push(`${iconImg("thunder", 15)} 雷光果｜Z 連鎖閃電(16 靈力,麻痺)`);
+    if (fruits.isEquipped("gravity")) parts.push(`${iconImg("gravity", 15)} 引力果｜T 引力漩渦(18 靈力,聚怪)`);
+    if (fruits.isEquipped("starfall")) parts.push(`${iconImg("starfall", 15)} 星辰果｜G 星隕雨(20 靈力,多目標)`);
     const el = this.byId("hud-fruit");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");

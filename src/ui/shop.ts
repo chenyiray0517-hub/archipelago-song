@@ -1,5 +1,6 @@
 import type { Inventory } from "../systems/stats";
 import { EQUIPMENT, type EquipmentState } from "../systems/equipment";
+import { iconImg } from "./icons";
 
 const SHOP_CSS = `
 #shop { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; max-height: 86vh; overflow-y: auto; background: rgba(10, 26, 42, 0.94); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; padding: 18px 20px; display: none; z-index: 10; }
@@ -89,7 +90,7 @@ export class ShopPanel {
     const equipRows = EQUIPMENT.filter((def) => (def.tier ?? 1) === this.merchant.tier && !this.equipment.has(def.id))
       .map(
         (def) => `<div class="item">
-          <span>${def.name} <span class="desc">${def.desc}</span></span>
+          <span>${iconImg(def.id, 18)} ${def.name} <span class="desc">${def.desc}</span></span>
           <button data-buyequip="${def.id}" ${this.inventory.coins >= def.price ? "" : "disabled"}>🪙 ${def.price}</button>
         </div>`,
       )

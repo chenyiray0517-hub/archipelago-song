@@ -41,11 +41,8 @@ export const SHRINE_DEFS: ShrineDef[] = [
   { id: "shadecove", island: "幽影灣", x: 3800, z: -114, boat: { x: 3780, z: -72 } },
   { id: "stardust", island: "星砂洲", x: 4252, z: -152, boat: { x: 4230, z: -110 } },
   { id: "starpeak", island: "星穹島", x: 3938, z: 178, boat: { x: 3960, z: 148 } },
-  // 靈脈試煉副本(z < -2000 自成一區;不入存檔、每次奉獻重置)
-  // 位置在小怪環(半徑 31)之外、進場點旁;副本無船,死亡重生時船安置到祭壇島近岸
-  { id: "trial1", island: "試煉之環・壹", x: 3806, z: -3026, boat: { x: 3760, z: 62 } },
-  { id: "trial2", island: "試煉之環・貳", x: 4006, z: -2926, boat: { x: 3760, z: 62 } },
-  { id: "trial3", island: "試煉之環・參", x: 4206, z: -3026, boat: { x: 3760, z: 62 } },
+  // 位置在海祭壇石柱環(半徑 5.6)外側,與奉獻的 F 互動範圍(5)錯開
+  { id: "altar", island: "祭壇島", x: 3746, z: 100, boat: { x: 3760, z: 62 } },
 ];
 
 /**

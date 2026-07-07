@@ -2179,8 +2179,11 @@ const bossBefore = await page.evaluate(() => {
   g.player.hp = g.player.stats.maxHP;
   g.player.blocking = false;
   wg.forceSpecial();
-  return { hp: g.player.hp, phase: wg.specialPhase };
+  return { hp: g.player.hp, phase: wg.specialPhase, rangeDisc: wg.rangeDiscVisible };
 });
+bossBefore.rangeDisc
+  ? ok("蓄力中顯示淡色範圍底盤(技能作用半徑)")
+  : fail("蓄力中未顯示範圍底盤");
 await page.waitForTimeout(750); // telegraph(0.6)結束、引爆特效仍在場
 const bossBlastFx = await page.evaluate(() => {
   const g = window.__game;

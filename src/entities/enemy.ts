@@ -361,6 +361,10 @@ export class Enemy {
   private chargeFx: THREE.Group | null = null;
   private chargeMat: THREE.MeshBasicMaterial | null = null;
   private chargeSpin = 0;
+  /** 蓄力時的淡色範圍底盤(標示技能作用半徑,供玩家判斷安全線) */
+  private rangeDisc: THREE.Group | null = null;
+  private rangeDiscMat: THREE.MeshBasicMaterial | null = null;
+  private rangeRimMat: THREE.MeshBasicMaterial | null = null;
   /** 客戶端:房主旗標剛轉入引爆時記一次,由 main 讀取後播放玩家寶石同款技能特效 */
   private remoteBlastPending = false;
 
@@ -875,6 +879,42 @@ export class Enemy {
     this.mesh.add(group);
     this.chargeFx = group;
     this.chargeMat = mat;
+    this.ensureRangeDisc();
+  }
+
+  /** 懶建立範圍底盤:淡色圓盤 + 稍亮外緣,大小 = 技能作用半徑(不參與描邊/raycast) */
+  private ensureRangeDisc(): void {
+    if (!this.special) return;
+    if (this.rangeDisc && this.rangeDiscMat && this.rangeRimMat) {
+      this.rangeDiscMat.color.setHex(this.special.color);
+      this.rangeRimMat.color.setHex(this.special.color);
+      this.rangeDisc.visible = true;
+      return;
+    }
+    const mkMat = (opacity: number): THREE.MeshBasicMaterial =>
+      new THREE.MeshBasicMaterial({
+        color: this.special!.color,
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+    this.rangeDiscMat = mkMat(0.1);
+    this.rangeRimMat = mkMat(0.3);
+    const group = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 48), this.rangeDiscMat);
+    const rim = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 48), this.rangeRimMat);
+    for (const m of [disc, rim]) {
+      m.rotation.x = -Math.PI / 2;
+      m.raycast = () => undefined;
+      group.add(m);
+    }
+    group.position.y = 0.1;
+    // 加在 mesh(已被 config.scale 縮放),世界半徑要除回 scale
+    const ls = this.special.radius / this.config.scale;
+    group.scale.set(ls, 1, ls);
+    this.mesh.add(group);
+    this.rangeDisc = group;
   }
 
   /** 更新蓄力粒子:環繞盤旋 + 明滅閃爍,隨蓄力進度向身體收攏(prog 0→1;遠端傀儡固定 0.5) */
@@ -896,10 +936,22 @@ export class Enemy {
       mote.scale.setScalar(0.5 + 0.8 * Math.abs(Math.sin(this.chargeSpin * 3 + i * 1.7)));
     }
     this.chargeMat.opacity = 0.55 + 0.45 * Math.abs(Math.sin(this.chargeSpin * 2.5));
+    // 範圍底盤:保持很淡,只做輕微呼吸感
+    if (this.rangeDiscMat && this.rangeRimMat) {
+      const breath = Math.abs(Math.sin(this.chargeSpin * 1.5));
+      this.rangeDiscMat.opacity = 0.08 + 0.06 * breath;
+      this.rangeRimMat.opacity = 0.24 + 0.14 * breath;
+    }
   }
 
   private hideChargeFx(): void {
     if (this.chargeFx) this.chargeFx.visible = false;
+    if (this.rangeDisc) this.rangeDisc.visible = false;
+  }
+
+  /** 測試掛鉤:蓄力中範圍底盤是否顯示 */
+  get rangeDiscVisible(): boolean {
+    return this.rangeDisc?.visible ?? false;
   }
 
   /** 客戶端:讀取「剛引爆」一次性事件(供 main 播放與房主端同款的技能特效) */

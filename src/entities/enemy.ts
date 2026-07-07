@@ -46,6 +46,13 @@ type EnemyState =
 /** 頭目特殊技能附加效果:knockback 純擊退、chill 緩速玩家、burn 點燃玩家、drain 吸血回復自身 */
 export type SpecialEffect = "knockback" | "chill" | "burn" | "drain";
 
+/**
+ * 頭目技能引爆視覺樣式(與玩家寶石技能同款,由 main 播放):
+ * rock 地裂飛石(地震波)、drop 水珠擴散環(碧波震盪/幽影迴環)、
+ * waves 放射劍氣(楓刃旋舞/星芒斬)、rift 虛空裂隙門(虛空石瞬移)
+ */
+export type SpecialFxKind = "rock" | "drop" | "waves" | "rift";
+
 /** 頭目特殊技能引爆事件:由 main 每幀讀取後清空,負責跳字/音效/結算玩家傷害與狀態 */
 export interface SpecialEvent {
   name: string;
@@ -62,9 +69,11 @@ export interface SpecialEvent {
   hitPlayer: boolean;
   /** drain 效果回復自身的量(供跳字顯示) */
   healed: number;
+  /** 引爆視覺樣式(main 依此播放玩家寶石同款特效) */
+  fx: SpecialFxKind;
 }
 
-interface SpecialDef {
+export interface SpecialDef {
   name: string;
   sfx: SfxName;
   color: number;
@@ -79,42 +88,46 @@ interface SpecialDef {
   /** 冷卻(秒) */
   cooldown: number;
   effect: SpecialEffect;
+  /** 引爆視覺樣式(與玩家寶石技能同款) */
+  fx: SpecialFxKind;
 }
 
 /** 各島頭目史萊姆的專屬特殊技能(僅守護者/菁英/魔王擁有) */
 const SPECIALS: Partial<Record<EnemyKind, SpecialDef>> = {
   // 曙光嶼菁英:怒震波——強力擊退
-  elite: { name: "怒震波", sfx: "quake", color: 0xffae5a, radius: 6.5, dmgMul: 1.4, knock: 14, telegraph: 0.7, cooldown: 7, effect: "knockback" },
+  elite: { name: "怒震波", sfx: "quake", color: 0xffae5a, radius: 6.5, dmgMul: 1.4, knock: 14, telegraph: 0.7, cooldown: 7, effect: "knockback", fx: "rock" },
   // 翠風林・風之守護者:旋風斬——大範圍強擊退
-  windGuardian: { name: "旋風斬", sfx: "spin", color: 0x7ff0e0, radius: 8.0, dmgMul: 1.1, knock: 24, telegraph: 0.6, cooldown: 6, effect: "knockback" },
+  windGuardian: { name: "旋風斬", sfx: "spin", color: 0x7ff0e0, radius: 8.0, dmgMul: 1.1, knock: 24, telegraph: 0.6, cooldown: 6, effect: "knockback", fx: "waves" },
   // 燼岩火山・大地守護者:震地裂——高傷大範圍
-  earthGuardian: { name: "震地裂", sfx: "quake", color: 0xc88a4a, radius: 8.5, dmgMul: 1.6, knock: 18, telegraph: 0.85, cooldown: 8, effect: "knockback" },
+  earthGuardian: { name: "震地裂", sfx: "quake", color: 0xc88a4a, radius: 8.5, dmgMul: 1.6, knock: 18, telegraph: 0.85, cooldown: 8, effect: "knockback", fx: "rock" },
   // 霜雪峰・霜之守護者:寒霜爆——命中緩速玩家
-  frostGuardian: { name: "寒霜爆", sfx: "shatter", color: 0xbfeaff, radius: 7.5, dmgMul: 1.2, knock: 8, telegraph: 0.7, cooldown: 7, effect: "chill" },
+  frostGuardian: { name: "寒霜爆", sfx: "shatter", color: 0xbfeaff, radius: 7.5, dmgMul: 1.2, knock: 8, telegraph: 0.7, cooldown: 7, effect: "chill", fx: "drop" },
   // 沉沒古城・虛空守護者:虛空波動——吸取玩家生命回復自身
-  voidGuardian: { name: "虛空波動", sfx: "blink", color: 0x9a5ad0, radius: 7.0, dmgMul: 1.4, knock: 10, telegraph: 0.75, cooldown: 8, effect: "drain" },
+  voidGuardian: { name: "虛空波動", sfx: "blink", color: 0x9a5ad0, radius: 7.0, dmgMul: 1.4, knock: 10, telegraph: 0.75, cooldown: 8, effect: "drain", fx: "rift" },
   // 虛空之心・最終魔王:虛空崩裂——超大範圍 + 吸血
-  voidLord: { name: "虛空崩裂", sfx: "blink", color: 0x7a3ad0, radius: 10.0, dmgMul: 1.6, knock: 16, telegraph: 0.85, cooldown: 7, effect: "drain" },
+  voidLord: { name: "虛空崩裂", sfx: "blink", color: 0x7a3ad0, radius: 10.0, dmgMul: 1.6, knock: 16, telegraph: 0.85, cooldown: 7, effect: "drain", fx: "rift" },
   // 第二海・熔砂島・熔岩守護者:熔核震爆——命中點燃玩家
-  magmaGuardian: { name: "熔核震爆", sfx: "lava", color: 0xff5a2c, radius: 8.0, dmgMul: 1.4, knock: 12, telegraph: 0.75, cooldown: 7, effect: "burn" },
+  magmaGuardian: { name: "熔核震爆", sfx: "lava", color: 0xff5a2c, radius: 8.0, dmgMul: 1.4, knock: 12, telegraph: 0.75, cooldown: 7, effect: "burn", fx: "waves" },
   // 第二海・珊瑚礁・珊瑚守護者:潮汐衝擊——大範圍強擊退
-  coralGuardian: { name: "潮汐衝擊", sfx: "aqua", color: 0x46c8e0, radius: 8.5, dmgMul: 1.3, knock: 20, telegraph: 0.7, cooldown: 7, effect: "knockback" },
+  coralGuardian: { name: "潮汐衝擊", sfx: "aqua", color: 0x46c8e0, radius: 8.5, dmgMul: 1.3, knock: 20, telegraph: 0.7, cooldown: 7, effect: "knockback", fx: "drop" },
   // 第二海・靈脈島・靈脈守護者:靈脈汲取——強力吸血回復
-  lifeGuardian: { name: "靈脈汲取", sfx: "life", color: 0x5ae07a, radius: 7.5, dmgMul: 1.3, knock: 8, telegraph: 0.75, cooldown: 6, effect: "drain" },
+  lifeGuardian: { name: "靈脈汲取", sfx: "life", color: 0x5ae07a, radius: 7.5, dmgMul: 1.3, knock: 8, telegraph: 0.75, cooldown: 6, effect: "drain", fx: "drop" },
   // 第三海・楓紅島・楓魂守護者:楓火焚風——命中點燃玩家
-  mapleGuardian: { name: "楓火焚風", sfx: "lava", color: 0xff7a3a, radius: 8.0, dmgMul: 1.4, knock: 12, telegraph: 0.75, cooldown: 7, effect: "burn" },
+  mapleGuardian: { name: "楓火焚風", sfx: "lava", color: 0xff7a3a, radius: 8.0, dmgMul: 1.4, knock: 12, telegraph: 0.75, cooldown: 7, effect: "burn", fx: "waves" },
   // 第三海・幽影灣・幽影守護者:幽影汲取——吸取玩家生命回復自身
-  shadeGuardian: { name: "幽影汲取", sfx: "blink", color: 0x8a5ae0, radius: 7.5, dmgMul: 1.4, knock: 10, telegraph: 0.75, cooldown: 7, effect: "drain" },
+  shadeGuardian: { name: "幽影汲取", sfx: "blink", color: 0x8a5ae0, radius: 7.5, dmgMul: 1.4, knock: 10, telegraph: 0.75, cooldown: 7, effect: "drain", fx: "drop" },
   // 第三海・星砂洲・星砂守護者:星砂風暴——命中緩速玩家
-  starGuardian: { name: "星砂風暴", sfx: "shatter", color: 0x9adce8, radius: 8.0, dmgMul: 1.3, knock: 10, telegraph: 0.7, cooldown: 7, effect: "chill" },
+  starGuardian: { name: "星砂風暴", sfx: "shatter", color: 0x9adce8, radius: 8.0, dmgMul: 1.3, knock: 10, telegraph: 0.7, cooldown: 7, effect: "chill", fx: "drop" },
   // 第三海・星穹島・星穹守護者:星隕震爆——高傷大範圍強擊退
-  astralGuardian: { name: "星隕震爆", sfx: "astral", color: 0x9ab8ff, radius: 8.5, dmgMul: 1.5, knock: 20, telegraph: 0.8, cooldown: 7, effect: "knockback" },
+  astralGuardian: { name: "星隕震爆", sfx: "astral", color: 0x9ab8ff, radius: 8.5, dmgMul: 1.5, knock: 20, telegraph: 0.8, cooldown: 7, effect: "knockback", fx: "waves" },
 };
 
 /** drain 效果回復自身傷害量的倍率 */
 const DRAIN_HEAL_MUL = 1.5;
 /** 引爆後的擴散特效持續時間 */
 const BLAST_TIME = 0.45;
+/** 蓄力粒子數(技能色光點環繞頭目閃爍) */
+const CHARGE_MOTE_COUNT = 12;
 
 const CHASE_RANGE = 12;
 const ATTACK_TRIGGER_RANGE = 3.2;
@@ -295,7 +308,6 @@ export class Enemy {
   pendingNetBurnDps = 0;
   /** 遠端傀儡狀態旗標(由房主快照驅動):0 無 / 1 蓄力預警 / 2 引爆 / 3 冰凍 / 4 麻痺 / 5 灼燒 */
   private remoteFlag = 0;
-  private remoteRingT = 0;
   private netTarget = new THREE.Vector3();
   private netYaw = 0;
   private netDead = false;
@@ -345,9 +357,12 @@ export class Enemy {
   /** 本島頭目專屬特殊技能(雜魚為 null) */
   private readonly special: SpecialDef | null;
   private specialCd = 0;
-  private specialRing: THREE.Mesh | null = null;
-  private specialRingMat: THREE.MeshBasicMaterial | null = null;
-  private specialRingT = 0;
+  /** 蓄力粒子(技能色光點環繞閃爍,取代舊地面警示圈) */
+  private chargeFx: THREE.Group | null = null;
+  private chargeMat: THREE.MeshBasicMaterial | null = null;
+  private chargeSpin = 0;
+  /** 客戶端:房主旗標剛轉入引爆時記一次,由 main 讀取後播放玩家寶石同款技能特效 */
+  private remoteBlastPending = false;
 
   /** 死亡後不自動重生(副本敵人;由 reviveNow 整批復活) */
   private readonly noRespawn: boolean;
@@ -652,10 +667,10 @@ export class Enemy {
         const sp = this.special!;
         this.stateT -= dt;
         if (this.specialPhase === "telegraph") {
-          // 蓄力:鼓脹顫抖(果凍)+ 地面警示圈閃爍
+          // 蓄力:鼓脹顫抖(果凍)+ 身邊技能色粒子閃爍環繞
           const prog = 1 - Math.max(this.stateT, 0) / sp.telegraph;
           if (!this.useModel) this.body.scale.setScalar(1 + prog * 0.25);
-          this.updateRing(prog, true);
+          this.updateChargeFx(dt, prog);
           if (this.stateT <= 0) {
             // 引爆:範圍內命中玩家,drain 效果順帶回復自身
             const hit = !playerDead && distToPlayer <= sp.radius;
@@ -678,19 +693,17 @@ export class Enemy {
               radius: sp.radius,
               hitPlayer: hit,
               healed,
+              fx: sp.fx,
             };
             this.specialPhase = "blast";
-            this.specialRingT = 0;
             this.stateT = BLAST_TIME;
+            this.hideChargeFx();
             if (this.useModel) this.play("attack", false);
             else this.body.scale.setScalar(1);
           }
         } else {
-          // 擴散:警示圈由中心爆開、淡出
-          this.specialRingT += dt;
-          this.updateRing(this.specialRingT / BLAST_TIME, false);
+          // 引爆:技能特效由 main 播放(玩家寶石同款),這裡只等待進入恢復
           if (this.stateT <= 0) {
-            this.hideRing();
             this.specialPhase = "";
             this.state = "recover";
             this.stateT = RECOVER_TIME;
@@ -825,7 +838,7 @@ export class Enemy {
     this.startSpecial();
   }
 
-  /** 進入特殊技能蓄力階段(設定冷卻、顯示警示圈) */
+  /** 進入特殊技能蓄力階段(設定冷卻、顯示蓄力粒子) */
   private startSpecial(): void {
     if (!this.special) return;
     this.state = "special";
@@ -833,50 +846,67 @@ export class Enemy {
     this.stateT = this.special.telegraph;
     this.specialCd = this.special.cooldown;
     this.attackCd = Math.max(this.attackCd, 1);
-    this.ensureRing();
+    this.ensureChargeFx();
   }
 
-  /** 懶建立地面警示圈(不參與描邊/raycast) */
-  private ensureRing(): void {
+  /** 懶建立蓄力粒子:技能色小光點環繞身體(不參與描邊/raycast) */
+  private ensureChargeFx(): void {
     if (!this.special) return;
-    if (this.specialRing && this.specialRingMat) {
-      this.specialRingMat.color.setHex(this.special.color);
-      this.specialRing.visible = true;
+    if (this.chargeFx && this.chargeMat) {
+      this.chargeMat.color.setHex(this.special.color);
+      this.chargeFx.visible = true;
       return;
     }
     const mat = new THREE.MeshBasicMaterial({
       color: this.special.color,
       transparent: true,
-      opacity: 0.4,
-      side: THREE.DoubleSide,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 1.0, 48), mat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.12;
-    ring.raycast = () => undefined;
-    // 加在 mesh(已被 config.scale 縮放),縮放半徑時需除回 scale 才是世界半徑
-    this.mesh.add(ring);
-    this.specialRing = ring;
-    this.specialRingMat = mat;
-  }
-
-  /** 更新警示圈:telegraph 全幅閃爍預警、blast 由中心爆開淡出 */
-  private updateRing(t: number, telegraph: boolean): void {
-    if (!this.special || !this.specialRing || !this.specialRingMat) return;
-    const ls = this.special.radius / this.config.scale;
-    if (telegraph) {
-      this.specialRing.scale.set(ls, ls, ls);
-      this.specialRingMat.opacity = 0.25 + 0.4 * Math.abs(Math.sin(t * Math.PI * 6));
-    } else {
-      const s = (0.15 + 0.95 * Math.min(t, 1)) * ls;
-      this.specialRing.scale.set(s, s, s);
-      this.specialRingMat.opacity = 0.7 * (1 - Math.min(t, 1));
+    const geo = new THREE.OctahedronGeometry(0.14, 0);
+    const group = new THREE.Group();
+    for (let i = 0; i < CHARGE_MOTE_COUNT; i++) {
+      const mote = new THREE.Mesh(geo, mat);
+      mote.raycast = () => undefined;
+      group.add(mote);
     }
+    // 加在 mesh(已被 config.scale 縮放):粒子用本地座標,頭目越大光環越大,剛好合身
+    this.mesh.add(group);
+    this.chargeFx = group;
+    this.chargeMat = mat;
   }
 
-  private hideRing(): void {
-    if (this.specialRing) this.specialRing.visible = false;
+  /** 更新蓄力粒子:環繞盤旋 + 明滅閃爍,隨蓄力進度向身體收攏(prog 0→1;遠端傀儡固定 0.5) */
+  private updateChargeFx(dt: number, prog: number): void {
+    if (!this.chargeFx || !this.chargeMat) return;
+    this.chargeSpin += dt * 4;
+    const radius = 1.6 - 0.6 * prog;
+    const n = this.chargeFx.children.length;
+    for (let i = 0; i < n; i++) {
+      const ang = this.chargeSpin + (i / n) * Math.PI * 2;
+      const bob = Math.sin(this.chargeSpin * 2 + i * 2.1) * 0.18;
+      const mote = this.chargeFx.children[i];
+      mote.position.set(
+        Math.cos(ang) * radius,
+        0.25 + (((i * 5) % n) / n) * 1.3 + bob,
+        Math.sin(ang) * radius,
+      );
+      // 每顆光點各自明滅:縮放閃爍錯開相位
+      mote.scale.setScalar(0.5 + 0.8 * Math.abs(Math.sin(this.chargeSpin * 3 + i * 1.7)));
+    }
+    this.chargeMat.opacity = 0.55 + 0.45 * Math.abs(Math.sin(this.chargeSpin * 2.5));
+  }
+
+  private hideChargeFx(): void {
+    if (this.chargeFx) this.chargeFx.visible = false;
+  }
+
+  /** 客戶端:讀取「剛引爆」一次性事件(供 main 播放與房主端同款的技能特效) */
+  consumeRemoteBlast(): SpecialDef | null {
+    if (!this.remoteBlastPending || !this.special) return null;
+    this.remoteBlastPending = false;
+    return this.special;
   }
 
   /**
@@ -916,7 +946,7 @@ export class Enemy {
       this.hpBar.visible = false;
       this.specialPhase = "";
       this.specialEvent = null;
-      this.hideRing();
+      this.hideChargeFx();
       if (this.useModel) this.play("death", false);
       return true;
     }
@@ -978,19 +1008,16 @@ export class Enemy {
     this.renderRemoteStatus(dt);
   }
 
-  /** 遠端傀儡:依房主同步的狀態旗標渲染預警圈與控場著色(僅視覺,不影響模擬) */
+  /** 遠端傀儡:依房主同步的狀態旗標渲染蓄力粒子與控場著色(僅視覺,不影響模擬) */
   private renderRemoteStatus(dt: number): void {
     const f = this.remoteFlag;
     if (f === 1) {
-      this.ensureRing();
-      this.remoteRingT += dt;
-      this.updateRing(this.remoteRingT, true); // 蓄力:全幅閃爍預警
-    } else if (f === 2) {
-      this.ensureRing();
-      this.remoteRingT += dt;
-      this.updateRing(this.remoteRingT / BLAST_TIME, false); // 引爆:由中心爆開淡出
+      // 蓄力:技能色粒子環繞閃爍(進度未同步,固定中段收攏)
+      this.ensureChargeFx();
+      this.updateChargeFx(dt, 0.5);
     } else {
-      this.hideRing();
+      // 引爆特效由 main 讀 consumeRemoteBlast 播放(玩家寶石同款)
+      this.hideChargeFx();
     }
     if (this.flashT > 0) return; // 受擊白閃優先(updateRemote 已套基礎色)
     if (f === 3) this.setTint(new THREE.Color(0xbfeaff), 0.75);
@@ -1010,14 +1037,15 @@ export class Enemy {
     this.hp = hp; // 永遠以房主血量為準(含死亡=0,移交房主時 FSM 才接得到正確值)
     // 粗略對齊 state,讓 isDead 與「移交房主時 FSM 接手」運作正常
     this.state = dead ? "dead" : "patrol";
-    // 狀態旗標變更時重置預警圈計時(讓蓄力→引爆的圈動畫從頭播)(階段 3b)
+    // 狀態旗標剛轉入引爆(2)時記一次,讓 main 播放與房主端同款的技能特效(階段 3b)
     if (flag !== this.remoteFlag) {
+      if (flag === 2) this.remoteBlastPending = true;
       this.remoteFlag = flag;
-      this.remoteRingT = 0;
     }
     if (dead) {
       this.remoteFlag = 0;
-      this.hideRing();
+      this.remoteBlastPending = false;
+      this.hideChargeFx();
       if (this.mesh.visible) {
         this.mesh.visible = false;
         this.hpBar.visible = false;
@@ -1043,7 +1071,7 @@ export class Enemy {
     this.hpBar.visible = false;
     this.specialPhase = "";
     this.specialEvent = null;
-    this.hideRing();
+    this.hideChargeFx();
   }
 
   /** 立即復活(重開副本時整批喚醒;一般敵人的自動重生走私有 revive) */
@@ -1062,7 +1090,7 @@ export class Enemy {
     this.specialPhase = "";
     this.specialEvent = null;
     this.specialCd = this.special ? this.special.cooldown * 0.6 : 0;
-    this.hideRing();
+    this.hideChargeFx();
     this.mesh.visible = true;
     this.hpBar.visible = true;
     this.body.scale.setScalar(1);

@@ -37,7 +37,7 @@ import {
 } from "./world/terrain";
 import { Boat } from "./entities/boat";
 import { Player, ATTACK_RANGE, ATTACK_ARC_COS, SPIN_RANGE } from "./entities/player";
-import { Enemy } from "./entities/enemy";
+import { Enemy, type SpecialFxKind } from "./entities/enemy";
 import { Npc } from "./entities/npc";
 import { Pickup } from "./entities/pickup";
 import { Shockwave } from "./entities/shockwave";
@@ -586,6 +586,55 @@ function main(): void {
   let bolts: LightningBolt[] = [];
   /** 純視覺技能特效(地震波/碧波擴散爆發、瞬移虛空裂隙、生命汲取光束):每幀更新、淡出移除 */
   let gemFx: TransientFx[] = [];
+  /** 頭目技能放射劍氣(純視覺,不結算命中;傷害仍走引爆事件的範圍判定) */
+  let bossWaves: Shockwave[] = [];
+  const NO_ENEMIES: Enemy[] = [];
+  /** 頭目技能引爆:播放與玩家寶石同款的技能特效(取代舊擴散警示圈;單機/房主/客戶端共用) */
+  const spawnBossSkillFx = (
+    ep: THREE.Vector3,
+    sp: { color: number; radius: number; fx: SpecialFxKind },
+  ): void => {
+    const shard = new THREE.Color(sp.color).lerp(new THREE.Color(0xffffff), 0.35).getHex();
+    if (sp.fx === "waves") {
+      // 楓刃旋舞/星芒斬式:以頭目為中心放射六道元素色劍氣
+      for (let i = 0; i < 6; i++) {
+        const wave = new Shockwave(ep, (i / 6) * Math.PI * 2, 0, {
+          color: sp.color,
+          lifetime: 0.5,
+          speed: sp.radius / 0.5,
+        });
+        scene.add(wave.mesh);
+        bossWaves.push(wave);
+      }
+      fx.burst(ep.clone().setY(ep.y + 1), sp.color, 18, 7);
+    } else if (sp.fx === "rift") {
+      // 虛空石式:身前爆開紫色裂隙門 + 暗影水珠擴散環
+      const rift = new VoidRift(ep.x, ep.y + 1.8, ep.z, 0, "explode");
+      scene.add(rift.object);
+      gemFx.push(rift);
+      const burst = new GroundBurst(ep.x, ep.z, {
+        ringColor: sp.color,
+        shardColor: shard,
+        radius: sp.radius,
+        shardKind: "drop",
+        shardCount: 16,
+      });
+      scene.add(burst.object);
+      gemFx.push(burst);
+    } else {
+      // 地震波(rock 地裂飛石)/碧波震盪(drop 水珠)式:地面擴散環爆發
+      const burst = new GroundBurst(ep.x, ep.z, {
+        ringColor: sp.color,
+        shardColor: shard,
+        radius: sp.radius,
+        shardKind: sp.fx,
+        shardCount: sp.fx === "drop" ? 18 : 14,
+      });
+      scene.add(burst.object);
+      gemFx.push(burst);
+      fx.burst(ep.clone().setY(ep.y + 0.6), sp.color, 16, 6);
+    }
+  };
   /** 雷光果只在風暴天氣顯現:存著當前場上的果實引用,風暴離去未撿則收回 */
   let thunderFruit: Pickup | null = null;
   /** 引力果在擊敗虛空魔王後生成一次(避免重複) */
@@ -2161,6 +2210,9 @@ function main(): void {
         get gemFx() {
           return gemFx;
         },
+        get bossWaves() {
+          return bossWaves;
+        },
         gems,
         fruits,
         npcs,
@@ -2983,6 +3035,14 @@ function main(): void {
       // 客戶端:敵人由房主快照驅動,本機只做視覺插值,不跑 FSM/戰鬥/特殊技能/灼燒
       if (clientRemote) {
         enemy.updateRemote(worldDt);
+        // 房主旗標剛轉入引爆:本機播放與房主端同款的技能特效(傷害仍由房主結算送 pdmg)
+        const rb = enemy.consumeRemoteBlast();
+        if (rb) {
+          const top = enemy.mesh.position.clone().setY(enemy.mesh.position.y + 3.2);
+          floats.spawn(top, `⚡${rb.name}`, "#ffd23c");
+          audio.sfx(rb.sfx);
+          spawnBossSkillFx(enemy.mesh.position, rb);
+        }
         continue;
       }
       // 水下敵人在玩家未潛水時休眠(不會攻擊海面上的船)
@@ -3025,7 +3085,17 @@ function main(): void {
         floats.spawn(bossTop, `⚡${ev.name}`, "#ffd23c");
         audio.sfx(ev.sfx);
         fx.shake(0.3, 0.25);
-        fx.burst(enemy.mesh.position.clone().setY(enemy.mesh.position.y + 0.6), ev.color, 24, 9);
+        spawnBossSkillFx(ep, ev);
+        // drain 命中:從玩家拉一道技能色汲取光束回頭目(生命汲取同款,光點回流向頭目)
+        if (ev.effect === "drain" && ev.hitPlayer) {
+          const beam = new LifeBeam(
+            ep.clone().setY(ep.y + 2.0),
+            player.mesh.position.clone().setY(player.mesh.position.y + 1.4),
+            ev.color,
+          );
+          scene.add(beam.object);
+          gemFx.push(beam);
+        }
         if (ev.healed > 0) {
           floats.spawn(
             enemy.mesh.position.clone().setY(enemy.mesh.position.y + 2.4),
@@ -3240,6 +3310,17 @@ function main(): void {
       if (vortex.expired) {
         scene.remove(vortex.mesh);
         vortex.dispose();
+        return false;
+      }
+      return true;
+    });
+
+    // 頭目技能放射劍氣:純視覺(空敵人表 → 不結算命中),淡出後移除
+    bossWaves = bossWaves.filter((wave) => {
+      wave.update(worldDt, NO_ENEMIES);
+      if (wave.expired) {
+        scene.remove(wave.mesh);
+        wave.dispose();
         return false;
       }
       return true;

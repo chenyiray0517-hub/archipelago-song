@@ -179,7 +179,7 @@ export class LifeBeam implements TransientFx {
   private readonly coreMat: THREE.MeshBasicMaterial;
   private readonly moteMat: THREE.MeshBasicMaterial;
 
-  constructor(from: THREE.Vector3, to: THREE.Vector3) {
+  constructor(from: THREE.Vector3, to: THREE.Vector3, color = 0x4ae86a) {
     this.life = this.lifetime;
     this.object = new THREE.Group();
     this.object.position.copy(from);
@@ -213,13 +213,16 @@ export class LifeBeam implements TransientFx {
       mesh.position.z = this.length / 2;
       this.object.add(mesh);
     };
-    this.glowMat = addMat(0x4ae86a, 0.4);
-    this.coreMat = addMat(0xc8ffd0, 0.95);
+    // 元素色可換(預設翠生綠;頭目汲取技能帶入自身技能色),芯/光點往白提亮
+    const core = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.7).getHex();
+    const mote = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.45).getHex();
+    this.glowMat = addMat(color, 0.4);
+    this.coreMat = addMat(core, 0.95);
     mkBeam(0.34, this.glowMat);
     mkBeam(0.12, this.coreMat);
 
-    // 生命光點:沿光束「回流」向玩家(from),強化吸取手感
-    this.moteMat = addMat(0xa8ffb8, 0.95);
+    // 生命光點:沿光束「回流」向 from(施放者),強化吸取手感
+    this.moteMat = addMat(mote, 0.95);
     const moteGeo = new THREE.OctahedronGeometry(0.16, 0);
     this.geometries.push(moteGeo);
     for (let i = 0; i < 6; i++) {

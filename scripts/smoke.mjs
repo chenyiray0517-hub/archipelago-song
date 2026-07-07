@@ -2181,12 +2181,20 @@ const bossBefore = await page.evaluate(() => {
   wg.forceSpecial();
   return { hp: g.player.hp, phase: wg.specialPhase };
 });
-await page.waitForTimeout(1100); // telegraph(0.6) + blast(0.45) + 餘裕
+await page.waitForTimeout(750); // telegraph(0.6)結束、引爆特效仍在場
+const bossBlastFx = await page.evaluate(() => {
+  const g = window.__game;
+  return { waves: g.bossWaves.length, gemFx: g.gemFx.length };
+});
+await page.waitForTimeout(350); // 補足 blast(0.45) + 餘裕
 const bossAfter = await page.evaluate(() => {
   const g = window.__game;
   const wg = g.enemies.find((e) => e.kind === "windGuardian");
   return { hp: g.player.hp, phase: wg.specialPhase };
 });
+bossBlastFx.waves > 0
+  ? ok(`頭目引爆播放玩家同款技能特效(放射劍氣 ×${bossBlastFx.waves})`)
+  : fail(`頭目引爆未生成放射劍氣特效(waves=${bossBlastFx.waves}, gemFx=${bossBlastFx.gemFx})`);
 bossBefore.phase === "telegraph"
   ? ok("頭目特殊技能進入蓄力預警階段")
   : fail(`未進入蓄力預警:${bossBefore.phase}`);

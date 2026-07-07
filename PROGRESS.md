@@ -1,5 +1,16 @@
 # PROGRESS
 
+## 2026-07-07(頭目技能改玩家寶石同款特效:蓄力粒子取代地面警示圈)
+
+> Rai 指定:頭目的寶石能力做成跟玩家的一樣,不再是一個圓圈;蓄力時頭目身邊改為該技能顏色的粒子閃爍。
+
+- **`entities/enemy.ts`**:①`SpecialFxKind`(rock 地裂飛石/drop 水珠環/waves 放射劍氣/rift 虛空裂隙)加進 SpecialDef 與 SpecialEvent,13 位頭目各自指定(震系 rock、霜潮星砂 drop、旋風熔核楓火星隕 waves、虛空雙王 rift);②警示圈(specialRing)整組移除,換成**蓄力粒子**——12 顆技能色 additive 八面體光點環繞身體盤旋、各自錯相位明滅、隨蓄力進度向身體收攏(掛在 mesh 上,頭目越大光環越大);③客戶端傀儡:flag=1 播同款蓄力粒子,flag 剛轉 2 時記 `remoteBlastPending`,由 main 讀 `consumeRemoteBlast()` 播引爆特效(快照協定零改動)。
+- **`main.ts`**:`spawnBossSkillFx()` 依 fx 樣式播玩家寶石同款——rock/drop 走 `GroundBurst`(地震波/碧波震盪同款)、waves 放射六道 `Shockwave` 劍氣(楓刃旋舞同款,傷害 0 純視覺,獨立 `bossWaves` 陣列以空敵人表更新不結算命中)、rift 走 `VoidRift` 爆開 + 水珠環;drain 命中另從頭目拉一道技能色 `LifeBeam` 到玩家(光點回流向頭目,吸取感);單機/房主引爆與客戶端 consumeRemoteBlast 共用同一支;傷害結算(範圍判定/擊退/附加狀態/多人 pdmg)完全不動。
+- **`entities/gemFx.ts`**:LifeBeam 建構子加可選 `color`(預設翠生綠,芯/光點自動往白提亮)。
+- **`scripts/smoke.mjs`**:頭目技能段落插入新斷言——引爆後 `bossWaves` 有 6 道放射劍氣(等待 1100ms 拆成 750+350,中段取樣);`__game` 加 `bossWaves` 掛鉤。
+- **驗證**:build 綠(tsc strict)、**smoke 全綠 217 項**(原 216 + 新 1)、**mp-check 全綠**(含「頭目蓄力預警/引爆跨端同步 flag=1」)、截圖目視:旋風斬蓄力時青色光點環繞頭目、無地面圓圈;引爆播劍氣與粒子;怒震波引爆拋出岩色碎石。
+- **已知/後續**:①客戶端蓄力進度未同步,粒子收攏固定中段(僅視覺,預警時長仍準);②玩家失去「作用範圍」的地圈提示,靠粒子+技能半徑經驗判斷,若嫌難讀可在蓄力時補一圈淡淡的範圍底盤。
+
 ## 2026-07-06(全物品專屬圖示:裝備/寶石/果實/海寶石 44 張程式繪製圖案取代 emoji)
 
 > Rai 指定:每件裝備做一個專屬圖案,不再使用 emoji,寶石也一樣。

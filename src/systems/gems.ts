@@ -79,16 +79,35 @@ function levelScale(level: number): number {
   return 1 + 0.5 * (level - 1);
 }
 
+/** 寶石技能全域傷害加成(Rai 指定:傷害 +50%,以各技能冷卻作為平衡) */
+export const GEM_DAMAGE_BONUS = 1.5;
+
+/** 各主動寶石技能冷卻秒數(施放後進入冷卻;範圍越大/附帶效果越強冷卻越長) */
+export const GEM_COOLDOWNS: Record<GemKey, number> = {
+  flame: 3,
+  wind: 0, // 被動,無冷卻
+  earth: 6,
+  frost: 4,
+  tide: 0, // 被動,無冷卻
+  void: 4,
+  lava: 5,
+  aqua: 8,
+  life: 6,
+  astral: 5,
+  maple: 7,
+  shadow: 8,
+};
+
 /**
  * 火焰斬傷害(企劃書 3.3:靈能每點 +2 寶石技能威力;升階強化)。
  */
 export function flameDamage(spirit: number, level = 1): number {
-  return Math.round((18 + spirit * 2) * levelScale(level) * 1.4);
+  return Math.round((18 + spirit * 2) * levelScale(level) * 1.4 * GEM_DAMAGE_BONUS);
 }
 
 /** 地震波傷害 */
 export function quakeDamage(spirit: number, level = 1): number {
-  return Math.round((25 + spirit * 2) * levelScale(level));
+  return Math.round((25 + spirit * 2) * levelScale(level) * GEM_DAMAGE_BONUS);
 }
 
 /** 地震波半徑(升階 +1/級) */
@@ -98,7 +117,7 @@ export function quakeRange(level = 1): number {
 
 /** 冰箭傷害 */
 export function iceDamage(spirit: number, level = 1): number {
-  return Math.round((20 + spirit * 2) * levelScale(level));
+  return Math.round((20 + spirit * 2) * levelScale(level) * GEM_DAMAGE_BONUS);
 }
 
 /** 冰凍秒數(2.5/3.5/4.5) */
@@ -113,7 +132,7 @@ export function blinkDist(level = 1): number {
 
 /** 熔岩噴發命中傷害(岩漿衝擊波本體) */
 export function lavaDamage(spirit: number, level = 1): number {
-  return Math.round((22 + spirit * 2) * levelScale(level) * 1.4);
+  return Math.round((22 + spirit * 2) * levelScale(level) * 1.4 * GEM_DAMAGE_BONUS);
 }
 
 /** 灼燒每秒傷害(命中後持續 LAVA_BURN_DURATION 秒;8/12/16) */
@@ -123,7 +142,7 @@ export function lavaBurnDps(level = 1): number {
 
 /** 碧波震盪傷害(自身周圍 AoE) */
 export function aquaDamage(spirit: number, level = 1): number {
-  return Math.round((20 + spirit * 2) * levelScale(level) * 1.35);
+  return Math.round((20 + spirit * 2) * levelScale(level) * 1.35 * GEM_DAMAGE_BONUS);
 }
 
 /** 碧波震盪凍結秒數(2/2.7/3.4) */
@@ -138,7 +157,7 @@ export function aquaRange(level = 1): number {
 
 /** 生命汲取傷害(前方衝擊波) */
 export function lifeDamage(spirit: number, level = 1): number {
-  return Math.round((18 + spirit * 2) * levelScale(level) * 1.5);
+  return Math.round((18 + spirit * 2) * levelScale(level) * 1.5 * GEM_DAMAGE_BONUS);
 }
 
 /** 生命汲取吸血比率(回復造成傷害的比例;0.4/0.5/0.6) */
@@ -148,12 +167,12 @@ export function lifeLeech(level = 1): number {
 
 /** 星芒斬每道劍氣傷害(扇形三道:近距可全中、遠距單發,霰彈式取捨) */
 export function astralDamage(spirit: number, level = 1): number {
-  return Math.round((14 + spirit * 2) * levelScale(level) * 1.15);
+  return Math.round((14 + spirit * 2) * levelScale(level) * 1.15 * GEM_DAMAGE_BONUS);
 }
 
 /** 楓刃旋舞每道劍氣傷害(全方位六道,單道較低;命中附加灼燒) */
 export function mapleDamage(spirit: number, level = 1): number {
-  return Math.round((13 + spirit * 2) * levelScale(level) * 1.1);
+  return Math.round((13 + spirit * 2) * levelScale(level) * 1.1 * GEM_DAMAGE_BONUS);
 }
 
 /** 楓刃灼燒每秒傷害(6/9/12,弱於熔岩噴發) */
@@ -163,7 +182,7 @@ export function mapleBurnDps(level = 1): number {
 
 /** 幽影迴環傷害(自身周圍 AoE,每命中一敵吸血) */
 export function shadowDamage(spirit: number, level = 1): number {
-  return Math.round((18 + spirit * 2) * levelScale(level) * 1.25);
+  return Math.round((18 + spirit * 2) * levelScale(level) * 1.25 * GEM_DAMAGE_BONUS);
 }
 
 /** 幽影迴環半徑(升階 +1/級) */
@@ -206,6 +225,30 @@ export class GemBag {
   equipped: GemKey[] = [];
   /** 技能鍵位:索引 i 對應數字鍵 i+1(1–6),存放綁定該鍵的主動寶石(null=空)。被動寶石不佔鍵位 */
   slots: (GemKey | null)[] = new Array(GEM_SLOT_COUNT).fill(null);
+  /** 各技能剩餘冷卻秒數(暫態,不入存檔;0 = 可施放) */
+  cooldowns: Record<GemKey, number> = { flame: 0, wind: 0, earth: 0, frost: 0, tide: 0, void: 0, lava: 0, aqua: 0, life: 0, astral: 0, maple: 0, shadow: 0 };
+
+  /** 每幀遞減所有技能冷卻 */
+  tickCooldowns(dt: number): void {
+    for (const k of Object.keys(this.cooldowns) as GemKey[]) {
+      if (this.cooldowns[k] > 0) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt);
+    }
+  }
+
+  /** 技能剩餘冷卻秒數 */
+  cooldownLeft(key: GemKey): number {
+    return this.cooldowns[key];
+  }
+
+  /** 技能是否已冷卻完畢(可施放) */
+  isReady(key: GemKey): boolean {
+    return this.cooldowns[key] <= 0;
+  }
+
+  /** 施放成功後啟動該技能冷卻 */
+  startCooldown(key: GemKey): void {
+    this.cooldowns[key] = GEM_COOLDOWNS[key];
+  }
 
   /** 是否持有指定寶石 */
   ownedOf(key: GemKey): boolean {

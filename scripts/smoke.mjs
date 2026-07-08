@@ -27,10 +27,12 @@ await page.screenshot({ path: "/tmp/archipelago-1-initial.png" });
 
 // 寶石技能改用數字鍵 1–6:施放某寶石技能 = 確保其已綁鍵位後,按下對應數字鍵。
 // 未綁定(未出戰)時 slotOf=-1,按下 "0"(無綁定)→ 不施放,用於負向測試。
+// 施放前先清該技能冷卻,讓各測項不受技能冷卻機制干擾(冷卻本身由 8c 專測)。
 async function castGem(key) {
   const digit = await page.evaluate((k) => {
     const g = window.__game.gems;
     g.ensureSlots();
+    g.cooldowns[k] = 0;
     return g.slotOf(k) + 1; // 1–6;未綁定回 0
   }, key);
   await page.keyboard.press(String(digit));
@@ -264,6 +266,7 @@ const slotCastBefore = await page.evaluate(() => {
   const g = window.__game;
   g.gems.slots = new Array(6).fill(null);
   g.gems.assignSlot("flame", 2); // 第 3 鍵
+  g.gems.cooldowns.flame = 0; // 測項 8 剛施放過,清冷卻
   g.player.mp = g.player.stats.maxMP;
   return { mp: g.player.mp, slot: g.gems.slotOf("flame") };
 });
@@ -273,6 +276,47 @@ const slotCastAfter = await page.evaluate(() => window.__game.player.mp);
 slotCastBefore.slot === 2 && slotCastAfter <= slotCastBefore.mp - 9
   ? ok(`寶石鍵位指定生效(焰心石綁第 3 鍵,按 3 → 靈力 ${Math.round(slotCastBefore.mp)} → ${Math.round(slotCastAfter)})`)
   : fail(`數字鍵位施放異常:${JSON.stringify({ slotCastBefore, slotCastAfter })}`);
+
+// 8c. 技能冷卻 + 傷害加成:施放後進入冷卻且劍氣傷害含 +50% 加成;
+// 冷卻中按鍵不施放(靈力不扣);冷卻歸零後可再施放。
+const cdCast = await page.evaluate(() => {
+  const g = window.__game;
+  g.gems.cooldowns.flame = 0;
+  g.player.mp = g.player.stats.maxMP;
+  return { digit: g.gems.slotOf("flame") + 1 };
+});
+await page.keyboard.press(String(cdCast.digit));
+await page.waitForTimeout(150);
+const cdState = await page.evaluate(() => {
+  const g = window.__game;
+  const spirit = g.player.stats.attrs.spirit;
+  const level = g.gems.levels.flame;
+  const expected = Math.round((18 + spirit * 2) * (1 + 0.5 * (level - 1)) * 1.4 * 1.5);
+  const wave = g.shockwaves[g.shockwaves.length - 1];
+  return { cd: g.gems.cooldowns.flame, waveDamage: wave?.damage ?? -1, expected, mp: g.player.mp };
+});
+cdState.cd > 0
+  ? ok(`火焰斬施放後進入冷卻(剩餘 ${cdState.cd.toFixed(1)}s)`)
+  : fail(`施放後未進入冷卻:${JSON.stringify(cdState)}`);
+cdState.waveDamage === cdState.expected
+  ? ok(`寶石技能傷害含 +50% 加成(火焰劍氣 ${cdState.waveDamage} = 公式值)`)
+  : fail(`傷害加成異常:劍氣 ${cdState.waveDamage} ≠ 預期 ${cdState.expected}`);
+await page.keyboard.press(String(cdCast.digit)); // 冷卻中再按:不施放
+await page.waitForTimeout(150);
+const cdBlocked = await page.evaluate(() => window.__game.player.mp);
+// 靈力會自然回復,只驗證「沒有被扣掉施放費用」
+cdBlocked > cdState.mp - 5
+  ? ok(`冷卻中按鍵不施放(靈力未扣:${cdState.mp.toFixed(1)} → ${cdBlocked.toFixed(1)})`)
+  : fail(`冷卻中仍施放:靈力 ${cdState.mp} → ${cdBlocked}`);
+await page.evaluate(() => {
+  window.__game.gems.cooldowns.flame = 0;
+});
+await page.keyboard.press(String(cdCast.digit));
+await page.waitForTimeout(150);
+const cdRecast = await page.evaluate(() => window.__game.player.mp);
+cdRecast <= cdBlocked - 9
+  ? ok(`冷卻歸零後可再施放(靈力 ${Math.round(cdBlocked)} → ${Math.round(cdRecast)})`)
+  : fail(`冷卻歸零仍無法施放:${cdBlocked} → ${cdRecast}`);
 
 // 9. NPC 對話:存檔含位置會干擾,直接把玩家移回漁村旁再走向村長
 await page.evaluate(() => {

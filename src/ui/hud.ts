@@ -1,6 +1,7 @@
 import type { Player } from "../entities/player";
 import type { Inventory } from "../systems/stats";
-import type { GemBag } from "../systems/gems";
+import type { GemBag, GemKey } from "../systems/gems";
+import { GEM_COOLDOWNS } from "../systems/gems";
 import type { FruitBag } from "../systems/fruits";
 import { iconImg } from "./icons";
 
@@ -24,6 +25,7 @@ const HUD_CSS = `
 #hud .island-title .sub { font-size: 14px; opacity: 0.85; margin-top: 6px; letter-spacing: 3px; }
 #hud .gem-row { font-size: 13px; margin-top: 6px; display: none; color: #ffb08a; }
 #hud .gem-row.show { display: block; }
+#hud .gem-row .cd { color: #8ad4ff; font-weight: 700; margin-left: 4px; }
 #hud .fruit-row { font-size: 13px; margin-top: 4px; display: none; color: #cfa8ff; }
 #hud .fruit-row.show { display: block; }
 #hud .quests { position: absolute; top: 14px; right: 14px; background: rgba(10,26,42,0.72); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.8; max-width: 260px; display: none; }
@@ -133,11 +135,15 @@ export class Hud {
       shadow: `${iconImg("shadow", 15)} 幽影迴環(14 靈力,傷敵吸血)`,
     };
     const parts: string[] = [];
-    // 主動:依鍵位 1–6 順序列出,前綴對應數字鍵
+    // 主動:依鍵位 1–6 順序列出,前綴對應數字鍵;標示冷卻秒數,尾端 span 供每幀倒數
     for (let i = 0; i < gems.slots.length; i++) {
       const k = gems.slots[i];
       const label = k ? ACTIVE[k] : undefined;
-      if (label) parts.push(`${CIRCLED[i] ?? `[${i + 1}]`} ${label}`);
+      if (k && label) {
+        parts.push(
+          `${CIRCLED[i] ?? `[${i + 1}]`} ${label}｜冷卻 ${GEM_COOLDOWNS[k]}s<span class="cd" data-cd="${k}"></span>`,
+        );
+      }
     }
     // 被動:不佔鍵位
     if (gems.isEquipped("wind")) parts.push(`${iconImg("wind", 15)} 風語石｜二段跳/按住空白鍵滑翔(被動)`);
@@ -145,6 +151,16 @@ export class Hud {
     const el = this.byId("hud-gem");
     el.classList.toggle("show", parts.length > 0);
     el.innerHTML = parts.join("<br/>");
+  }
+
+  /** 每幀更新技能列的冷卻倒數(冷卻中顯示剩餘秒數,結束清空) */
+  updateGemCooldowns(gems: GemBag): void {
+    const spans = this.byId("hud-gem").querySelectorAll<HTMLElement>("[data-cd]");
+    for (const span of spans) {
+      const left = gems.cooldownLeft(span.dataset.cd as GemKey);
+      const text = left > 0 ? `(${left.toFixed(1)}s)` : "";
+      if (span.textContent !== text) span.textContent = text;
+    }
   }
 
   /** 更新靈樹果實技能列(只顯示出戰中的果實) */

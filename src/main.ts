@@ -2280,6 +2280,9 @@ function main(): void {
     const worldDt = fx.frozen || viewPaused ? 0 : dt;
     const ambientDt = viewPaused ? 0 : dt;
 
+    // 寶石技能冷卻遞減(隨世界時間走:頓幀/上帝視角暫停時凍結)
+    gems.tickCooldowns(worldDt);
+
     // 多人階段 3a:連線且非房主時,敵人切成「房主權威傀儡」——本機不跑 FSM,
     // 受擊只記帳(pendingNetDamage)等下方送房主結算。單機/房主則照常權威模擬。
     // 在任何戰鬥判定前先設定,確保本幀玩家攻擊走到正確分支。
@@ -2553,10 +2556,21 @@ function main(): void {
 
       // 寶石技能改用數字鍵 1–6:每顆出戰主動寶石綁一個鍵位(背包可調),這裡每幀補齊綁定,
       // 再用 gemCast 判定「該寶石所綁鍵位本幀是否按下」。被動寶石(風語石/潮汐石)不在此列。
+      // 每個技能施放後有各自冷卻(GEM_COOLDOWNS):冷卻中按鍵不施放,跳字提示剩餘秒數。
       gems.ensureSlots();
       const gemCast = (key: GemKey): boolean => {
         const i = gems.slotOf(key);
-        return i >= 0 && input.wasPressed(`Digit${i + 1}`);
+        if (i < 0 || !input.wasPressed(`Digit${i + 1}`)) return false;
+        if (!gems.isReady(key)) {
+          audio.sfx("ui");
+          floats.spawn(
+            player.mesh.position.clone().setY(player.mesh.position.y + 2.6),
+            `冷卻中 ${gems.cooldownLeft(key).toFixed(1)}s`,
+            "#9ab0c0",
+          );
+          return false;
+        }
+        return true;
       };
 
       // 焰心石:火焰斬(消耗靈力的火焰劍氣,射程較短)
@@ -2567,6 +2581,7 @@ function main(): void {
         player.mp >= FLAME_MP_COST
       ) {
         player.mp -= FLAME_MP_COST;
+        gems.startCooldown("flame");
         audio.sfx("fire");
         const fireWave = new Shockwave(
           player.mesh.position,
@@ -2599,6 +2614,7 @@ function main(): void {
         player.mp >= QUAKE_MP_COST
       ) {
         player.mp -= QUAKE_MP_COST;
+        gems.startCooldown("earth");
         audio.sfx("quake");
         fx.shake(0.55, 0.4);
         fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 0.5), 0xc88a3c, 22, 9);
@@ -2629,6 +2645,7 @@ function main(): void {
         player.mp >= ICE_MP_COST
       ) {
         player.mp -= ICE_MP_COST;
+        gems.startCooldown("frost");
         audio.sfx("ice");
         const arrow = new IceArrow(
           player.mesh.position,
@@ -2654,6 +2671,7 @@ function main(): void {
             (diving && Math.hypot(tx - SUNKEN_CITY.x, tz - SUNKEN_CITY.z) < SUNKEN_CITY.r);
           if (ok) {
             player.mp -= BLINK_MP_COST;
+            gems.startCooldown("void");
             audio.sfx("blink");
             fx.burst(origin.clone().setY(origin.y + 1), 0x8a4ae8, 10, 5);
             const riftIn = new VoidRift(origin.x, origin.y + 1.2, origin.z, player.facing, "implode");
@@ -2678,6 +2696,7 @@ function main(): void {
         player.mp >= LAVA_MP_COST
       ) {
         player.mp -= LAVA_MP_COST;
+        gems.startCooldown("lava");
         audio.sfx("lava");
         const lavaWave = new Shockwave(
           player.mesh.position,
@@ -2701,6 +2720,7 @@ function main(): void {
         player.mp >= AQUA_MP_COST
       ) {
         player.mp -= AQUA_MP_COST;
+        gems.startCooldown("aqua");
         audio.sfx("aqua");
         fx.shake(0.3, 0.3);
         fx.burst(player.mesh.position.clone().setY(player.mesh.position.y + 0.6), 0x3ad8d8, 24, 8);
@@ -2734,6 +2754,7 @@ function main(): void {
         player.mp >= LIFE_MP_COST
       ) {
         player.mp -= LIFE_MP_COST;
+        gems.startCooldown("life");
         audio.sfx("life");
         // 即時吸血光束:沿面向一條線,範圍內敵人立即結算傷害並回血(吸取)
         const lifeDmg = lifeDamage(player.stats.attrs.spirit, gems.levels.life);
@@ -2776,6 +2797,7 @@ function main(): void {
         player.mp >= ASTRAL_MP_COST
       ) {
         player.mp -= ASTRAL_MP_COST;
+        gems.startCooldown("astral");
         audio.sfx("astral");
         const dmg = astralDamage(player.stats.attrs.spirit, gems.levels.astral);
         for (const off of [-ASTRAL_SPREAD, 0, ASTRAL_SPREAD]) {
@@ -2801,6 +2823,7 @@ function main(): void {
         player.mp >= MAPLE_MP_COST
       ) {
         player.mp -= MAPLE_MP_COST;
+        gems.startCooldown("maple");
         audio.sfx("maple");
         fx.shake(0.25, 0.2);
         const dmg = mapleDamage(player.stats.attrs.spirit, gems.levels.maple);
@@ -2828,6 +2851,7 @@ function main(): void {
         player.mp >= SHADOW_MP_COST
       ) {
         player.mp -= SHADOW_MP_COST;
+        gems.startCooldown("shadow");
         audio.sfx("shadow");
         fx.shake(0.25, 0.2);
         const dmg = shadowDamage(player.stats.attrs.spirit, gems.levels.shadow);
@@ -3753,6 +3777,7 @@ function main(): void {
 
     floats.update(dt, camera);
     hud.update(player, inventory);
+    hud.updateGemCooldowns(gems);
     input.endFrame();
     renderer.render(scene, camera);
   });

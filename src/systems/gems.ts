@@ -84,18 +84,18 @@ export const GEM_DAMAGE_BONUS = 1.5;
 
 /** 各主動寶石技能冷卻秒數(施放後進入冷卻;範圍越大/附帶效果越強冷卻越長) */
 export const GEM_COOLDOWNS: Record<GemKey, number> = {
-  flame: 3,
+  flame: 6,
   wind: 0, // 被動,無冷卻
-  earth: 6,
-  frost: 4,
+  earth: 12,
+  frost: 8,
   tide: 0, // 被動,無冷卻
-  void: 4,
-  lava: 5,
-  aqua: 8,
-  life: 6,
-  astral: 5,
-  maple: 7,
-  shadow: 8,
+  void: 8,
+  lava: 10,
+  aqua: 16,
+  life: 12,
+  astral: 10,
+  maple: 14,
+  shadow: 16,
 };
 
 /**

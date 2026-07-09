@@ -2246,6 +2246,7 @@ function main(): void {
         map,
         islandView,
         camera,
+        scene,
         // 靈脈試煉副本(祭壇奉獻/逐環進度;smoke 測試據此驗證)
         dungeon: {
           get run() {

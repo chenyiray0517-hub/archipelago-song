@@ -642,7 +642,184 @@ export function createWorld(): THREE.Group {
   group.add(createTown(SECOND_SEA.x)); // 港口鎮(第二海門戶)
   group.add(createTown(THIRD_SEA.x)); // 望潮鎮(第三海門戶,同款南灘小鎮)
   group.add(createAltar()); // 祭壇島的海祭壇(奉獻開啟靈脈試煉)
+  group.add(createAuthorStatue()); // 望潮鎮的作者雕像(碼頭通往鎮上的路旁)
   return group;
+}
+
+/**
+ * 作者雕像:望潮鎮碼頭往鎮上的路旁,方塊人造型(棕髮/紫墨鏡/黑外套藍衣/青綠球鞋),
+ * 頭頂懸浮名牌(青色三角標 + Bad_Bacon + 螢幕圖示),石座正面銅牌刻「作者雕像」。
+ */
+function createAuthorStatue(): THREE.Group {
+  const statue = new THREE.Group();
+  statue.name = "author-statue";
+  const sx = THIRD_SEA.x - 4;
+  const sz = -35;
+  const baseY = groundHeight(sx, sz);
+
+  // ── 兩層石座(同祭壇石色)+ 正面銅牌 ──
+  const stoneMat = toonMaterial(0x9aa8a0);
+  const darkStoneMat = toonMaterial(0x5a6a66);
+  const tierLow = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.5, 3.2), darkStoneMat);
+  tierLow.position.set(0, 0.25, 0);
+  const tierHigh = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.9, 2.3), stoneMat);
+  tierHigh.position.set(0, 0.95, 0);
+  statue.add(tierLow, tierHigh);
+
+  const plaqueCanvas = document.createElement("canvas");
+  plaqueCanvas.width = 256;
+  plaqueCanvas.height = 112;
+  const pctx = plaqueCanvas.getContext("2d")!;
+  pctx.fillStyle = "#8a6a3a";
+  pctx.fillRect(0, 0, 256, 112);
+  pctx.strokeStyle = "#5a4322";
+  pctx.lineWidth = 8;
+  pctx.strokeRect(6, 6, 244, 100);
+  pctx.fillStyle = "#3a2c14";
+  pctx.font = "bold 52px sans-serif";
+  pctx.textAlign = "center";
+  pctx.textBaseline = "middle";
+  pctx.fillText("作者雕像", 128, 58);
+  const plaque = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 0.7, 0.08),
+    toonMaterial(0xffffff, { map: new THREE.CanvasTexture(plaqueCanvas) }),
+  );
+  plaque.position.set(0, 0.95, -1.19); // 面向碼頭(-z),下船即見
+  statue.add(plaque);
+
+  // ── 方塊人本體(面向 -z 碼頭方向)──
+  const body = new THREE.Group();
+  body.position.y = 1.4; // 站上石座頂
+  body.rotation.y = Math.PI; // box 正面朝 -z
+  const skinMat = toonMaterial(0xf2c894);
+  const jacketMat = toonMaterial(0x24272e);
+  const pantsMat = toonMaterial(0x3a3e46);
+  const shoeMat = toonMaterial(0x3aa896);
+
+  // 腿 + 球鞋(白底青綠鞋身)
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.5), pantsMat);
+    leg.position.set(side * 0.29, 0.62, 0);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.26, 0.62), shoeMat);
+    shoe.position.set(side * 0.29, 0.21, 0.05);
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.1, 0.64), toonMaterial(0xe8ece8));
+    sole.position.set(side * 0.29, 0.05, 0.05);
+    body.add(leg, shoe, sole);
+  }
+
+  // 軀幹:黑外套 + 正面藍 T 恤板(繪黑色圖案)
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(1.16, 1.1, 0.6), jacketMat);
+  torso.position.y = 1.67;
+  const teeCanvas = document.createElement("canvas");
+  teeCanvas.width = 64;
+  teeCanvas.height = 64;
+  const tctx = teeCanvas.getContext("2d")!;
+  tctx.fillStyle = "#2a7ad8";
+  tctx.fillRect(0, 0, 64, 64);
+  tctx.fillStyle = "#141a22"; // T 恤上的黑色圖案(不規則潑墨形)
+  tctx.beginPath();
+  tctx.moveTo(32, 12);
+  tctx.lineTo(46, 24);
+  tctx.lineTo(54, 40);
+  tctx.lineTo(40, 38);
+  tctx.lineTo(44, 54);
+  tctx.lineTo(28, 44);
+  tctx.lineTo(14, 52);
+  tctx.lineTo(20, 34);
+  tctx.lineTo(10, 22);
+  tctx.lineTo(26, 24);
+  tctx.closePath();
+  tctx.fill();
+  const tee = new THREE.Mesh(
+    new THREE.BoxGeometry(0.62, 0.98, 0.06),
+    toonMaterial(0xffffff, { map: new THREE.CanvasTexture(teeCanvas) }),
+  );
+  tee.position.set(0, 1.67, 0.31);
+  body.add(torso, tee);
+
+  // 手臂(黑外套袖):左手下垂微張,右手高舉揮手(幾何體先下移半長,繞肩旋轉)
+  for (const side of [-1, 1]) {
+    const armGeometry = new THREE.BoxGeometry(0.48, 1.05, 0.48);
+    armGeometry.translate(0, -0.42, 0);
+    const arm = new THREE.Mesh(armGeometry, jacketMat);
+    arm.position.set(side * 0.85, 2.1, 0);
+    arm.rotation.z = side === 1 ? -2.6 : -0.15; // 右臂舉起揮手
+    body.add(arm);
+  }
+
+  // 頭:膚色方塊 + 微笑(半環)+ 紫墨鏡 + 棕髮(頂蓋 + 瀏海)
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.76, 0.82), skinMat);
+  head.position.y = 2.64;
+  const smile = new THREE.Mesh(
+    new THREE.TorusGeometry(0.13, 0.028, 6, 12, Math.PI),
+    toonMaterial(0x1c2333),
+  );
+  smile.position.set(0, 2.52, 0.42);
+  smile.rotation.z = Math.PI; // 弧口朝上 = 微笑
+  const glasses = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.2, 0.1), toonMaterial(0x8a5ae0));
+  glasses.position.set(0, 2.72, 0.42);
+  const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.28, 0.92), toonMaterial(0xc06a28));
+  hairTop.position.set(0, 3.06, -0.03);
+  const hairFringe = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.3, 0.18), toonMaterial(0xc06a28));
+  hairFringe.position.set(0, 2.94, 0.4);
+  hairFringe.rotation.x = 0.12;
+  body.add(head, smile, glasses, hairTop, hairFringe);
+  statue.add(body);
+
+  statue.traverse((child) => {
+    if (child instanceof THREE.Mesh) child.castShadow = true;
+  });
+  tierLow.receiveShadow = true;
+  addOutlines(statue);
+
+  // ── 頭頂懸浮名牌:青色三角標 + Bad_Bacon + 螢幕圖示(Sprite 恆面向鏡頭,不參與描邊)──
+  const tagCanvas = document.createElement("canvas");
+  tagCanvas.width = 512;
+  tagCanvas.height = 128;
+  const ctx = tagCanvas.getContext("2d")!;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 58px sans-serif";
+  ctx.lineJoin = "round";
+  // 青色雙三角標(仿箭頭圖標)
+  ctx.fillStyle = "#3ad8d8";
+  ctx.beginPath();
+  ctx.moveTo(28, 34);
+  ctx.lineTo(92, 34);
+  ctx.lineTo(60, 66);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(44, 74);
+  ctx.lineTo(76, 74);
+  ctx.lineTo(60, 96);
+  ctx.closePath();
+  ctx.fill();
+  // 名字(白字黑邊)
+  ctx.strokeStyle = "#1c2333";
+  ctx.lineWidth = 8;
+  ctx.strokeText("Bad_Bacon", 112, 66);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("Bad_Bacon", 112, 66);
+  // 螢幕圖示(白框螢幕 + 底座)
+  const mx = 442;
+  ctx.strokeStyle = "#1c2333";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(mx, 36, 52, 36);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(mx, 36, 52, 36);
+  ctx.fillRect(mx + 18, 72, 16, 8);
+  ctx.fillRect(mx + 8, 80, 36, 8);
+  const tag = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(tagCanvas), transparent: true }),
+  );
+  tag.scale.set(3.4, 0.85, 1);
+  tag.position.y = 5.1;
+  statue.add(tag);
+
+  statue.position.set(sx, baseY, sz);
+  OBSTACLES.push({ x: sx, z: sz, r: 1.6 });
+  return statue;
 }
 
 /** 海祭壇造景:圓形石台 + 環立石柱 + 中央懸浮供石(祭壇島,F 奉獻開啟試煉副本) */

@@ -1666,6 +1666,35 @@ Math.hypot(arrive3.bx - 4002, arrive3.bz - -58) < 5
   : fail(`船位異常:${arrive3.bx.toFixed(0)},${arrive3.bz.toFixed(0)}`);
 await page.screenshot({ path: "/tmp/archipelago-45s-tidewatch.png" });
 
+// 45s2. 望潮鎮作者雕像:碼頭通往鎮上的路旁,方塊人 + 頭頂名牌 + 石座銅牌,並註冊障礙物
+const statueInfo = await page.evaluate(() => {
+  const g = window.__game;
+  const statue = g.scene.getObjectByName("author-statue");
+  if (!statue) return null;
+  let meshes = 0;
+  let sprites = 0;
+  statue.traverse((o) => {
+    if (o.isSprite) sprites++;
+    else if (o.isMesh) meshes++;
+  });
+  return {
+    x: statue.position.x,
+    z: statue.position.z,
+    meshes,
+    sprites,
+    obstacle: g.obstacles.some((o) => Math.hypot(o.x - statue.position.x, o.z - statue.position.z) < 1),
+  };
+});
+statueInfo && Math.hypot(statueInfo.x - 3996, statueInfo.z - -35) < 2
+  ? ok(`望潮鎮作者雕像就位(${statueInfo.x.toFixed(0)},${statueInfo.z.toFixed(0)})`)
+  : fail(`作者雕像缺失或位置異常:${JSON.stringify(statueInfo)}`);
+statueInfo.meshes > 20 && statueInfo.sprites === 1
+  ? ok(`雕像組件齊全(網格 ${statueInfo.meshes} + 名牌 Sprite)`)
+  : fail(`雕像組件異常:${JSON.stringify(statueInfo)}`);
+statueInfo.obstacle
+  ? ok("雕像已註冊碰撞障礙物")
+  : fail("雕像未註冊障礙物");
+
 // 45t. 第三海三座委託島生成:楓靈/幽影/星砂果凍各 ×5,且立於陸地;敵人再強化(hp ×3.2、dmg ×2.4)
 const sea3Spawn = await page.evaluate(() => {
   const g = window.__game;

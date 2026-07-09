@@ -61,7 +61,7 @@ scripts/smoke.mjs        # ★ 150 項端到端測試,改任何功能後必跑
 
 ## 不可違反的慣例
 
-1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 202 項)。新功能要加對應 smoke 步驟。
+1. **改完必驗**:`npm run build`(tsc strict)綠 + `npm run smoke` 全項全綠才算完成(目前 225 項)。新功能要加對應 smoke 步驟。
 2. **存檔相容**:`save.ts` 的 SaveData 加欄位一律 optional + 讀檔給預設值,不要破壞玩家舊存檔;結構大改才升版本號。
 3. **回饋三件套**:任何新的傷害來源接 `floats.spawn`(跳字)、新的拾取接 `feed.push`(中央提示)、新的動作配 `audio.sfx`(每種動作不同音效)——Rai 明確要求。
 4. **新敵人至少四段動作**(移動/蓄力/攻擊/死亡),新模型必過 `toonMaterial` + `addOutlines` + castShadow。

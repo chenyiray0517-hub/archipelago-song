@@ -38,6 +38,10 @@ const FLORA: Record<string, Flora> = {
   "試煉之環・壹": { trees: ["common", "willow"], rock: "rock_moss", decor: ["grass", "plant"] },
   "試煉之環・貳": { trees: ["dead", "common"], rock: "rock", decor: ["grass_short"] },
   "試煉之環・參": { trees: ["dead"], rock: "rock", decor: ["stump"] },
+  // 星砂試煉副本三環:由星砂洲的椰林沙洲漸轉隕星荒地
+  "星砂之環・壹": { trees: ["palm"], rock: "rock", decor: ["grass_short"] },
+  "星砂之環・貳": { trees: ["palm", "dead"], rock: "rock_snow", decor: ["grass_short"] },
+  "星砂之環・參": { trees: ["dead"], rock: "rock_snow", decor: ["stump"] },
 };
 
 interface Hill {
@@ -470,6 +474,58 @@ export const ISLANDS: IslandDef[] = [
     treeColor: 0x8a3a3a,
     dungeon: true,
   },
+  // ── 星砂試煉副本(遠海 z≈-3000、靈脈試煉西方;傳送進出、不開船;地圖/上帝視角不顯示)──
+  {
+    name: "星砂之環・壹",
+    x: 2620,
+    z: -3060,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 32, h: 10 },
+      { x: -18, z: 14, r: 16, h: 5 },
+      { x: 20, z: -14, r: 14, h: 4 },
+    ],
+    sand: 0xf0ead0,
+    grass: 0xb8d8e0,
+    dark: 0x6a9ab0,
+    treeCount: 24,
+    treeColor: 0x4a9a8a,
+    dungeon: true,
+  },
+  {
+    name: "星砂之環・貳",
+    x: 2820,
+    z: -2960,
+    r: 52,
+    hills: [
+      { x: 0, z: 0, r: 32, h: 11 },
+      { x: -20, z: 14, r: 16, h: 5 },
+      { x: 22, z: -14, r: 14, h: 4.5 },
+    ],
+    sand: 0xe0d4c0,
+    grass: 0x9ab0d8,
+    dark: 0x4a5a9a,
+    treeCount: 18,
+    treeColor: 0x5a7ab0,
+    dungeon: true,
+  },
+  {
+    name: "星砂之環・參",
+    x: 3020,
+    z: -3060,
+    r: 54,
+    hills: [
+      { x: 0, z: 0, r: 34, h: 12 },
+      { x: -22, z: 16, r: 16, h: 5 },
+      { x: 24, z: -12, r: 14, h: 4.5 },
+    ],
+    sand: 0xc8b8d0,
+    grass: 0x8a7ab8,
+    dark: 0x3a2a6a,
+    treeCount: 14,
+    treeColor: 0x6a5aa0,
+    dungeon: true,
+  },
 ];
 
 /** 祭壇島的海祭壇位置(F 奉獻開啟試煉副本) */
@@ -477,6 +533,8 @@ export const ALTAR_SITE = { x: 3760, z: 114 };
 
 /** 靈脈試煉副本海域中心(海面網格跟隨用;三環皆在 700×700 海面覆蓋範圍內) */
 export const DUNGEON_SEA = { x: 4020, z: -3010 };
+/** 星砂試煉副本海域中心(靈脈試煉西方;海面依玩家 x 在兩中心間切換) */
+export const DUNGEON_SEA2 = { x: 2820, z: -3010 };
 /** 副本海域分界 z:低於此即身處試煉之地(主世界島嶼 z 皆在 ±300 內) */
 export const DUNGEON_BORDER_Z = -2000;
 /** 判定座標是否位於試煉副本海域 */

@@ -2564,8 +2564,8 @@ weaponInfo.raw > 0 && Math.abs(weaponInfo.attack - weaponInfo.raw * 0.5) < 1e-3
   ? ok(`攻擊動作時間縮短 50%(${weaponInfo.raw.toFixed(2)}s → ${weaponInfo.attack.toFixed(2)}s)`)
   : fail(`攻擊動作未加速:${JSON.stringify(weaponInfo)}`);
 
-// ── 靈脈試煉副本(祭壇島奉獻 → 三環全清推進 → 通關獎勵 → 可重複刷)──────
-// 46a. 副本敵人開場沉眠:三環 48 隻全建好、全 isDead 且隱形
+// ── 試煉副本(祭壇島奉獻 → 選擇副本 → 三環全清推進 → 通關獎勵 → 可重複刷)──────
+// 46a. 副本敵人開場沉眠:兩副本各三環共 96 隻全建好、全 isDead 且隱形
 const dgBoot = await page.evaluate(() => {
   const g = window.__game;
   const d = g.dungeon;
@@ -2574,11 +2574,12 @@ const dgBoot = await page.evaluate(() => {
     hasHook: !!d,
     count: mobs.length,
     rings: d.rings.length,
+    dungeons: d.dungeons.length,
     allDormant: mobs.every((e) => e.isDead && !e.mesh.visible),
   };
 });
-dgBoot.hasHook && dgBoot.count === 48 && dgBoot.rings === 3 && dgBoot.allDormant
-  ? ok(`副本敵人開場沉眠(三環 ${dgBoot.count} 隻全隱形)`)
+dgBoot.hasHook && dgBoot.count === 96 && dgBoot.rings === 3 && dgBoot.dungeons === 2 && dgBoot.allDormant
+  ? ok(`副本敵人開場沉眠(兩副本 ${dgBoot.count} 隻全隱形)`)
   : fail(`副本沉眠異常:${JSON.stringify(dgBoot)}`);
 
 // 46b. 副本島不在群島地圖:inspect 副本島應被拒絕(玩家點擊走同條路徑)
@@ -2813,13 +2814,13 @@ dgReturn.z > -2000 && dgReturn.dist < 20
   : fail(`未返回祭壇島:${JSON.stringify(dgReturn)}`);
 await page.screenshot({ path: "/tmp/archipelago-46-altar.png" });
 
-// 46i. 可重複刷:再次奉獻 → 48 隻整批復活、傳送門全部關閉
+// 46i. 可重複刷:再次奉獻 → 該副本 48 隻整批復活、傳送門全部關閉
 const dgAgain = await page.evaluate(() => {
   const g = window.__game;
   g.inventory.crystals.small = 3;
   g.inventory.coins += 100;
   g.dungeon.offer();
-  const mobs = g.enemies.slice(g.dungeon.start);
+  const mobs = g.enemies.slice(g.dungeon.start, g.dungeon.start + g.dungeon.ringSize * 3);
   return {
     run: g.dungeon.run,
     allAlive: mobs.every((e) => !e.isDead && e.mesh.visible),
@@ -2830,6 +2831,122 @@ const dgAgain = await page.evaluate(() => {
 dgAgain.run && dgAgain.allAlive && dgAgain.portals.every((p) => !p) && dgAgain.z < -2000
   ? ok("再次奉獻可重複刷(48 隻整批復活、傳送門重置)")
   : fail(`重複刷異常:${JSON.stringify(dgAgain)}`);
+
+// ── 星砂試煉(第二座副本):祭壇選擇面板 → offer(1) → 難度同星砂洲 → 環清推進與通關獎勵 ──
+// 46j. 副本選擇面板:祭壇按 F 開啟(兩顆副本按鈕 + 取消),再按 F 收起
+await page.evaluate(() => {
+  const g = window.__game;
+  g.player.mesh.position.set(g.dungeon.altar.x, 3, g.dungeon.altar.z - 3);
+});
+await page.waitForTimeout(300);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+const chooser = await page.evaluate(() => ({
+  open: window.__game.dungeon.chooserOpen,
+  buttons: [...document.querySelectorAll("#dungeon-choose button[data-dungeon]")].map(
+    (b) => b.dataset.dungeon,
+  ),
+}));
+chooser.open && chooser.buttons.join(",") === "0,1,cancel"
+  ? ok("祭壇 F 開啟副本選擇面板(靈脈/星砂/取消)")
+  : fail(`選擇面板異常:${JSON.stringify(chooser)}`);
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+const chooserClosed = await page.evaluate(() => window.__game.dungeon.chooserOpen);
+!chooserClosed ? ok("再按 F 收起選擇面板") : fail("選擇面板未收起");
+
+// 46k. 點面板「星砂試煉」開啟第二副本:idx=1、傳送至星砂之環・壹、星砂 16 隻復活、靈脈側回沉眠
+await page.evaluate(() => {
+  const g = window.__game;
+  g.inventory.crystals.small = 3;
+  g.inventory.coins = Math.max(g.inventory.coins, 200);
+});
+await page.keyboard.press("f");
+await page.waitForTimeout(200);
+await page.click('#dungeon-choose button[data-dungeon="1"]');
+await page.waitForTimeout(400);
+const dgStarOpen = await page.evaluate(() => {
+  const g = window.__game;
+  const d = g.dungeon;
+  const ring1 = g.enemies.slice(d.start, d.start + d.ringSize);
+  const lifeMobs = g.enemies.slice(d.ringStart(0, 0), d.ringStart(0, 3));
+  const p = g.player.mesh.position;
+  return {
+    idx: d.idx,
+    chooserOpen: d.chooserOpen,
+    dist: Math.hypot(p.x - d.rings[0].cx, p.z - d.rings[0].cz),
+    alive: ring1.filter((e) => !e.isDead && e.mesh.visible).length,
+    kinds: [ring1[0].kind, ring1[15].kind],
+    lifeDormant: lifeMobs.every((e) => e.isDead && !e.mesh.visible),
+  };
+});
+dgStarOpen.idx === 1 && !dgStarOpen.chooserOpen && dgStarOpen.dist < 60 && dgStarOpen.alive === 16
+  ? ok(`面板選星砂試煉:傳送進星砂之環・壹(離環心 ${dgStarOpen.dist.toFixed(0)}),16 隻復活`)
+  : fail(`星砂試煉開啟異常:${JSON.stringify(dgStarOpen)}`);
+dgStarOpen.kinds.join(",") === "star,starGuardian" && dgStarOpen.lifeDormant
+  ? ok("星砂之環由星砂果凍+星砂守護者鎮守,靈脈側 48 隻回沉眠")
+  : fail(`星砂副本敵人異常:${JSON.stringify(dgStarOpen)}`);
+await page.screenshot({ path: "/tmp/archipelago-46k-stardungeon.png" });
+
+// 46l. 星砂三環難度:壹 = 星砂洲同強(星砂 hp784/dmg72,覆寫等同第三海 ×3.2/×2.4)、
+// 貳 +15%(902/83)、參 +25%(980/90;守護者 2800/102)
+const dgStarScale = await page.evaluate(() => {
+  const g = window.__game;
+  const d = g.dungeon;
+  const at = (ring, i) => g.enemies[d.start + ring * d.ringSize + i];
+  const wild = g.enemies.find(
+    (e) => e.kind === "star" && Math.hypot(e.mesh.position.x - 4230, e.mesh.position.z - -170) < 50,
+  );
+  return {
+    r1: { hp: at(0, 0).maxHp, dmg: at(0, 0).dmg },
+    r2: { hp: at(1, 0).maxHp, dmg: at(1, 0).dmg },
+    r3: { hp: at(2, 0).maxHp, dmg: at(2, 0).dmg },
+    boss3: { hp: at(2, 15).maxHp, dmg: at(2, 15).dmg, kind: at(2, 15).kind },
+    wild: wild ? { hp: wild.maxHp, dmg: wild.dmg } : null,
+  };
+});
+dgStarScale.r1.hp === 784 && dgStarScale.r1.dmg === 72 &&
+dgStarScale.wild && dgStarScale.wild.hp === 784 && dgStarScale.wild.dmg === 72
+  ? ok("星砂壹環難度 = 星砂洲野生星砂果凍(hp784/dmg72 完全一致)")
+  : fail(`星砂壹環難度異常:${JSON.stringify(dgStarScale)}`);
+dgStarScale.r2.hp === 902 && dgStarScale.r2.dmg === 83 &&
+dgStarScale.r3.hp === 980 && dgStarScale.r3.dmg === 90 &&
+dgStarScale.boss3.kind === "starGuardian" && dgStarScale.boss3.hp === 2800 && dgStarScale.boss3.dmg === 102
+  ? ok("星砂貳/參環 +15%/+25%(902/83、980/90,守護者 2800/102)")
+  : fail(`星砂倍率異常:${JSON.stringify(dgStarScale)}`);
+
+// 46m. 星砂環清推進與通關獎勵:清壹環開門(驗證索引偏移)→ 清貳/參環 → +1500 幣 + 大型結晶×8
+await page.evaluate(() => {
+  const g = window.__game;
+  for (let i = g.dungeon.start; i < g.dungeon.start + g.dungeon.ringSize; i++)
+    g.enemies[i].takeDamage(999999);
+});
+await page.waitForTimeout(500);
+const dgStarRing1 = await page.evaluate(() => window.__game.dungeon.portals);
+dgStarRing1[0] && !dgStarRing1[1]
+  ? ok("星砂壹環全清,傳送門開啟(僅該環)")
+  : fail(`星砂傳送門異常:${JSON.stringify(dgStarRing1)}`);
+const dgStarBefore = await page.evaluate(() => ({
+  coins: window.__game.inventory.coins,
+  large: window.__game.inventory.crystals.large,
+}));
+await page.evaluate(() => {
+  const g = window.__game;
+  for (let i = g.dungeon.start + g.dungeon.ringSize; i < g.dungeon.start + g.dungeon.ringSize * 3; i++)
+    g.enemies[i].takeDamage(999999);
+});
+await page.waitForTimeout(500);
+const dgStarClear = await page.evaluate((before) => {
+  const g = window.__game;
+  return {
+    portals: g.dungeon.portals,
+    coinGain: g.inventory.coins - before.coins,
+    largeGain: g.inventory.crystals.large - before.large,
+  };
+}, dgStarBefore);
+dgStarClear.portals[2] && dgStarClear.coinGain === 1500 && dgStarClear.largeGain === 8
+  ? ok(`星砂試煉通關獎勵更豐厚(+${dgStarClear.coinGain} 貝拉幣、大型結晶 +${dgStarClear.largeGain})`)
+  : fail(`星砂通關獎勵異常:${JSON.stringify(dgStarClear)}`);
 
 await browser.close();
 console.log(errors.length ? `\n${errors.length} 項失敗` : "\n全部通過");
